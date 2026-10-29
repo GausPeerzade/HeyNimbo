@@ -1,7 +1,7 @@
 import { StringDecoder } from 'node:string_decoder'
 import { opendir, type FileHandle } from 'node:fs/promises'
 import type { AgentTool, ToolContext, ToolOutcome } from '../contracts'
-import { deniedName, openPath, PathDenied, POLICY_DENIED } from './path-guard'
+import { deniedName, openPath, PathDenied } from './path-guard'
 
 const KiB = 1024
 const MiB = 1024 * KiB
@@ -68,7 +68,7 @@ function define<I>(options: {
         check(ctx)
         return await options.run(options.parse(input), ctx)
       } catch (error) {
-        const message = error instanceof PathDenied ? POLICY_DENIED : error instanceof SafeError ? error.message : 'Tool execution failed.'
+        const message = error instanceof PathDenied || error instanceof SafeError ? error.message : 'Tool execution failed.'
         return { ok: false, content: prefix(message, Math.max(0, Math.min(64 * KiB, ctx.outputBudget))), summary: error instanceof Cancelled ? 'Tool execution cancelled.' : 'Tool execution failed.' }
       }
     },

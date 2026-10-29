@@ -28,6 +28,89 @@ afterEach(async () => {
   })))
 })
 
+// Reviewed range edges, also tested fully expanded and uppercase.
+const ipv6Boundaries = [
+  // 2000::/3: immediately before, first, last, immediately after.
+  ['1fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '1FFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['2000::', '2000:0000:0000:0000:0000:0000:0000:0000', true],
+  ['3fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '3FFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', true],
+  ['4000::', '4000:0000:0000:0000:0000:0000:0000:0000', false],
+  // 2001::/23: immediately before, first, last, immediately after.
+  ['2000:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '2000:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', true],
+  ['2001::', '2001:0000:0000:0000:0000:0000:0000:0000', false],
+  ['2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff', '2001:01FF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['2001:200::', '2001:0200:0000:0000:0000:0000:0000:0000', true],
+  // 2001:db8::/32: immediately before, first, last, immediately after.
+  ['2001:db7:ffff:ffff:ffff:ffff:ffff:ffff', '2001:0DB7:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', true],
+  ['2001:db8::', '2001:0DB8:0000:0000:0000:0000:0000:0000', false],
+  ['2001:db8:ffff:ffff:ffff:ffff:ffff:ffff', '2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['2001:db9::', '2001:0DB9:0000:0000:0000:0000:0000:0000', true],
+  // 2002::/16: immediately before, first, last, immediately after.
+  ['2001:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '2001:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', true],
+  ['2002::', '2002:0000:0000:0000:0000:0000:0000:0000', false],
+  ['2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '2002:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['2003::', '2003:0000:0000:0000:0000:0000:0000:0000', true],
+  // 3fff::/20: immediately before, first, last, immediately after.
+  ['3ffe:ffff:ffff:ffff:ffff:ffff:ffff:ffff', '3FFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', true],
+  ['3fff::', '3FFF:0000:0000:0000:0000:0000:0000:0000', false],
+  ['3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff', '3FFF:0FFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['3fff:1000::', '3FFF:1000:0000:0000:0000:0000:0000:0000', true],
+  // 64:ff9b::/96: immediately before, first, last, immediately after.
+  ['64:ff9a:ffff:ffff:ffff:ffff:ffff:ffff', '0064:FF9A:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['64:ff9b::', '0064:FF9B:0000:0000:0000:0000:0000:0000', false],
+  ['64:ff9b::ffff:ffff', '0064:FF9B:0000:0000:0000:0000:FFFF:FFFF', false],
+  ['64:ff9b::1:0:0', '0064:FF9B:0000:0000:0000:0001:0000:0000', false],
+  // 64:ff9b:1::/48: immediately before, first, last, immediately after.
+  ['64:ff9b:0:ffff:ffff:ffff:ffff:ffff', '0064:FF9B:0000:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['64:ff9b:1::', '0064:FF9B:0001:0000:0000:0000:0000:0000', false],
+  ['64:ff9b:1:ffff:ffff:ffff:ffff:ffff', '0064:FF9B:0001:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['64:ff9b:2::', '0064:FF9B:0002:0000:0000:0000:0000:0000', false],
+  // fec0::/10: immediately before, first, last, immediately after.
+  ['febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['fec0::', 'FEC0:0000:0000:0000:0000:0000:0000:0000', false],
+  ['feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', 'FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF', false],
+  ['ff00::', 'FF00:0000:0000:0000:0000:0000:0000:0000', false],
+] as const
+it.each(ipv6Boundaries.flatMap(([canonical, expanded, publicAddress]) =>
+  [canonical, expanded].map(ip => ({ ip, publicAddress }))))('classifies IPv6 boundary $ip as public=$publicAddress', ({ ip, publicAddress }) => {
+  expect(isPublicAddress(ip)).toBe(publicAddress)
+})
+
+// These are policy-boundary tests, not claims about the host's IPv6 routing.
+// A callback failure is deliberately distinguishable from policy denial, so a
+// regression cannot accidentally open a socket to a real non-public service.
+const deniedIPv6 = [...new Set(ipv6Boundaries.filter(([, , publicAddress]) => !publicAddress).flatMap(([canonical, expanded]) => [canonical, expanded]))]
+it.each(deniedIPv6)('denies direct and mixed-DNS IPv6 target %s before the request boundary', async ip => {
+  for (const mode of ['literal', 'dns'] as const) {
+    const requested: string[] = []
+    await expect(safeFetch(mode === 'literal' ? `http://[${ip}]/` : 'http://ipv6.test/', {
+      ...opts, allowLoopbackForTests: false,
+      resolver: async () => [{ address: '2606:4700:4700::1111', family: 6 }, { address: ip, family: 6 }],
+      beforeRequest: url => { requested.push(url.href); throw new Error('Unexpected request boundary') },
+    })).rejects.toThrow('Network request denied.')
+    expect(requested).toEqual([])
+  }
+})
+
+it.each(deniedIPv6)('denies redirect DNS target %s before a second request boundary', async ip => {
+  let requests = 0
+  const base = await serve((_req, res) => { requests++; res.writeHead(302, { location: 'http://ipv6.test/' }); res.end() })
+  const requested: string[] = []
+  await expect(safeFetch(base, {
+    ...opts, resolver: async () => [{ address: ip, family: 6 }],
+    beforeRequest: url => {
+      requested.push(url.href)
+      if (url.hostname === 'ipv6.test') throw new Error('Unexpected redirected request boundary')
+    },
+  })).rejects.toThrow('Network request denied.')
+  expect(requests).toBe(1)
+  expect(requested).toEqual([`${base}/`])
+})
+
+it.each(['2001:2::1', '2001:1::1', '2002:7f00:1::1', '2002:808:808::1', '64:ff9b:1::a00:1', '::ffff:0:7f00:1', '100::1', '5f00::1'])('denies special-purpose interior or embedded IPv4 address %s', ip => {
+  expect(isPublicAddress(ip)).toBe(false)
+})
+
 // Every input is an address, not a hostname or an alternate URL IPv4 encoding.
 describe('isPublicAddress', () => {
   it.each(['0.1.2.3', '10.1.2.3', '100.64.0.1', '100.127.255.255', '127.0.0.1', '169.254.169.254', '172.16.0.1', '172.31.255.255', '192.0.0.1', '192.0.2.1', '192.168.1.1', '198.18.0.1', '198.19.255.255', '198.51.100.1', '203.0.113.1', '224.0.0.1', '239.255.255.255', '240.0.0.1', '255.255.255.255', '::', '::1', 'fc00::1', 'fdff::1', 'fe80::1', 'febf::1', 'ff02::1', '2001:db8::1', '64:ff9b::808:808', '::ffff:127.0.0.1', '::ffff:a00:1', '::169.254.169.254', '::7f00:1', 'localhost', '2130706433', '0x7f000001', '127.1', '[::1]', 'bad'])('denies non-public or invalid address %s', ip => {

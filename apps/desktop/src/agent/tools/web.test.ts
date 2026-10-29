@@ -168,6 +168,27 @@ it.each([
   expect(() => tool('fetch_url').parse(input)).toThrow('Invalid web tool input.')
 })
 
+it.each([
+  ...Array.from({ length: 31 }, (_, i) => i + 1).filter(code => code !== 10 && code !== 13),
+  ...Array.from({ length: 33 }, (_, i) => i + 0x7f),
+  0x61c, 0x200e, 0x200f, 0x2028, 0x2029,
+  ...Array.from({ length: 5 }, (_, i) => i + 0x202a),
+  ...Array.from({ length: 4 }, (_, i) => i + 0x2066),
+])('escapes display control U+%i in fetch approvals below an unspoofable parsed origin', code => {
+  const value = `https://evil.example:8443/notes${String.fromCodePoint(code)}trusted.example?export=${'x'.repeat(201)}`
+  const preview = tool('fetch_url').preview({ url: value })
+  expect(preview).toBe(`Origin: https://evil.example:8443\nFetch URL:\nhttps://evil.example:8443/notes\\u{${code.toString(16)}}trusted.example?export=${'x'.repeat(201)}`)
+  expect(preview).not.toContain(String.fromCodePoint(code))
+})
+
+it.each([
+  ['https://EXAMPLE.com:443/safe#https://trusted.test', 'https://example.com'],
+  ['http://[2606:4700:4700::1111]:80/page', 'http://[2606:4700:4700::1111]'],
+  ['https://例え.テスト/path', 'https://xn--r8jz45g.xn--zckzah'],
+])('shows the canonical network origin on the first approval line for %s', (url, origin) => {
+  expect(tool('fetch_url').preview({ url }).split('\n')[0]).toBe(`Origin: ${origin}`)
+})
+
 it('normalizes defaults and builds trusted previews only from validated input', () => {
   const search = tool('web_search')
   expect(search.parse({ query: '  query  ' })).toEqual({ query: 'query', limit: 5 })

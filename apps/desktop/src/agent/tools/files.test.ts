@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, writeFile, rm, truncate, readdir, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, truncate, readdir, symlink, rename, stat, link } from 'node:fs/promises'
 import { unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -46,6 +46,74 @@ function run(name: string, input: unknown, overrides: Partial<ToolContext> = {})
   const t = tool(name)
   return t.execute(t.parse(input), { ...ctx, ...overrides })
 }
+
+describe('persisted folder authority', () => {
+  const operations = [
+    ['read_file', { path: 'project/notes.txt' }],
+    ['list_files', { path: 'project' }],
+    ['search_files', { path: 'project', query: 'OUTSIDE_SYNTHETIC' }],
+  ] as const
+  const replacements = ['root symlink', 'ancestor symlink', 'new root directory'] as const
+  const cases = operations.flatMap(([name, input]) => replacements.flatMap(replacement =>
+    [true, false].filter(identity => identity || replacement !== 'new root directory').map(identity => ({ name, input, replacement, identity }))))
+
+  it.each(cases)('denies $name after $replacement across JSON restart (identity=$identity)', async ({ name, input, replacement, identity }) => {
+    const picked = await stat(root, { bigint: true })
+    // Recreate the persisted grant instead of retaining an in-memory handle.
+    const grants = JSON.parse(JSON.stringify([{ ...ctx.grants[0], ...(identity ? { identity: `${picked.dev}:${picked.ino}` } : {}) }])) as ToolContext['grants']
+    if (replacement === 'ancestor symlink') {
+      const outside = `${dir}-outside`
+      await mkdir(join(outside, 'project'), { recursive: true })
+      try {
+        await writeFile(join(outside, 'project', 'notes.txt'), 'OUTSIDE_SYNTHETIC')
+        await rename(dir, `${dir}-original`)
+        await symlink(outside, dir)
+        const result = await run(name, input, { grants })
+        expect(result).toMatchObject({ ok: false, content: 'Access denied by file policy.' })
+      } finally {
+        await rm(dir, { force: true, recursive: true })
+        await rename(`${dir}-original`, dir)
+        await rm(outside, { force: true, recursive: true })
+      }
+    } else {
+      await rename(root, join(dir, 'original'))
+      if (replacement === 'root symlink') {
+        const outside = join(dir, 'outside')
+        await mkdir(outside)
+        await writeFile(join(outside, 'notes.txt'), 'OUTSIDE_SYNTHETIC')
+        await symlink(outside, root)
+      } else {
+        await mkdir(root)
+        await writeFile(join(root, 'notes.txt'), 'OUTSIDE_SYNTHETIC')
+      }
+      const result = await run(name, input, { grants })
+      expect(result).toMatchObject({ ok: false, content: 'Access denied by file policy.' })
+    }
+  })
+})
+
+describe('hard-link credential aliases', () => {
+  it.each(['inside', 'outside'])('denies reading an innocently named hard link to an $0 .env with a fixed safe explanation', async location => {
+    const secret = join(location === 'inside' ? root : dir, '.env')
+    await writeFile(secret, 'HARDLINK_SYNTHETIC_SECRET')
+    await link(secret, join(root, 'notes.txt'))
+    const result = await run('read_file', { path: 'notes.txt' })
+    expect(result).toMatchObject({ ok: false, content: 'This file has multiple hard links and cannot be read safely.' })
+    expect(result.content).not.toContain('HARDLINK_SYNTHETIC_SECRET')
+  })
+
+  it('omits multiply linked credential aliases from search and listing while retaining ordinary matches', async () => {
+    await writeFile(join(root, '.env'), 'HARDLINK_SYNTHETIC_SECRET')
+    await link(join(root, '.env'), join(root, 'notes.txt'))
+    await writeFile(join(root, 'visible.txt'), 'HARDLINK_SYNTHETIC_PUBLIC')
+    const search = await run('search_files', { query: 'HARDLINK_SYNTHETIC' })
+    expect(search).toMatchObject({ ok: true, content: 'project/visible.txt:1:HARDLINK_SYNTHETIC_PUBLIC\n' })
+    const list = await run('list_files', {})
+    expect(list.ok).toBe(true)
+    expect(list.content).toContain('visible.txt')
+    expect(list.content).not.toContain('notes.txt')
+  })
+})
 
 describe('save_artifact', () => {
   it('saves through the run-scoped artifact store without requiring or writing into folder grants', async () => {

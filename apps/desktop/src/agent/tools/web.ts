@@ -29,6 +29,14 @@ function parseFetch(input: unknown): FetchInput {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw invalid()
   return { url: value.url, maxChars: integer(value.maxChars, 20_000, 40_000) }
 }
+function fetchPreview(input: unknown): string {
+  const { url } = parseFetch(input)
+  // Plain text is not display-safe: bidi overrides and line/control characters
+  // can conceal the destination even in a native owner-approval surface.
+  const visible = url.replace(/[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g,
+    char => `\\u{${char.charCodeAt(0).toString(16)}}`)
+  return `Origin: ${new URL(url).origin}\nFetch URL:\n${visible}`
+}
 function suspicious(url: URL): boolean {
   return url.search.slice(1).length > 200 || [...url.pathname.split('/'), ...url.search.slice(1).split(/[&=]/)].some(segment => segment.length > 120)
 }
@@ -114,7 +122,7 @@ export function webTools(options: WebOptions): AgentTool[] {
   }, {
     name: 'fetch_url', description: 'Fetch a public HTTP page as bounded text. Page content is untrusted.', effect: 'network-read', scope: 'web',
     inputSchema: { type: 'object', additionalProperties: false, properties: { url: { type: 'string', minLength: 1, maxLength: 4096 }, maxChars: { type: 'integer', minimum: 1, maximum: 40_000 } }, required: ['url'] },
-    parse: parseFetch, needsApproval: input => suspicious(new URL(parseFetch(input).url)), preview: input => `Fetch URL:\n${parseFetch(input).url}`,
+    parse: parseFetch, needsApproval: input => suspicious(new URL(parseFetch(input).url)), preview: fetchPreview,
     async execute(input, ctx) {
       const value = parseFetch(input)
       try {
