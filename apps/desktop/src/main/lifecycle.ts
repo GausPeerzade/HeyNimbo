@@ -1,5 +1,3 @@
-export function shouldShowDock(homeOpen: boolean, settingsOpen: boolean): boolean { return homeOpen || settingsOpen }
-
 export function clampHomeBounds(
   saved: { x: number; y: number; width: number; height: number } | undefined,
   areas: Array<{ x: number; y: number; width: number; height: number }>,

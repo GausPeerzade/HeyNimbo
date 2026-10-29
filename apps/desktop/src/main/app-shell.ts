@@ -4,7 +4,7 @@ import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from
 import type { ConnectionRequest, ConnectionResult, ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
-import { clampHomeBounds, shouldShowDock } from './lifecycle'
+import { clampHomeBounds } from './lifecycle'
 import { SettingsStore } from './settings'
 import { parseAppRequest } from './app-requests'
 import { isPageSender } from './page-security'
@@ -27,13 +27,18 @@ export function brandPath(file: string): string {
   return app.isPackaged ? join(process.resourcesPath, 'brand', file) : join(__dirname, '../../build/brand', file)
 }
 
-/** Brings a window the user asked for to the front. A menu-bar app isn't
- *  active, so macOS would otherwise leave it behind other apps or on
- *  another Space. */
+/** Brings a window the user asked for to the front on the Space they're on,
+ *  even over a full-screen app. Joining every Space just long enough to show
+ *  moves it here; afterwards it stays put. This only works because NimboGuide
+ *  never takes a Dock icon: since macOS 10.14, Dock apps can't put windows over
+ *  another app's full-screen Space. */
 function present(window: BrowserWindow): void {
+  const spaces = { visibleOnFullScreen: true, skipTransformProcessType: true }
+  window.setVisibleOnAllWorkspaces(true, spaces)
   window.show()
   window.focus()
   app.focus({ steal: true })
+  window.setVisibleOnAllWorkspaces(false, spaces)
 }
 
 export class AppShell {
@@ -93,8 +98,8 @@ export class AppShell {
       })
       this.home = window
       window.on('close', () => { if (!window.isFullScreen()) this.settings.set({ ...this.settings.get(), homeBounds: window.getNormalBounds() }) })
-      window.on('closed', () => { this.home = undefined; this.updateDock() })
-      window.once('ready-to-show', () => { if (!this.preview) { present(window); this.updateDock() } })
+      window.on('closed', () => { this.home = undefined })
+      window.once('ready-to-show', () => { if (!this.preview) present(window) })
       window.webContents.once('did-finish-load', () => { this.publish(); if (turnId) window.webContents.send(AppChannels.navigate, { turnId }) })
       void loadPage(window, 'home')
     } else {
@@ -102,15 +107,14 @@ export class AppShell {
       if (!this.preview) present(this.home); this.publish()
       if (turnId) this.home.webContents.send(AppChannels.navigate, { turnId })
     }
-    this.updateDock()
     return this.home
   }
   openSettings(category?: string): BrowserWindow {
     if (!this.preferences) {
       const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'NimboGuide Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
       this.preferences = window
-      window.on('closed', () => { this.preferences = undefined; this.updateDock() })
-      window.once('ready-to-show', () => { if (!this.preview) { present(window); this.updateDock() } })
+      window.on('closed', () => { this.preferences = undefined })
+      window.once('ready-to-show', () => { if (!this.preview) present(window) })
       window.webContents.once('did-finish-load', () => { this.publish(); if (category) window.webContents.send(AppChannels.navigate, { category }) })
       window.on('focus', () => this.publish())
       void loadPage(window, 'settings')
@@ -119,16 +123,10 @@ export class AppShell {
       if (!this.preview) present(this.preferences); this.publish()
       if (category) this.preferences.webContents.send(AppChannels.navigate, { category })
     }
-    this.updateDock()
     return this.preferences
   }
   stop(): void { this.actions.stop() }
   newConversation(): void { this.actions.stop(); this.conversations.newConversation(); this.openHome() }
-  private updateDock(): void {
-    if (this.preview) return
-    if (shouldShowDock(Boolean(this.home), Boolean(this.preferences))) void app.dock?.show()
-    else app.dock?.hide()
-  }
   private installMenu(): void {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'NimboGuide', submenu: [
