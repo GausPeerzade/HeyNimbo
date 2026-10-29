@@ -29,7 +29,7 @@ function traffic() {
 
 // R1–R8 owner: flush bounded queues before capacity instead of crashing on a
 // legal burst. Keep this executable expected failure until that fix is merged.
-it.fails('keeps a valid three-batch burst alive and delivers every event instead of treating backpressure as a host crash', async () => {
+it('keeps a valid three-batch burst alive and delivers every event instead of treating backpressure as a host crash', async () => {
   const h = traffic()
   try {
     await h.supervisor.request(start)
