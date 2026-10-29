@@ -63,7 +63,7 @@ SHA-256: `0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988`.
 ## Lucide UI paths
 
 Only panel-left, plus and arrow-up paths are copied into
-`apps/desktop/src/renderer/app-dom.ts`. The Cloudpath logo is original and is
+`apps/desktop/src/renderer/app-dom.ts`. The NimboGuide buddy-trail logo is original and is
 not a library icon. Lucide's ISC notice and Feather-derived MIT notice follow:
 ISC License
 

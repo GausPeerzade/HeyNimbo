@@ -9,9 +9,10 @@
   <body>
     <form id="form">
       <h1>Connect OpenAI</h1>
-      <p>Paste an OpenAI API key. It's encrypted with your macOS Keychain and only ever sent to OpenAI.</p>
+      <p>Your key is encrypted with macOS Keychain and sent only to OpenAI. Requests are billed to your OpenAI account.</p>
+      <label for="key">OpenAI API key</label>
       <input id="key" aria-label="OpenAI API key" name="api-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" autofocus />
-      <button id="save" type="submit">Save key</button>
+      <button id="save" type="submit" class="primary">Connect OpenAI</button>
       <p id="status" role="status"></p>
     </form>
     <script type="module" src="./setup.ts"></script>

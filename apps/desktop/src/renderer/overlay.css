@@ -4,12 +4,12 @@
 }
 /* Provisional drawing palette; replace the brand in this one place. */
 :root {
-  --ink: #283d40; --paper: #faf7ef; --paper-header: #dce8e2;
-  --grid-line: #587e7920; --grey: #6d797f;
-  --blue: #286f9d; --red: #b54e62; --orange: #bd742e;
-  --green: #38816b; --purple: #7a60a5;
-  --buddy: #ca4d89; --gloss: #fffffff0; --shadow: #172e32;
-  --ui-surface: #1c2c30; --ui-text: #f4faf5;
+  --ink: #493644; --paper: #fcfcfc; --paper-header: #eeeeee;
+  --grid-line: #62626220; --grey: #626262;
+  --blue: #70415f; --red: #a62f46; --orange: #d9bc61;
+  --green: #276344; --purple: #70415f;
+  --buddy: #70415f; --gloss: #fffffff0; --shadow: #282828;
+  --ui-surface: #282828; --ui-text: #f8f8f8;
 }
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
 #stage { width: 100%; height: 100%; }

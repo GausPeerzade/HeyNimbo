@@ -38,7 +38,7 @@ function render(): void {
       toggle('openAtLogin', 'Open at login', 'Start quietly in the background when you sign in.')
       toggle('showMenuBar', 'Show menu-bar icon')
       toggle('showNotch', 'Show notch pill', 'Hover for recent conversations. Click to open Home.')
-      explanation('Close Home to keep NimboGuide available by voice. Use Quit NimboGuide to stop it completely. You can always reopen Home from the Dock or by opening the app again.')
+      explanation('Closing Home keeps voice available. Choose Quit NimboGuide to stop the app. Reopen it from the Dock or Applications.')
       break
     case 'Voice':
       select('voice', 'Speaking voice', [['Marin', 'marin'], ['Cedar', 'cedar'], ['Alloy', 'alloy'], ['Coral', 'coral']])
@@ -48,9 +48,9 @@ function render(): void {
     case 'History & privacy':
       toggle('saveHistory', 'Save history on this Mac', 'When off, new conversations stay in memory only. Existing saved history is not deleted.')
       select('retention', 'Keep history', [['Off', 0], ['7 days', 7], ['30 days', 30], ['90 days', 90], ['Until deleted', 'forever']])
-      explanation('Local history contains your questions, answers, generated drawing text and vector marks, times, and whether screen context was used. It does not contain screenshots, microphone audio, or your API key. Pinned conversations follow the same retention policy. Off also disables saving new conversations.')
+      explanation('Saved here: questions, answers, generated drawing text and marks, times, and whether screen context was used. No screenshots, microphone audio or API key. Pinned items use the same retention. Off stops saving new conversations.')
       fields.append(element('h2', '', 'What leaves this Mac'))
-      explanation('When you ask, your question and a capture of the display under your pointer are sent to OpenAI for an answer. Voice asks also send microphone audio for transcription; answer text is sent for speech. Local history is not local processing. OpenAI’s handling depends on your account and provider policies. Nothing is captured just by hovering the pill.')
+      explanation('Your question and a capture of the display under your pointer go to OpenAI. Voice also sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
       fields.append(button('Delete all history…', () => { void request({ kind: 'deleteAll' }) }, 'danger'))
       explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to OpenAI.')
       break
@@ -62,9 +62,9 @@ function render(): void {
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
       source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
-      image.src = logo; image.alt = 'NimboGuide Cloudpath'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
+      image.src = logo; image.alt = 'NimboGuide pen buddy and ink trail'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
       fields.append(picture, element('h2', '', `NimboGuide ${snapshot.version}`))
-      explanation('A quiet guide for the screen in front of you.')
+      explanation('Explains your screen with speech and drawings.')
       fields.append(element('h2', '', 'macOS permissions'))
       for (const [key, label] of [['microphone', 'Microphone'], ['screen', 'Screen Recording'], ['input', 'Input Monitoring']] as const) {
         const row = element('div', 'permission'), text = element('span')

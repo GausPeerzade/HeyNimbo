@@ -1,6 +1,10 @@
 @import './tokens.css';
-form { display: flex; flex-direction: column; gap: 12px; padding: 24px; }
+form { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-6) var(--space-8); }
 h1, p { margin: 0; }
-p { color: var(--secondary); line-height: 1.5; }
-button { align-self: flex-start; background: var(--accent); color: var(--on-accent); }
+h1 { letter-spacing: var(--tracking-tight); }
+p { color: var(--secondary); line-height: var(--leading-body); }
+label { font-size: var(--text-meta); font-weight: var(--weight-medium); margin-top: var(--space-2); user-select: none; }
+input { width: 100%; min-height: var(--input-height); }
+button { width: 100%; }
+#status { min-height: var(--space-6); font-size: var(--text-meta); }
 #status.error { color: var(--error); } #status.ok { color: var(--success); }

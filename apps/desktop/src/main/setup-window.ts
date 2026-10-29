@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { Channels, type SaveKeyResult } from '../shared/ipc'
 import { saveOpenAIKey, validateOpenAIKey } from './secrets'
 import { isPageSender } from './page-security'
 import { loadPage, secureWebPreferences } from './windows'
+import { WINDOW_PALETTE } from '../shared/ui-palette'
 
 let setup: BrowserWindow | undefined
 
@@ -12,10 +13,12 @@ export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
   if (setup && !setup.isDestroyed()) { setup.show(); setup.focus(); return setup }
   const window = new BrowserWindow({
     width: 460,
-    height: 300,
+    height: 420,
     resizable: false,
     title: 'Set up NimboGuide',
     show: false,
+    paintWhenInitiallyHidden: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light,
     webPreferences: secureWebPreferences('setup'),
   })
   setup = window

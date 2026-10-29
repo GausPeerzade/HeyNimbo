@@ -20,12 +20,12 @@ form.addEventListener('submit', (event) => {
     .saveOpenAIKey(input.value)
     .then((result) => {
       status.className = result.ok ? 'ok' : 'error'
-      status.textContent = result.ok ? 'Saved. Hold Ctrl+Option and ask away.' : result.reason
+      status.textContent = result.ok ? 'Connected. Hold Control + Option to speak.' : result.reason
       if (result.ok) input.value = ''
     })
     .catch(() => {
       status.className = 'error'
-      status.textContent = 'Something went wrong. Please try again.'
+      status.textContent = 'Could not connect. Check your connection and try again.'
     })
     .finally(() => (save.disabled = false))
 })

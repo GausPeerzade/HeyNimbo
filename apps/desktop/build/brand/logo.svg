@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <defs><mask id="route"><rect width="100" height="100" fill="white"/><path d="M33 65C35 49 48 66 57 51L60 46" fill="none" stroke="black" stroke-width="9" stroke-linecap="round"/><path d="M52 45L67 35L66 54Z" fill="black"/></mask></defs>
-  <path fill="currentColor" mask="url(#route)" d="M33 76C11 76 10 46 28 39C28 11 65 5 74 34C96 34 101 76 78 76Z"/>
+  <title>NimboGuide buddy trail</title>
+  <!-- Upright pen proportions from buddy-shape.ts, with a short rising ink trail. -->
+  <path fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" d="M64 31C42 27 46 57 25 57H17"/>
+  <path fill="currentColor" d="M62 32Q64 28 66 32L86 67Q89 72 83 72H45Q39 72 42 67Z"/>
 </svg>

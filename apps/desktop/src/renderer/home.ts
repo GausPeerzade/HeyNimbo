@@ -60,10 +60,10 @@ function renderTranscript(s: AppSnapshot): void {
     const picture = element('picture'), source = element('source'), image = element('img')
     source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
     image.src = logo; image.alt = ''; image.width = 80; image.height = 80; picture.append(source, image)
-    empty.append(picture, element('h2', '', 'Ask about something on your screen'), element('p', '', s.keyPresent ? 'Type a question below, or hold Control + Option and speak.' : 'Connect OpenAI to get a spoken answer and a little guidance on your screen.'))
+    empty.append(picture, element('h2', '', 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Describe what you want to find or understand.' : 'Connect OpenAI to ask about your screen and get a drawn explanation.'))
     if (!s.keyPresent) {
       empty.append(button('Connect OpenAI', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
-      empty.append(element('p', 'privacy-summary', 'Your question and screen capture go to OpenAI. Only text and generated drawings are saved in local history, not screen images or audio.'))
+      empty.append(element('p', 'privacy-summary', 'When you ask, your question and a screen capture go to OpenAI. Local history saves text and generated drawings, not screen images or audio.'))
     }
     transcript.append(empty)
   }
@@ -78,7 +78,7 @@ function render(s: AppSnapshot): void {
   title.textContent = s.conversations.find(c => c.id === s.currentId)?.title ?? 'New conversation'
   renderSidebar(); renderTranscript(s)
   document.getElementById('stop')!.hidden = !s.busy
-  ;(document.getElementById('send') as HTMLButtonElement).disabled = s.busy
+  ;document.getElementById('send')!.hidden = s.busy || !s.keyPresent
   document.getElementById('feedback')!.textContent = s.status
   document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? 'Kept until deleted' : `Saved locally for ${s.settings.retention} days`
 }

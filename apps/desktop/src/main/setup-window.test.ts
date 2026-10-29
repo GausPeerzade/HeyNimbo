@@ -10,7 +10,7 @@ vi.mock('electron', async () => {
     async loadFile(path: string) { this.webContents.mainFrame.url = pathToFileURL(path).href }
     constructor() { super(); mocks.windows.push(this) }
   }
-  return { app: { isPackaged: true }, BrowserWindow, ipcMain: { handle: (_channel: string, handler: typeof mocks.handler) => { mocks.handler = handler }, removeHandler: vi.fn() } }
+  return { app: { isPackaged: true }, nativeTheme: { shouldUseDarkColors: false }, BrowserWindow, ipcMain: { handle: (_channel: string, handler: typeof mocks.handler) => { mocks.handler = handler }, removeHandler: vi.fn() } }
 })
 vi.mock('./secrets', () => ({ validateOpenAIKey: mocks.validate, saveOpenAIKey: mocks.save }))
 import { openSetupWindow } from './setup-window'
