@@ -3,13 +3,29 @@ import { defineConfig } from 'electron-vite'
 
 export default defineConfig({
   main: {},
-  preload: {},
+  preload: {
+    build: {
+      // Sandboxed preloads cannot load shared chunks, so each is self-contained.
+      isolatedEntries: true,
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          setup: resolve(__dirname, 'src/preload/setup.ts'),
+          voice: resolve(__dirname, 'src/preload/voice.ts'),
+        },
+      },
+    },
+  },
   renderer: {
     build: {
+      // The CSP forbids data: scripts, so the audio worklet must stay a file.
+      assetsInlineLimit: 0,
       rollupOptions: {
         input: {
           notch: resolve(__dirname, 'src/renderer/notch.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+          setup: resolve(__dirname, 'src/renderer/setup.html'),
+          voice: resolve(__dirname, 'src/renderer/voice.html'),
         },
       },
     },

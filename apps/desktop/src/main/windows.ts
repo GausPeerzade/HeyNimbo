@@ -8,17 +8,20 @@ const NOTCH_SIZE = { width: 240, height: 38 }
 /** Latest notch state, replayed whenever the notch page (re)loads. */
 let notchStatus: NotchStatus = { kind: 'idle' }
 
-function secureWebPreferences(): WebPreferences {
+/** Each window gets the narrowest preload it needs. */
+export type Preload = 'index' | 'setup' | 'voice'
+
+export function secureWebPreferences(preload: Preload = 'index'): WebPreferences {
   return {
     // Sandboxed preloads must be CommonJS, so this stays `.js`.
-    preload: join(__dirname, '../preload/index.js'),
+    preload: join(__dirname, `../preload/${preload}.js`),
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
   }
 }
 
-function loadPage(window: BrowserWindow, page: 'notch' | 'overlay'): void {
+export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice'): void {
   // Only an unpackaged build may load pages from the dev server.
   const devServer = devSetting('ELECTRON_RENDERER_URL')
   if (devServer) void window.loadURL(`${devServer}/${page}.html`)

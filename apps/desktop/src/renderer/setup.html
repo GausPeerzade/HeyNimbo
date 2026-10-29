@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <link rel="stylesheet" href="./setup.css" />
+    <title>Set up NimboGuide</title>
+  </head>
+  <body>
+    <form id="form">
+      <h1>Connect OpenAI</h1>
+      <p>Paste an OpenAI API key. It's encrypted with your macOS Keychain and only ever sent to OpenAI.</p>
+      <input id="key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" autofocus />
+      <button id="save" type="submit">Save key</button>
+      <p id="status" role="status"></p>
+    </form>
+    <script type="module" src="./setup.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+body { margin: 0; font: 13px -apple-system, "Segoe UI", sans-serif; background: #f5f5f7; color: #1d1d1f; }
+form { display: flex; flex-direction: column; gap: 10px; padding: 24px; }
+h1 { margin: 0; font-size: 18px; }
+p { margin: 0; color: #515154; line-height: 1.4; }
+input { padding: 8px 10px; border: 1px solid #c7c7cc; border-radius: 8px; font: inherit; }
+button { align-self: flex-start; padding: 7px 16px; border: 0; border-radius: 8px; background: #0a84ff; color: #fff; font: 600 13px inherit; }
+button:disabled { opacity: 0.5; }
+#status.error { color: #d70015; }
+#status.ok { color: #248a3d; }
