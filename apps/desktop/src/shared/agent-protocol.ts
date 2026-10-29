@@ -95,6 +95,16 @@ export interface AgentResults {
   approve: { ok: true }; answer: { ok: true }; allowMix: { ok: true }; cancel: { ok: true }; continue: { ok: true }; delete: { ok: true }; stopAll: { ok: true }
 }
 
+/** Host reply to `cancelAll`. `unsettled` counts cancelled work (model/tool promises) that did not
+ *  settle within the host's drain deadline; main must then terminate the host instead of trusting
+ *  the acknowledgement, because unsettled work keeps holding admission reservations. */
+export interface CancelAllResult { ok: true; unsettled: number }
+
+/** Host→main transport budget: the host splits event batches so one message stays below this many
+ *  serialized bytes; main drops (counts invalid) anything larger without deep validation. Keeps a single
+ *  synchronous receive on main short because Explain shares that event loop. */
+export const HOST_MESSAGE_MAX_BYTES = 512 * 1024
+
 /** Folder access resolved by main from a native picker; only main and host see paths. */
 export interface FolderGrant {
   id: string; root: string; label: string
