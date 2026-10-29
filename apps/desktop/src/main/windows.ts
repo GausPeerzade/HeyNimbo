@@ -3,6 +3,7 @@ import { BrowserWindow, ipcMain, screen, type Display, type WebPreferences } fro
 import type { Mark } from '../shared/beats'
 import { Channels, type NotchStatus, type OverlayCommand, type OverlayEvent } from '../shared/ipc'
 import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
+import { protectPage, type AppPage } from './page-security'
 import { devFlag, devSetting } from './dev'
 
 const NOTCH_SIZE = { width: 384, height: 320 }
@@ -24,7 +25,8 @@ export function secureWebPreferences(preload: Preload = 'index'): WebPreferences
   }
 }
 
-export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice' | 'home' | 'settings'): Promise<void> {
+export function loadPage(window: BrowserWindow, page: AppPage): Promise<void> {
+  protectPage(window)
   // Only an unpackaged build may load pages from the dev server.
   const devServer = devSetting('ELECTRON_RENDERER_URL')
   return devServer ? window.loadURL(`${devServer}/${page}.html`) : window.loadFile(join(__dirname, `../renderer/${page}.html`))

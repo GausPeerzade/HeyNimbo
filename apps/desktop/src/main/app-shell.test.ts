@@ -1,29 +1,69 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import type { AppRequest } from '../shared/app'
-import { AppShell } from './app-shell'
-const mocks = vi.hoisted(() => ({ dir: '', handler: undefined as ((event: IpcMainInvokeEvent, request: AppRequest) => unknown) | undefined }))
+import { AppShell, type ShellActions } from './app-shell'
+import { pageURL } from './page-security'
+import { DEFAULT_SETTINGS } from './settings'
+import { TalkSession, type TalkDeps } from './voice/talk'
+const mocks = vi.hoisted(() => ({ dir: '', handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
 vi.mock('electron', () => ({
-  app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: false },
+  app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: true },
   ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'nimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
   nativeTheme: { shouldUseDarkColors: false },
 }))
-let shell: AppShell | undefined
-afterEach(() => { shell?.close(); shell = undefined; if (mocks.dir) rmSync(mocks.dir, { recursive: true, force: true }) })
-it('authenticates app-window requests and acknowledges text submission only after dispatch accepts it', async () => {
+let shell: AppShell | undefined, talk: TalkSession | undefined
+function fixture(ask: ShellActions['ask'] = () => ({ accepted: true })) {
   mocks.dir = mkdtempSync('/tmp/nimbo-shell-test-')
-  const ask = vi.fn()
-  shell = new AppShell({ ask, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, permissions: () => ({ microphone: '', screen: '', input: '' }) }, true)
-  const contents = { send: vi.fn() }
+  const actions = { ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
+  shell = new AppShell(actions, true)
+  const frame = { url: pageURL('home') }, contents = { send: vi.fn(), mainFrame: frame, getURL: () => frame.url }
   shell.home = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
-  const event = { sender: contents } as unknown as IpcMainInvokeEvent
-  expect(() => mocks.handler?.({ sender: {} } as IpcMainInvokeEvent, { kind: 'snapshot' })).toThrow('Not allowed')
-  expect(await mocks.handler?.(event, { kind: 'ask', question: 'No connection yet' })).toBeUndefined()
-  expect(ask).not.toHaveBeenCalled()
+  const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
+  return { shell, event, contents, actions }
+}
+afterEach(() => { talk?.close(); talk = undefined; shell?.close(); shell = undefined; vi.restoreAllMocks(); vi.useRealTimers(); if (mocks.dir) rmSync(mocks.dir, { recursive: true, force: true }) })
+it('rejects app requests from other contents, subframes and navigated documents', () => {
+  const { event, contents } = fixture()
+  for (const invalid of [{ sender: {} }, { ...event, senderFrame: { url: pageURL('home') } }]) expect(() => mocks.handler?.(invalid as IpcMainInvokeEvent, { kind: 'snapshot' })).toThrow('Not allowed')
+  contents.mainFrame.url = 'https://untrusted.invalid'
+  expect(() => mocks.handler?.(event, { kind: 'snapshot' })).toThrow('Not allowed')
+})
+it('rejects invalid request and settings variants without mutation, pruning or cancellation', () => {
+  const { shell, event, actions } = fixture()
+  shell.settings.set({ ...DEFAULT_SETTINGS, saveHistory: false })
+  const write = vi.spyOn(shell.settings, 'set'), prune = vi.spyOn(shell.conversations.history, 'prune'), rename = vi.spyOn(shell.conversations, 'rename')
+  for (const value of [{ kind: 'rename', id: 'a' }, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, voice: ['marin'] } }, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, saveHistory: 'true' } }]) expect(() => mocks.handler?.(event, value)).toThrow()
+  for (const fn of [write, prune, rename, actions.stop, actions.settingsChanged]) expect(fn).not.toHaveBeenCalled()
+  expect(shell.settings.get().saveHistory).toBe(false)
+})
+it('acknowledges only a persisted text turn through the real TalkSession path, before capture or the answer finishes', async () => {
+  const { shell, event, actions } = fixture(question => talk!.askText(question))
+  talk = new TalkSession({
+    key: 'fixture', conversations: shell.conversations, capture: () => new Promise(() => {}),
+    ears: { cancel() {}, close() {} }, mouth: { cancel() {}, close() {} }, audio: { send() {} },
+    onStatus: (label: string | undefined) => shell.setStatus(label), drawing: { draw() {}, answerDone() {} },
+  } as unknown as TalkDeps)
+  expect(await mocks.handler?.(event, { kind: 'ask', question: 'Not connected' })).toBeUndefined()
+  expect(actions.ask).not.toHaveBeenCalled()
   shell.keyPresent = true
   expect(await mocks.handler?.(event, { kind: 'ask', question: '  My question  ' })).toEqual({ accepted: true })
-  expect(ask).toHaveBeenCalledWith('My question')
-  ask.mockImplementationOnce(() => { throw new Error('History storage failed') })
+  expect(shell.conversations.turns()[0]?.question).toBe('My question')
+  shell.conversations.reset()
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  vi.spyOn(shell.conversations.history, 'begin').mockImplementationOnce(() => { throw new Error('History storage failed') })
   await expect(mocks.handler?.(event, { kind: 'ask', question: 'Keep this draft' })).rejects.toThrow('History storage failed')
+  expect(shell.conversations.currentId).toBeNull()
+})
+it('coalesces repeated snapshot work and flushes the final idle status without a trailing duplicate', () => {
+  vi.useFakeTimers()
+  const { shell, contents } = fixture()
+  const snapshot = vi.spyOn(shell, 'snapshot')
+  for (let i = 0; i < 100; i++) shell.publish()
+  expect(snapshot).not.toHaveBeenCalled()
+  vi.advanceTimersByTime(249); expect(snapshot).not.toHaveBeenCalled()
+  vi.advanceTimersByTime(1); expect(snapshot).toHaveBeenCalledTimes(1)
+  shell.publish(); shell.setStatus(undefined)
+  expect(contents.send).toHaveBeenLastCalledWith('nimbo:app-snapshot', expect.objectContaining({ busy: false, status: '' }))
+  expect(snapshot).toHaveBeenCalledTimes(2)
+  vi.advanceTimersByTime(250); expect(snapshot).toHaveBeenCalledTimes(2)
 })

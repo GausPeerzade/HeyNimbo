@@ -16,7 +16,7 @@ export function configureHomePreview(): void {
 export async function runHomePreview(): Promise<void> {
   app.dock?.hide()
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
-  const shell = new AppShell({ ask() {}, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
+  const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
   shell.keyPresent = true
   const output = '/tmp/nimbo-app-validation'
   mkdirSync(output, { recursive: true })

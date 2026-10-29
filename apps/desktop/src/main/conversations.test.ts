@@ -52,3 +52,14 @@ it('starts fresh after a restart, and continues old context only after an explic
     } finally { after.close() }
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+it('loads brain context directly without decoding full transcripts or drawing scenes', () => {
+  const r = new HistoryRepository(), c = new ConversationController(r, () => DEFAULT_SETTINGS)
+  try {
+    c.newConversation()
+    for (let i = 0; i < 10; i++) { const t = c.begin(`Q${i}`, 'text'); c.update(t, `A${i}`, { version: 1, beats: [] }, false); c.finish(t, 'complete') }
+    const turns = r.turns
+    r.turns = () => { throw new Error('Full transcript must not be read for brain context') }
+    expect(c.context()).toEqual(Array.from({ length: 6 }, (_, i) => ({ question: `Q${i + 4}`, answer: `A${i + 4}` })))
+    r.turns = turns
+  } finally { c.close() }
+})

@@ -14,7 +14,7 @@ vi.mock('electron', async () => {
     { id: 2, bounds: { x: 1000, y: 0, width: 1000, height: 800 } },
   ]
   class BrowserWindow extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { send: vi.fn() })
+    webContents = Object.assign(new EventEmitter(), { send: vi.fn(), setWindowOpenHandler: vi.fn() })
     setIgnoreMouseEvents = vi.fn()
     setContentProtection = vi.fn()
     setAlwaysOnTop = vi.fn()

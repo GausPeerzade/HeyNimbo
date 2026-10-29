@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
   quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
@@ -15,7 +16,7 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('./home-preview', () => ({ configureHomePreview: vi.fn(), runHomePreview: mocks.preview }))
-vi.mock('./app-shell', () => ({ AppShell: vi.fn(function () { return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
+vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
@@ -94,4 +95,20 @@ it('quits a second instance without starting background capabilities', async () 
   await import('./index')
   expect(mocks.quit).toHaveBeenCalledOnce()
   for (const dependency of [mocks.audio, mocks.gestures, mocks.key, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
+})
+
+it('reconnect resets overlay listening before installing the replacement session', async () => {
+  vi.resetModules(); vi.clearAllMocks()
+  const close = vi.fn()
+  mocks.talk.mockImplementation(function () { return { close } })
+  mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
+  for (const voice of [mocks.ears, mocks.mouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
+  mocks.gestures.mockReturnValue({ ok: true, monitor: { stop: vi.fn() } }); mocks.key.mockResolvedValue('sk-fixture')
+  await import('./index')
+  await vi.waitFor(() => expect(mocks.talk).toHaveBeenCalledOnce())
+  mocks.overlays.listen.mockClear()
+  mocks.shellActions?.settingsChanged({ voice: 'cedar', showNotch: true, muted: false }, { voice: 'marin' })
+  expect(close).toHaveBeenCalledOnce()
+  expect(mocks.overlays.listen).toHaveBeenCalledWith(false)
+  expect(mocks.overlays.listen.mock.invocationCallOrder[0]!).toBeLessThan(mocks.talk.mock.invocationCallOrder.at(-1)!)
 })

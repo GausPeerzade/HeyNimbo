@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
   class BrowserWindow extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { send: vi.fn() })
+    webContents = Object.assign(new EventEmitter(), { send: vi.fn(), setWindowOpenHandler: vi.fn() })
     showInactive = vi.fn()
     hide = vi.fn()
     setIgnoreMouseEvents = vi.fn()

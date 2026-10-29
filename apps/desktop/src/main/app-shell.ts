@@ -4,11 +4,13 @@ import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
 import { clampHomeBounds, shouldShowDock } from './lifecycle'
-import { SettingsStore, validateSettings } from './settings'
+import { SettingsStore } from './settings'
+import { parseAppRequest } from './app-requests'
+import { isPageSender } from './page-security'
 import { loadPage, secureWebPreferences } from './windows'
 
 export interface ShellActions {
-  ask(question: string): void
+  ask(question: string): { accepted: true }
   stop(): void
   clear(): void
   replaceKey(): void
@@ -26,6 +28,7 @@ export class AppShell {
   home: BrowserWindow | undefined
   preferences: BrowserWindow | undefined
   private tray: Tray | undefined
+  private publishTimer: NodeJS.Timeout | undefined
   private pruneTimer: NodeJS.Timeout | undefined
   private status = ''
   private busy = false
@@ -33,9 +36,9 @@ export class AppShell {
   onChanged?: (snapshot: AppSnapshot) => void
 
   constructor(private readonly actions: ShellActions, private readonly preview = false) {
-    ipcMain.handle(AppChannels.request, (event, request: AppRequest) => {
-      if (event.sender !== this.home?.webContents && event.sender !== this.preferences?.webContents) throw new Error('Not allowed.')
-      return this.handle(request)
+    ipcMain.handle(AppChannels.request, (event, request: unknown) => {
+      if (!isPageSender(event, this.home, 'home') && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
+      return this.handle(parseAppRequest(request))
     })
     this.conversations.history.prune(this.settings.get().retention)
     this.pruneTimer = setInterval(() => { this.conversations.history.prune(this.settings.get().retention); this.publish() }, 86400000)
@@ -55,14 +58,19 @@ export class AppShell {
       saved: this.conversations.saved, version: app.getVersion(), permissions: this.preview ? { microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' } : this.actions.permissions(),
     }
   }
-  publish(): void {
+  publish(flush = false): void {
+    if (!flush) {
+      this.publishTimer ??= setTimeout(() => this.publish(true), 250)
+      return
+    }
+    clearTimeout(this.publishTimer); this.publishTimer = undefined
     const snapshot = this.snapshot()
     for (const window of [this.home, this.preferences]) if (window && !window.isDestroyed()) window.webContents.send(AppChannels.snapshot, snapshot)
     this.onChanged?.(snapshot)
   }
-  setStatus(label: string | undefined): void { this.status = label ?? ''; this.busy = Boolean(label && !label.includes('wrong') && !label.includes('unavailable')); this.publish() }
+  setStatus(label: string | undefined): void { this.status = label ?? ''; this.busy = Boolean(label && !label.includes('wrong') && !label.includes('unavailable')); this.publish(!this.busy) }
   openHome(id?: string, turnId?: string): BrowserWindow {
-    if (id && id !== this.conversations.currentId && this.conversations.list().some(c => c.id === id)) { this.actions.stop(); this.conversations.open(id) }
+    if (id && id !== this.conversations.currentId && this.conversations.get(id)) { this.actions.stop(); this.conversations.open(id) }
     if (!this.home) {
       const window = new BrowserWindow({
         ...clampHomeBounds(this.settings.get().homeBounds, screen.getAllDisplays().map(d => d.workArea)), minWidth: 720, minHeight: 520,
@@ -136,21 +144,19 @@ export class AppShell {
     ]))
   }
   private async handle(request: AppRequest): Promise<unknown> {
-    if (!request || typeof request !== 'object') throw new Error('Invalid request.')
     switch (request.kind) {
       case 'snapshot': return this.snapshot()
       case 'new': this.newConversation(); return
       case 'open': this.openHome(request.id, request.turnId); return
       case 'ask':
-        if (typeof request.question !== 'string' || !request.question.trim() || request.question.length > 16000) throw new Error('Enter a question of up to 16,000 characters.')
         if (!this.keyPresent) { this.status = 'Connect OpenAI in Settings to ask a question.'; this.publish(); return }
-        this.actions.ask(request.question.trim()); return { accepted: true }
+        return this.actions.ask(request.question.trim())
       case 'stop': this.actions.stop(); return
       case 'settings': this.openSettings(request.category); return
-      case 'search': return this.conversations.search(String(request.query).slice(0, 500))
-      case 'rename': this.conversations.rename(request.id, String(request.title)); return
+      case 'search': return this.conversations.search(request.query)
+      case 'rename': this.conversations.rename(request.id, request.title); return
       case 'contextMenu': {
-        const c = this.conversations.list().find(c => c.id === request.id)
+        const c = this.conversations.get(request.id)
         if (!c || !this.home) return
         Menu.buildFromTemplate([
           { label: 'Rename', click: () => { this.openHome(c.id).webContents.send(AppChannels.navigate, { renameId: c.id }) } },
@@ -160,7 +166,7 @@ export class AppShell {
       }
       case 'updateSettings': {
         const previous = this.settings.get()
-        const next = validateSettings(request.settings)
+        const next = request.settings
         if (typeof next.retention === 'number' && next.retention > 0 && (previous.retention === 'forever' || previous.retention === 0 || next.retention < previous.retention)) {
           if (!await this.confirm('Apply shorter history retention?', 'Older conversations, including pinned ones, will be deleted.', 'Apply retention')) { this.publish(); return }
         }
@@ -185,5 +191,5 @@ export class AppShell {
     const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
     return result.response === 1
   }
-  close(): void { clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
+  close(): void { clearTimeout(this.publishTimer); clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
 }

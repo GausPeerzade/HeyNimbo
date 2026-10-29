@@ -115,7 +115,10 @@ if (ownsInstance) app.whenReady().then(async () => {
   let talk: TalkSession | undefined
   let key: string | undefined
   const shell = new AppShell({
-    ask: (question) => { overlays.clear(); talk?.askText(question) },
+    ask: (question) => {
+      if (!talk) throw new Error('The voice connection is not ready. Try again.')
+      overlays.clear(); return talk.askText(question)
+    },
     stop: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
     clear: () => overlays.clear(),
     replaceKey: () => openSetupWindow((saved) => { key = saved; reconnect() }),
@@ -132,7 +135,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   })
   const audio = new AudioWindow((event) => talk?.onAudioEvent(event))
   const reconnect = (): void => {
-    talk?.close()
+    try { talk?.close() } finally { overlays.listen(false) }
     if (key) talk = startTalking(key, notch, overlays, audio, shell)
     shell.keyPresent = Boolean(key); shell.publish()
   }
