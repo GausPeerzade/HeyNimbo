@@ -27,7 +27,7 @@ export interface HistoryTurn {
   id: string; conversationId: string; created: number; mode: 'voice' | 'text'; question: string; answer: string
   state: 'complete' | 'interrupted' | 'error'; error: string | null; scene: DrawingScene; screenContextUsed: boolean
 }
-export interface SearchHit { conversationId: string; turnId: string; title: string; snippet: string }
+export interface SearchHit { conversationId: string; turnId: string; title: string; snippet: string; updated: number }
 export interface AppSnapshot {
   conversations: Conversation[]; currentId: string | null; turns: HistoryTurn[]; busy: boolean; activeTurnId: string | null
   status: string; settings: AppSettings; keyPresent: boolean; version: string; saved: boolean

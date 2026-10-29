@@ -69,3 +69,12 @@ it('reopens a private WAL file without rerunning migrations or losing content', 
     reopened.close()
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+it('bounds the sidebar query while old conversations remain searchable and individually loadable', () => {
+  const r = repository()
+  const old = r.create(1); r.begin(old, 'Ancient waypoint', 'text', 1)
+  for (let i = 2; i <= 250; i++) r.create(i)
+  expect(r.list()).toHaveLength(200)
+  expect(r.list().some(c => c.id === old)).toBe(false)
+  expect(r.conversation(old)?.title).toBe('Ancient waypoint')
+  expect(r.search('waypoint')[0]).toMatchObject({ conversationId: old, updated: 1 })
+})

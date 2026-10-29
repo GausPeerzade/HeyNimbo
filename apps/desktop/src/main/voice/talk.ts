@@ -4,11 +4,12 @@ import type { VoiceCommand, VoiceEvent } from '../../shared/ipc'
 import type { CaptureSpace } from '../overlay-geometry'
 import type { DrawingScene } from '../../shared/app'
 import type { ConversationController } from '../conversations'
-import { streamAnswer, type Screenshot } from './brain'
+import { streamAnswer, type Exchange, type Screenshot } from './brain'
 import type { Ears } from './ears'
 import type { Mouth } from './mouth'
 
 const MIC_STOP_TIMEOUT_MS = 1_500
+const SAVE_INTERVAL_MS = 250
 /** Declared beat budget while sentence PCM is still streaming. Drawing uses
  *  natural durations unless it would overrun this speech estimate. */
 const WORDS_PER_SECOND = 2.6
@@ -40,6 +41,9 @@ interface Turn {
   spoken: boolean
   recordId?: string
   scene: DrawingScene
+  answer: string
+  dirty: boolean
+  saveTimer?: NodeJS.Timeout
   /** Marks waiting for their sentence's audio to start, by line number. */
   readonly lines: Map<number, { marks: Mark[]; durationMs: number }>
   space?: CaptureSpace
@@ -50,6 +54,7 @@ interface Turn {
 export class TalkSession {
   private turn: Turn | undefined
   private nextId = 0
+  private errorTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: TalkDeps) {}
 
@@ -63,28 +68,38 @@ export class TalkSession {
       capture: this.deps.capture(),
       marks: new Map(),
       spoken: false,
-      scene: { version: 1, beats: [] },
+      scene: { version: 1, beats: [] }, answer: '', dirty: false,
       lines: new Map(),
     }
     this.deps.audio.send({ kind: 'micStart', id })
     this.deps.onStatus('Listening…')
   }
 
-  askText(question: string): void {
-    if (!question.trim()) return
-    this.interrupt()
+  askText(question: string): { accepted: true } {
+    if (!question.trim()) throw new Error('Enter a question.')
+    this.holdCancelled()
     const turn: Turn = {
       id: ++this.nextId, abort: new AbortController(), capture: this.deps.capture(), marks: new Map(),
-      spoken: false, lines: new Map(), scene: { version: 1, beats: [] }, releasedAt: performance.now(),
+      spoken: false, lines: new Map(), scene: { version: 1, beats: [] }, answer: '', dirty: false, releasedAt: performance.now(),
     }
     this.turn = turn
-    this.respond(turn, question.trim(), 'text').catch((error: unknown) => this.fail(turn, error))
+    try {
+      const history = this.begin(turn, question.trim(), 'text')
+      void this.respond(turn, question.trim(), history).catch((error: unknown) => this.fail(turn, error))
+      return { accepted: true }
+    } catch (error) {
+      this.fail(turn, error)
+      throw error
+    }
   }
 
   close(): void {
-    this.interrupt()
-    this.deps.ears.close()
-    this.deps.mouth.close()
+    clearTimeout(this.errorTimer)
+    try { this.holdCancelled() }
+    finally {
+      try { this.deps.ears.close() }
+      finally { this.deps.mouth.close() }
+    }
   }
 
   holdEnded(): void {
@@ -100,8 +115,8 @@ export class TalkSession {
   }
 
   holdCancelled(): void {
-    this.interrupt()
-    this.deps.onStatus(undefined)
+    try { this.interrupt() }
+    finally { this.deps.onStatus(undefined) }
   }
 
   onAudioEvent(event: VoiceEvent): void {
@@ -147,14 +162,18 @@ export class TalkSession {
     this.mark(turn, 'transcript')
     if (turn.abort.signal.aborted) return
     if (!question) return this.finish(turn)
-    await this.respond(turn, question, 'voice')
+    const history = this.begin(turn, question, 'voice')
+    await this.respond(turn, question, history)
   }
 
-  private async respond(turn: Turn, question: string, mode: 'voice' | 'text'): Promise<void> {
-    if (!question) return
+  private begin(turn: Turn, question: string, mode: 'voice' | 'text'): Exchange[] {
     const history = this.deps.conversations.context()
     turn.recordId = this.deps.conversations.begin(question, mode)
     this.deps.onStatus('Thinking…')
+    return history
+  }
+
+  private async respond(turn: Turn, question: string, history: Exchange[]): Promise<void> {
     const display = (await turn.capture)?.displays[0]
     if (turn.abort.signal.aborted) return
     const screenshot = toScreenshot(display)
@@ -163,7 +182,13 @@ export class TalkSession {
     let speech: Promise<void> = Promise.resolve()
     let lineNumber = 0
     let answer = ''
-    const save = (): void => this.deps.conversations.update(turn.recordId!, answer.replace(/^@[^\n]*(?:\n|$)/gm, '').trim(), turn.scene, Boolean(display))
+    const save = (): void => {
+      turn.answer = answer.replace(/^@[^\n]*(?:\n|$)/gm, '').trim()
+      turn.dirty = true
+      turn.saveTimer ??= setTimeout(() => {
+        try { this.flush(turn) } catch (error) { this.fail(turn, error) }
+      }, SAVE_INTERVAL_MS)
+    }
     const say = ({ sentence, marks }: Beat): void => {
       if (turn.space && marks.length) turn.scene.beats.push({ sentence, marks, space: turn.space })
       save()
@@ -193,36 +218,59 @@ export class TalkSession {
       history,
       signal: turn.abort.signal,
     })) {
+      if (turn.abort.signal.aborted) break
       if (!answer) this.mark(turn, 'first token')
       answer += delta
       save()
       beats.push(delta).forEach(say)
     }
+    if (turn.abort.signal.aborted) return
     beats.flush().forEach(say)
+    this.flush(turn)
     await speech
     if (turn.abort.signal.aborted) return
     turn.spoken = true
     this.deps.audio.send({ kind: 'playEnd' })
   }
 
-  /** Stops listening, thinking and speaking for the current turn. */
-  private interrupt(): void {
+  private flush(turn: Turn): void {
+    clearTimeout(turn.saveTimer); turn.saveTimer = undefined
+    if (!turn.dirty || !turn.recordId) return
+    this.deps.conversations.update(turn.recordId, turn.answer, turn.scene, Boolean(turn.space))
+    turn.dirty = false
+  }
+
+  private saveOutcome(turn: Turn, state: 'complete' | 'interrupted' | 'error', error: string | null = null): void {
+    try { this.flush(turn) }
+    catch { console.warn('[talk] Could not save the latest answer.') }
+    try { if (turn.recordId) this.deps.conversations.finish(turn.recordId, state, error) }
+    catch { console.warn('[talk] Could not save the turn state.') }
+  }
+
+  /** Persistence must never prevent microphone, network or speech cleanup. */
+  private interrupt(state: 'interrupted' | 'error' = 'interrupted', error: string | null = null): void {
     const turn = this.turn
     if (!turn) return
     this.turn = undefined
-    if (turn.recordId) this.deps.conversations.finish(turn.recordId, 'interrupted')
-    turn.abort.abort()
-    turn.micStopped?.()
-    this.deps.ears.cancel()
-    this.deps.mouth.cancel()
-    this.deps.audio.send({ kind: 'micStop' })
-    this.deps.audio.send({ kind: 'playCancel' })
+    try { this.saveOutcome(turn, state, error) }
+    finally {
+      turn.abort.abort()
+      turn.micStopped?.()
+      try { this.deps.ears.cancel() }
+      finally {
+        try { this.deps.mouth.cancel() }
+        finally {
+          try { this.deps.audio.send({ kind: 'micStop' }) }
+          finally { this.deps.audio.send({ kind: 'playCancel' }) }
+        }
+      }
+    }
   }
 
   private finish(turn: Turn): void {
     if (this.turn !== turn) return
     this.turn = undefined
-    if (turn.recordId) this.deps.conversations.finish(turn.recordId, 'complete')
+    this.saveOutcome(turn, 'complete')
     if (turn.releasedAt !== undefined && turn.marks.size > 0) {
       const timings = [...turn.marks].map(([label, at]) => `${label} ${Math.round(at - turn.releasedAt!)}ms`)
       console.info(`[talk] after release: ${timings.join(', ')}`)
@@ -233,10 +281,10 @@ export class TalkSession {
   private fail(turn: Turn, error: unknown): void {
     if (turn.abort.signal.aborted || this.turn !== turn) return
     console.warn(`[talk] ${error instanceof Error ? error.message : String(error)}`)
-    if (turn.recordId) this.deps.conversations.finish(turn.recordId, 'error', error instanceof Error ? error.message : String(error))
-    this.interrupt()
+    this.interrupt('error', error instanceof Error ? error.message : String(error))
     this.deps.onStatus('Something went wrong; see Home')
-    setTimeout(() => {
+    clearTimeout(this.errorTimer)
+    this.errorTimer = setTimeout(() => {
       if (!this.turn) this.deps.onStatus(undefined)
     }, 2_500)
   }

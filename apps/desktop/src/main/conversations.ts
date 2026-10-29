@@ -12,7 +12,15 @@ export class ConversationController {
   private get repository(): HistoryRepository { return this.saved ? this.history : this.temporary }
   get currentId(): string | null { return this.current }
   get activeTurnId(): string | null { return this.active?.id ?? null }
-  list() { return this.repository.list() }
+  list() {
+    const conversations = this.repository.list()
+    if (this.current && !conversations.some(c => c.id === this.current)) {
+      const current = this.repository.conversation(this.current)
+      if (current) conversations.push(current)
+    }
+    return conversations
+  }
+  get(id: string) { return this.repository.conversation(id) }
   turns(): HistoryTurn[] { return this.current ? this.repository.turns(this.current) : [] }
   newConversation(): string {
     this.current = this.repository.create()
@@ -25,11 +33,20 @@ export class ConversationController {
     this.changed()
   }
   context(): Exchange[] {
-    return this.turns().filter(turn => turn.state === 'complete' && turn.id !== this.active?.id).slice(-6).map(({ question, answer }) => ({ question, answer }))
+    return this.current ? this.repository.context(this.current, this.active?.id) : []
   }
   begin(question: string, mode: HistoryTurn['mode']): string {
-    if (!this.current || !this.repository.exists(this.current)) this.current = this.repository.create()
-    const id = this.repository.begin(this.current, question, mode)
+    const previous = this.current
+    const conversationId = previous && this.repository.exists(previous) ? previous : this.repository.create()
+    let id: string
+    try { id = this.repository.begin(conversationId, question, mode) }
+    catch (error) {
+      if (conversationId !== previous) {
+        try { this.repository.delete(conversationId) } catch { console.warn('[history] Could not remove an empty conversation.') }
+      }
+      throw error
+    }
+    this.current = conversationId
     this.active = { id, repository: this.repository }
     this.changed()
     return id
@@ -41,9 +58,8 @@ export class ConversationController {
   }
   finish(id: string, state: HistoryTurn['state'], error: string | null = null): void {
     if (this.active?.id !== id) return
-    this.active.repository.finish(id, state, error)
-    this.active = undefined
-    this.changed()
+    try { this.active.repository.finish(id, state, error) }
+    finally { this.active = undefined; this.changed() }
   }
   reset(): void { this.current = null; this.changed() }
   search(query: string) { return this.repository.search(query) }

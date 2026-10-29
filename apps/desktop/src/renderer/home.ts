@@ -1,6 +1,7 @@
 import { button, element, icon, isSnapshot, request } from './app-dom'
 import type { AppSnapshot, Conversation, SearchHit } from '../shared/app'
-import { sceneThumbnail } from './scene-thumbnail'
+import { TurnTranscript } from './turn-transcript'
+import { ConversationSearch } from './conversation-search'
 import logo from '../../build/brand/logo.png?url'
 import darkLogo from '../../build/brand/logo-dark.png?url'
 
@@ -12,9 +13,9 @@ const title = document.getElementById('title')!
 const renameForm = document.getElementById('rename-form') as HTMLFormElement
 const rename = document.getElementById('rename') as HTMLInputElement
 let snapshot: AppSnapshot | undefined
-let transcriptKey = '', renderedId: string | null = null, renameId = '', searchSequence = 0
+let emptyKey = '', renderedId: string | null = null, renameId = ''
+const turnTranscript = new TurnTranscript(transcript)
 const drafts = new Map<string, string>(), scrollPositions = new Map<string, number>()
-let searchTimer: ReturnType<typeof setTimeout>
 const time = (date: number): string => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
 
 function row(c: Conversation, hit?: SearchHit): HTMLButtonElement {
@@ -43,9 +44,6 @@ function renderSidebar(): void {
   if (focused) [...conversations.querySelectorAll<HTMLButtonElement>('button')].find(b => b.dataset.id === focused)?.focus()
 }
 function renderTranscript(s: AppSnapshot): void {
-  const key = JSON.stringify([s.currentId, s.turns, s.activeTurnId, s.keyPresent])
-  if (key === transcriptKey) return
-  transcriptKey = key
   const nearBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 100
   const oldScroll = transcript.scrollTop
   const changedConversation = renderedId !== s.currentId
@@ -53,9 +51,11 @@ function renderTranscript(s: AppSnapshot): void {
     if (renderedId) { drafts.set(renderedId, question.value); scrollPositions.set(renderedId, oldScroll) }
     question.value = drafts.get(s.currentId ?? '') ?? ''
     renderedId = s.currentId
+    turnTranscript.clear(); transcript.replaceChildren(); emptyKey = ''
   }
-  transcript.replaceChildren()
-  if (!s.turns.length) {
+  const key = String(s.keyPresent)
+  if (!s.turns.length && emptyKey !== key) {
+    turnTranscript.clear(); transcript.replaceChildren(); emptyKey = key
     const empty = element('section', s.keyPresent ? 'empty' : 'empty connection-needed')
     const picture = element('picture'), source = element('source'), image = element('img')
     source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
@@ -67,15 +67,9 @@ function renderTranscript(s: AppSnapshot): void {
     }
     transcript.append(empty)
   }
-  for (const turn of s.turns) {
-    const section = element('section', 'turn'); section.id = `turn-${turn.id}`
-    section.append(element('h2', 'question', turn.question), element('p', 'turn-meta', `${turn.mode === 'voice' ? 'Voice' : 'Text'} · ${time(turn.created)} · ${turn.screenContextUsed ? 'Screen context used, not saved' : s.activeTurnId === turn.id ? 'Preparing screen context' : 'No screen context used'}`))
-    section.append(element('p', 'answer', turn.answer || (s.activeTurnId === turn.id ? 'Thinking…' : 'No answer received.')))
-    if (s.activeTurnId === turn.id) section.append(element('p', 'turn-state', 'In progress · partial answer'))
-    else if (turn.state !== 'complete') section.append(element('p', `turn-state ${turn.state}`, turn.state === 'interrupted' ? 'Interrupted · this answer may be incomplete' : `Error · ${turn.error ?? 'The answer failed. Check your connection and try again.'}`))
-    const svg = sceneThumbnail(turn.scene)
-    if (svg) { const figure = element('figure', 'drawing'); figure.append(svg, element('figcaption', '', 'Generated drawing · screen image not saved')); section.append(figure) }
-    transcript.append(section)
+  if (s.turns.length) {
+    if (emptyKey) { transcript.replaceChildren(); emptyKey = '' }
+    turnTranscript.render(s.turns, s.activeTurnId)
   }
   requestAnimationFrame(() => { transcript.scrollTop = changedConversation ? scrollPositions.get(s.currentId ?? '') ?? 0 : nearBottom ? transcript.scrollHeight : oldScroll })
 }
@@ -88,19 +82,22 @@ function render(s: AppSnapshot): void {
   document.getElementById('feedback')!.textContent = s.status
   document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? 'Kept until deleted' : `Saved locally for ${s.settings.retention} days`
 }
-async function performSearch(): Promise<void> {
-  const sequence = ++searchSequence, query = search.value.trim()
-  if (!query) { renderSidebar(); return }
-  const hits = await request({ kind: 'search', query }) as SearchHit[] | undefined
-  if (sequence !== searchSequence || !hits || !snapshot) return
-  conversations.replaceChildren(element('h2', '', 'Search results'))
-  for (const hit of hits) {
-    const c = snapshot.conversations.find(c => c.id === hit.conversationId)
-    if (c) conversations.append(row(c, hit))
-  }
-  if (!hits.length) conversations.append(element('p', 'no-results', 'No conversations match your search.'), button('Clear search', () => { search.value = ''; renderSidebar(); search.focus() }))
-}
-search.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { void performSearch() }, 120) }
+const conversationSearch = new ConversationSearch(
+  () => search.value,
+  async query => await request({ kind: 'search', query }) as SearchHit[] | undefined,
+  hits => {
+    if (!hits) { renderSidebar(); return }
+    if (!snapshot) return
+    conversations.replaceChildren(element('h2', '', 'Search results'))
+    for (const hit of hits) {
+      const c = snapshot.conversations.find(c => c.id === hit.conversationId) ?? { id: hit.conversationId, title: hit.title, created: hit.updated, updated: hit.updated, pinned: false, archived: false, preview: hit.snippet }
+      conversations.append(row(c, hit))
+    }
+    if (!hits.length) conversations.append(element('p', 'no-results', 'No conversations match your search.'), button('Clear search', () => { clearSearch(); search.focus() }))
+  },
+)
+function clearSearch(): void { search.value = ''; conversationSearch.changed() }
+search.oninput = () => conversationSearch.changed()
 question.oninput = () => { drafts.set(snapshot?.currentId ?? '', question.value) }
 async function ask(): Promise<void> {
   if (snapshot?.busy || !question.value.trim()) return
@@ -123,7 +120,7 @@ document.onkeydown = event => {
   if (event.key === 'Escape') {
     if (snapshot?.busy) void request({ kind: 'stop' })
     else if (!renameForm.hidden) { renameForm.hidden = true; title.hidden = false; question.focus() }
-    else if (search.value) { search.value = ''; renderSidebar(); question.focus() }
+    else if (search.value) { clearSearch(); question.focus() }
     else question.focus()
   }
 }

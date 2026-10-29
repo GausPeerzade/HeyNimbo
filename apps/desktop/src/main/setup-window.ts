@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { Channels, type SaveKeyResult } from '../shared/ipc'
 import { saveOpenAIKey, validateOpenAIKey } from './secrets'
+import { isPageSender } from './page-security'
 import { loadPage, secureWebPreferences } from './windows'
 
 let setup: BrowserWindow | undefined
@@ -19,7 +20,7 @@ export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
   })
   setup = window
   ipcMain.handle(Channels.saveOpenAIKey, async (event, key: unknown): Promise<SaveKeyResult> => {
-    if (event.sender !== window.webContents) return { ok: false, reason: 'Not allowed.' }
+    if (!isPageSender(event, window, 'setup')) return { ok: false, reason: 'Not allowed.' }
     const trimmed = typeof key === 'string' ? key.trim() : ''
     if (!/^sk-[\w-]{20,}$/.test(trimmed)) return { ok: false, reason: 'That does not look like an OpenAI API key.' }
     const valid = await validateOpenAIKey(trimmed)

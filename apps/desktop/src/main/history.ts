@@ -46,8 +46,15 @@ export class HistoryRepository {
   }
   list(): Conversation[] {
     const rows = this.db.prepare(`SELECT c.*, COALESCE((SELECT CASE WHEN answer='' THEN question ELSE answer END FROM turns WHERE conversation_id=c.id ORDER BY created DESC,rowid DESC LIMIT 1),'') AS preview
-      FROM conversations c WHERE archived=0 ORDER BY pinned DESC, updated DESC, rowid DESC`).all()
+      FROM conversations c WHERE archived=0 ORDER BY pinned DESC, updated DESC, rowid DESC LIMIT 200`).all()
     return rows.map(row => ({ ...row, pinned: Boolean(row.pinned), archived: Boolean(row.archived) })) as unknown as Conversation[]
+  }
+  conversation(id: string): Conversation | undefined {
+    const row = this.db.prepare(`SELECT c.*, COALESCE((SELECT CASE WHEN answer='' THEN question ELSE answer END FROM turns WHERE conversation_id=c.id ORDER BY created DESC,rowid DESC LIMIT 1),'') AS preview FROM conversations c WHERE id=?`).get(id)
+    return row ? { ...row, pinned: Boolean(row.pinned), archived: Boolean(row.archived) } as unknown as Conversation : undefined
+  }
+  context(id: string, excludeId = ''): Array<{ question: string; answer: string }> {
+    return (this.db.prepare(`SELECT question,answer FROM turns WHERE conversation_id=? AND state='complete' AND id != ? ORDER BY created DESC,rowid DESC LIMIT 6`).all(id, excludeId) as unknown as Array<{ question: string; answer: string }>).reverse()
   }
   exists(id: string): boolean { return Boolean(this.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id)) }
   turns(id: string): HistoryTurn[] {
@@ -83,7 +90,7 @@ export class HistoryRepository {
     const words = query.trim().match(/[\p{L}\p{N}]+/gu)
     if (!words?.length) return []
     const match = words.map(word => `"${word}"*`).join(' AND ')
-    return this.db.prepare(`SELECT conversation_id AS conversationId,turn_id AS turnId,title,snippet(turn_search,-1,'[',']','…',20) AS snippet
+    return this.db.prepare(`SELECT conversation_id AS conversationId,turn_id AS turnId,title,(SELECT updated FROM conversations WHERE id=turn_search.conversation_id) AS updated,snippet(turn_search,-1,'[',']','…',20) AS snippet
       FROM turn_search WHERE turn_search MATCH ? ORDER BY rank LIMIT 100`).all(match) as unknown as SearchHit[]
   }
   prune(retention: Retention, now = Date.now()): void {
