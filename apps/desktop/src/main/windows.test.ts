@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({
   windows: [] as Array<{
     options: Record<string, unknown>
     emit: (event: string) => void
-    webContents: { emit: (event: string) => void }
+    webContents: { emit: (event: string) => void; send: ReturnType<typeof vi.fn> }
     showInactive: ReturnType<typeof vi.fn>
     hide: ReturnType<typeof vi.fn>
     setIgnoreMouseEvents: ReturnType<typeof vi.fn>
@@ -64,6 +64,15 @@ function overlay(): typeof state.windows[number] {
   new OverlayManager().sync()
   return state.windows[0]!
 }
+
+describe('3D lines ahead of their beat', () => {
+  it('sends streamed model lines to the display that will draw them, converted to its space', () => {
+    const manager = new OverlayManager(); manager.sync()
+    const window = state.windows[0]!
+    manager.prepare([{ kind: 'model', id: 'pump', x: 100, y: 50, w: 600, h: 500, title: 'Pump', turntable: true }], { frame: { x: 0, y: 0, width: 1440, height: 900 }, pixelWidth: 2880, pixelHeight: 1800 })
+    expect(window.webContents.send).toHaveBeenCalledWith('nimbo:overlay', { kind: 'prepare', marks: [{ kind: 'model', id: 'pump', x: 50, y: 25, w: 320, h: 250, title: 'Pump', turntable: true }], epoch: 0 })
+  })
+})
 
 describe('passive window transparency', () => {
   it('keeps an overlay hidden until both page load and first paint have succeeded', async () => {

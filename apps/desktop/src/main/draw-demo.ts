@@ -3,12 +3,14 @@ import type { Mark } from '../shared/beats'
 import { devFlag } from './dev'
 import type { OverlayManager } from './windows'
 import { pumpDemo } from './pump-demo'
-import { isolateDevProfile } from './dev-profile'
+import { isolateDevProfile, launchInBackground } from './dev-profile'
 
 let cleanupProfile: (() => void) | undefined
 
 export function configureDrawDemo(): void {
-  if (devFlag('NIMBO_DEBUG_DRAW_DEMO')) cleanupProfile = isolateDevProfile('draw-demo')
+  if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return
+  launchInBackground()
+  cleanupProfile = isolateDevProfile('draw-demo')
 }
 
 /** A last-resort process deadline, installed before waiting for app readiness. */

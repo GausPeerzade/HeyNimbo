@@ -30,6 +30,9 @@ export type OverlayCommand =
   /** Front-load marks (overlay CSS pixels) within the declared speech budget.
    *  `from` seeds the single pen buddy, usually at the cursor. */
   | { kind: 'beat'; marks: Mark[]; durationMs: number; from?: OverlayRing; epoch: number }
+  /** 3D lines (@model, @part) as soon as they stream in, so geometry is built
+   *  before their beat. The same marks still arrive, and draw, with their beat. */
+  | { kind: 'prepare'; marks: Mark[]; epoch: number }
   /** Another display now owns the single buddy; retain this display's ink. */
   | { kind: 'park' }
   | { kind: 'fade'; from?: OverlayRing }

@@ -111,11 +111,15 @@ SOFTWARE.
 
 ## three.js and @types/three
 
-three.js (MIT), including RoundedBoxGeometry, BufferGeometryUtils, RoomEnvironment
-and PMREMGenerator, and the stencil winding/cap technique from the official
-`examples/webgl_clipping_stencil.html`. RoomEnvironment supplies studio lighting
-only; no environment image is downloaded. The hatch pattern,
-procedural part recipes, framing and label layout are independently authored.
+three.js (MIT), including RoundedBoxGeometry, BufferGeometryUtils (mergeGeometries,
+mergeVertices, toCreasedNormals), RoomEnvironment, PMREMGenerator and the
+HorizontalBlurShader/VerticalBlurShader, plus two techniques from the official
+examples: the stencil winding/cap pass of `examples/webgl_clipping_stencil.html`,
+and the blurred from-below contact shadow of `examples/webgl_shadow_contact.html`.
+RoomEnvironment supplies studio lighting only; no environment image is
+downloaded. The hatch pattern, hollow casings, procedural part recipes
+(crease-aware revolve, involute gears, closed-end springs, blobs, extrusions),
+ink outlines, framing and label layout are independently authored.
 @types/three is MIT, Copyright (c) Microsoft Corporation (DefinitelyTyped contributors).
 
 The MIT License

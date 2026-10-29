@@ -3,13 +3,15 @@ import { afterEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
-  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(),
+  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(),
+  policy: vi.fn(), menu: vi.fn(), dockHide: vi.fn(),
   mkdtemp: vi.fn(() => '/tmp/nimbo-draw-demo-fixture'), removeProfile: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
 }))
 
 vi.mock('electron', () => ({
-  app: { setPath: mocks.paths, getLoginItemSettings: () => ({ wasOpenedAtLogin: false }), requestSingleInstanceLock: mocks.lock, isPackaged: false, whenReady: () => Promise.resolve(), on: vi.fn(), dock: { hide: vi.fn() }, quit: mocks.quit, exit: mocks.exit },
+  app: { setPath: mocks.paths, getLoginItemSettings: () => ({ wasOpenedAtLogin: false }), requestSingleInstanceLock: mocks.lock, isPackaged: false, whenReady: () => Promise.resolve(), on: vi.fn(), dock: { hide: mocks.dockHide }, quit: mocks.quit, exit: mocks.exit, setActivationPolicy: mocks.policy, isActive: () => false },
+  Menu: { setApplicationMenu: mocks.menu },
   screen: {
     on: vi.fn(),
     getCursorScreenPoint: () => ({ x: 500, y: 400 }),
@@ -18,6 +20,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('node:fs', async (load) => ({ ...await load<typeof import('node:fs')>(), mkdtempSync: mocks.mkdtemp, rmSync: mocks.removeProfile }))
 vi.mock('./home-preview', () => ({ configureHomePreview: vi.fn(), runHomePreview: mocks.preview }))
+vi.mock('./model-gallery', async (load) => ({ ...await load<typeof import('./model-gallery')>(), runModelGallery: mocks.gallery }))
 vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
@@ -49,7 +52,10 @@ it('boots the real demo branch without constructing audio, starting talk or acce
   expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-draw-demo-')
   expect(mocks.paths.mock.calls).toEqual([['userData', '/tmp/nimbo-draw-demo-fixture'], ['sessionData', '/tmp/nimbo-draw-demo-fixture']])
   expect(mocks.paths.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
-  expect(mocks.overlays.drawBeat).toHaveBeenCalledTimes(19)
+  // Launched background-only with no app menu, so it can never take focus or switch the user's Space.
+  expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
+  expect(mocks.policy.mock.invocationCallOrder[0]!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
+  expect(mocks.overlays.drawBeat.mock.calls.length).toBeGreaterThan(11)
   expect(mocks.overlays.onStrokeStarted).toBeUndefined()
   for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell]) {
     expect(dependency).not.toHaveBeenCalled()
@@ -88,6 +94,16 @@ it('starts each question on a clean screen and shows the ear only while talk is 
   expect(session.holdCancelled).toHaveBeenCalledOnce()
 })
 
+it('runs the hidden 3D gallery in its own profile, launched background-only, with no capture, gesture, audio or credential pipeline', async () => {
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_GALLERY', '1')
+  vi.spyOn(process, 'uptime').mockReturnValue(0)
+  await import('./index')
+  await vi.waitFor(() => expect(mocks.gallery).toHaveBeenCalledOnce())
+  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-model-gallery-')
+  expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
+  for (const before of [mocks.policy, mocks.paths]) expect(before.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
+  for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
+})
 it('routes Home preview before creating any capture, gesture, audio or credential pipeline', async () => {
   vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_HOME_PREVIEW', '1')
   await import('./index')

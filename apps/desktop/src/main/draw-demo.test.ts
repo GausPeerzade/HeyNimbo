@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 }))
 
 import { limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
+import { pumpDemo } from './pump-demo'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -39,11 +40,14 @@ describe('drawing demo safety', () => {
     expect(overlays.drawBeat.mock.calls.flatMap(([marks]) => marks.map((mark: { kind: string }) => mark.kind))).toEqual([
       'card', 'heading', 'arc', 'curve', 'card', 'heading', 'step', 'label', 'step', 'label', 'step', 'step', 'note', 'point',
     ])
-    await vi.advanceTimersByTimeAsync(18501)
+    const pump = pumpDemo(1440, 900), pumpMs = pump.reduce((sum, beat) => sum + beat.durationMs, 0)
+    // Start delay, the brisk 2D part, the pump and the linger before quitting fit the forty-second cap.
+    expect(3000 + 9839 + pumpMs + 6500).toBeLessThan(40_000)
+    await vi.advanceTimersByTimeAsync(pumpMs + 1)
     expect(overlays.clear).toHaveBeenCalledTimes(2)
-    expect(overlays.drawBeat).toHaveBeenCalledTimes(19)
+    expect(overlays.drawBeat).toHaveBeenCalledTimes(11 + pump.length)
     const pumpMarks = overlays.drawBeat.mock.calls.slice(11).flatMap(([marks]) => marks)
-    expect(pumpMarks.filter((mark) => mark.kind === 'part')).toHaveLength(18)
+    expect(pumpMarks.filter((mark) => mark.kind === 'part')).toHaveLength(pump.flatMap((beat) => beat.marks).filter((mark) => mark.kind === 'part').length)
     expect(pumpMarks.find((mark) => mark.kind === 'cut')).toMatchObject({ axis: 'z' })
     expect(pumpMarks.find((mark) => mark.kind === 'move')).toMatchObject({ part: 'rod', motion: 'slide' })
     expect(overlays.answerDone).toHaveBeenCalledWith(4500)

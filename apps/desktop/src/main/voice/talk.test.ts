@@ -13,7 +13,7 @@ function fixture(capture: Promise<ScreenCaptures | undefined> = Promise.resolve(
   const deps = {
     key: 'not-a-real-key', conversations: c, ears: { begin: vi.fn(), append: vi.fn(), finish: vi.fn(async () => 'A spoken question'), cancel: vi.fn(), close: vi.fn() },
     mouth: { speak: vi.fn(async () => {}), cancel: vi.fn(), close: vi.fn() }, capture: () => capture,
-    audio: { send: vi.fn() }, onStatus: vi.fn(), drawing: { draw: vi.fn(), answerDone: vi.fn() },
+    audio: { send: vi.fn() }, onStatus: vi.fn(), drawing: { draw: vi.fn(), answerDone: vi.fn(), prepare: vi.fn() },
   } as unknown as TalkDeps
   return { c, deps, talk: new TalkSession(deps) }
 }
@@ -120,4 +120,23 @@ it('coalesces token/scene writes at 250 ms and flushes the final answer immediat
   talk.onAudioEvent({ kind: 'playbackDrained' })
   await vi.advanceTimersByTimeAsync(1000); expect(update).toHaveBeenCalledTimes(2)
   vi.useRealTimers()
+})
+it('forwards each 3D line as it streams in, before its sentence is spoken or drawn', async () => {
+  const frame = { x: 0, y: 0, width: 1200, height: 800 }
+  const { talk, deps } = fixture(Promise.resolve({ captureMs: 1, encodeMs: 1, displays: [{ displayId: 1, frame, pixelWidth: 1200, pixelHeight: 800, jpeg: Buffer.from('x') }] }))
+  let releaseSentence!: () => void
+  const sentenceArrives = new Promise<void>((resolve) => { releaseSentence = resolve })
+  mocks.stream.mockImplementation(async function* () {
+    yield '@model pump 40 40 600 560 "Pump"\n@part pump barrel tube\n@circle 1 2 3\n'
+    await sentenceArrives
+    yield 'The barrel holds the air.'
+  })
+  talk.askText('How does a pump work?')
+  await vi.waitFor(() => expect(deps.drawing.prepare).toHaveBeenCalledTimes(2))
+  const prepared = vi.mocked(deps.drawing.prepare!).mock.calls.map(([marks]) => marks[0]!.kind)
+  expect(prepared).toEqual(['model', 'part'])
+  expect(deps.mouth.speak).not.toHaveBeenCalled(); expect(deps.drawing.draw).not.toHaveBeenCalled()
+  expect(vi.mocked(deps.drawing.prepare!).mock.calls[0]![1]).toMatchObject({ frame, pixelWidth: 1200 })
+  releaseSentence()
+  await vi.waitFor(() => expect(deps.mouth.speak).toHaveBeenCalled())
 })

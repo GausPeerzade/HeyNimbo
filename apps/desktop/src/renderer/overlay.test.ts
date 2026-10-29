@@ -6,16 +6,28 @@ vi.mock('./model-stage', async () => {
   const { ModelGraph } = await import('./model-geometry')
   return { ModelStage: class {
     graph = new ModelGraph()
-    margin = 120
+    labelWidth = 160
+    framing = 0
+    turned = 0
+    waiting = 0
+    mountedAt = 0
+    host: unknown
+    options: any
     afterRender?: () => void
     visit?: () => void
     offset = 0
     revealCalls: Array<{ name: string; progress: number }> = []
+    widenReserve = vi.fn()
+    hold = vi.fn()
+    locate = vi.fn()
+    dressNext = vi.fn()
     dispose = vi.fn(() => { this.graph.dispose(); this.afterRender = undefined; this.visit = undefined })
-    constructor(readonly host: unknown, readonly options: any) { modelMocks.stages.push(this) }
-    prepare(spec: any) { return this.graph.add(spec) }
+    constructor() { modelMocks.stages.push(this) }
+    mount(host: unknown, options: any) { this.host = host; this.options = options; return this }
+    prepare(spec: any) { return this.graph.parts.get(spec.name) ?? this.graph.add(spec) }
     reveal(part: any, progress: number) { this.graph.reveal(part, progress); this.revealCalls.push({ name: part.spec.name, progress }) }
-    project() { return [200 + this.offset, 100 + this.offset] }
+    project(_name: string, out = [0, 0]) { out[0] = 200 + this.offset; out[1] = 100 + this.offset; return out }
+    projectSettled(_name: string, out = [0, 0]) { out[0] = 200; out[1] = 100; return out }
     labelEdges() { return [150, 300] }
     move = vi.fn()
     tick() { this.afterRender?.(); this.visit?.(); return false }
@@ -262,6 +274,52 @@ describe('overlay model beats', () => {
     expect(app.stage.all('note')).toEqual(words)
     expect(words.map((node) => [...node.attributes])).toEqual(attrs)
     expect(app.stage.all('leader-dot')[0]!.getAttribute('cx')).toBe('286')
+  })
+  it('builds the stage and part geometry from streamed lines before their beat, and the beat adopts them', async () => {
+    const app = await setup()
+    const barrel = await part()
+    app.receive({ kind: 'prepare', marks: [model(), barrel], epoch: 1 })
+    expect(modelMocks.stages).toHaveLength(1)
+    const stage = modelMocks.stages[0]!, prepared = stage.graph.parts.get('barrel')
+    expect(prepared).toBeDefined()
+    app.beat([model(), barrel], 1500); app.pump(1500)
+    expect(modelMocks.stages).toHaveLength(1)
+    expect(stage.graph.parts.get('barrel')).toBe(prepared)
+    expect(stage.revealCalls.at(-1)).toEqual({ name: 'barrel', progress: 1 })
+    // A prepared model whose card never arrives is released with the rest of the drawing.
+    app.receive({ kind: 'prepare', marks: [model('next')], epoch: 1 })
+    app.receive({ kind: 'clear' })
+    expect(modelMocks.stages[1]!.dispose).toHaveBeenCalledOnce()
+  })
+  it('starts a model part growing at once on its beat, while its card fades in alongside', async () => {
+    const app = await setup()
+    app.receive({ kind: 'cursor', at: { x: 1100, y: 800 } })
+    app.beat([model(), await part()], 1500)
+    app.pump(60)
+    const stage = modelMocks.stages[0]!
+    // No flight across the screen first: the part is already growing within a few frames.
+    expect(stage.revealCalls.some((call: { progress: number }) => call.progress > 0)).toBe(true)
+    const opacity = Number(app.stage.all('paper-card')[0]!.getAttribute('opacity'))
+    expect(opacity).toBeGreaterThan(0); expect(opacity).toBeLessThan(1)
+    app.pump(600)
+    expect(app.stage.all('paper-card')[0]!.getAttribute('opacity')).toBe('1')
+  })
+  it('glides labels to a re-solved slot when the framing changes, instead of jumping', async () => {
+    const app = await setup()
+    app.beat([model(), await part()], 1500); app.pump(1500)
+    app.beat([{ kind: 'tag', id: 'pump', part: 'barrel', text: 'Air chamber', side: 'left' }], 1700); app.pump(1700)
+    const stage = modelMocks.stages[0]!, group = app.stage.all('model-label')[0]!
+    expect(group.getAttribute('transform')).toBeNull()
+    stage.projectSettled = (_name: string, out = [0, 0]) => { out[0] = 200; out[1] = 300; return out }
+    stage.framing++
+    const shifts: number[] = []
+    app.pump(600, () => { stage.tick(); const match = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(group.getAttribute('transform') ?? ''); if (match) shifts.push(Number(match[2])) })
+    expect(stage.hold).toHaveBeenCalled()
+    // It settles on the slot nearest the anchor's new height, within one slot step.
+    expect(Math.abs(shifts.at(-1)! - 200)).toBeLessThan(28)
+    // Several in-between positions on the way: a glide, not a jump.
+    expect(shifts.filter((shift) => shift > 1 && shift < 199).length).toBeGreaterThan(3)
+    expect(shifts.every((shift, i) => i === 0 || shift >= shifts[i - 1]! - 1e-9)).toBe(true)
   })
   it('close and clear dispose only their contexts and cancel queued reveals/leaders without orphans', async () => {
     const app = await setup()

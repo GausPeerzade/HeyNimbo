@@ -2,7 +2,7 @@ import type { Mark } from '../shared/beats'
 import { MODEL_LIMITS } from '../shared/model-protocol'
 import { ModelStage } from './model-stage'
 import { labelSlots, type LabelSlot } from './model-geometry'
-import { CardScene, layoutFlow, markCenter, objectPoint, BADGE_RADIUS, type CardState, type SceneObject } from './card-scene'
+import { CardScene, contains, layoutFlow, markCenter, objectPoint, BADGE_RADIUS, type CardState, type SceneObject } from './card-scene'
 import { sampleWriting, wrapWriting, writingDuration, type WritingLayout } from './handwriting'
 import { FrameTrace } from './frame-trace'
 import type { OverlayCommand, OverlayRing } from '../shared/ipc'
@@ -21,12 +21,36 @@ interface ModelLabel {
   mark: Extract<Mark, { kind: 'tag' }>
   owner: SceneObject
   writing: WritingLayout
+  /** The widest written line. */
+  width: number
+  /** True once the tag's own beat has begun; only begun labels hold a slot. */
+  started: boolean
   slot?: LabelSlot
+  /** Where the words were first written, in overlay coordinates. */
   words?: Point
+  /** The slot the words now belong at, and the offset they have glided so far. */
+  goal?: Point
+  shift: Point
+  glide?: { from: Point; start: number }
+  /** The stage framing and hand-turn count the slot was solved for. */
+  framing: number
+  turned: number
+  group?: SVGGElement
   dot?: SVGCircleElement
   leader?: SVGPathElement
 }
+/** Labels slide to a re-solved slot rather than jumping. */
+const LABEL_GLIDE_MS = 420
 const modelLabels = new Map<ModelStage, ModelLabel[]>()
+/** Reused for every per-frame projection. */
+const projected: Point = [0, 0]
+/** A warm 3D stage (context, studio light, compiled shaders) built in idle time, ready for the next @model. */
+let spareStage: ModelStage | undefined
+/** Stages built from streamed @model lines whose beat has not arrived yet, by model id. */
+const preparedModels = new Map<string, { stage: ModelStage; host: HTMLDivElement; w: number; h: number }>()
+/** Model cards fade in alongside their first part rather than ahead of it. */
+const cardFades: Array<{ node: SVGGElement; start: number }> = []
+const MODEL_CARD_FADE_MS = 450
 const pillBoxes: Array<{ x: number; y: number; w: number; h: number; node: SVGGElement }> = []
 const objectNodes = new Map<SceneObject, SVGGElement>()
 const cardViews = new Map<CardState, { root: SVGGElement; surface: SVGRectElement; board: SVGRectElement; body: SVGGElement; layers: Record<'wash' | 'ink' | 'words', SVGGElement> }>()
@@ -137,7 +161,12 @@ function tick(now: number): void {
       buddyAt = undefined
     }
   }
-  let modelsActive = false
+  for (let i = cardFades.length - 1; i >= 0; i--) {
+    const fade = cardFades[i]!, progress = Math.min(1, (now - fade.start) / MODEL_CARD_FADE_MS)
+    fade.node.setAttribute('opacity', String(progress))
+    if (progress === 1) cardFades.splice(i, 1)
+  }
+  let modelsActive = cardFades.length > 0
   for (const model of modelStages.values()) modelsActive = model.tick(now) || modelsActive
   const followed = follow(now)
   const morphing = morph(now)
@@ -245,8 +274,7 @@ function measureWriting(size: number): (text: string) => number {
   return (text) => context.measureText(text).width
 }
 
-function writingAction(layout: WritingLayout, at: Point, group: number, owner: SceneObject): Action {
-  const target = objectNodes.get(owner)!
+function writingAction(layout: WritingLayout, at: Point, group: number, owner: SceneObject, target = objectNodes.get(owner)!): Action {
   const end = sampleWriting(layout, at, 1).tip
   return {
     group, owner, from: sampleWriting(layout, at, 0).tip, to: end,
@@ -315,15 +343,9 @@ function cardAction(mark: Extract<Mark, { kind: 'card' | 'model' }>, group: numb
   const body = layer('card-body', root)
   if (mark.kind === 'model') {
     const viewport = element('foreignObject', { x: card.x + 1, y: card.y + 29, width: card.w - 2, height: card.h - 30, class: 'model-viewport' })
-    const host = document.createElementNS('http://www.w3.org/1999/xhtml', 'div') as HTMLDivElement
-    host.setAttribute('class', 'model-host')
+    const { stage, host } = modelStage(mark)
     viewport.append(host); body.append(viewport)
-    modelStages.set(card, new ModelStage(host, {
-      id: card.id, width: card.w - 2, height: card.h - 30, turntable: mark.turntable, wake,
-      capture: (over, captured) => reportRegion(`card:${card.id}`, over, captured),
-      overCard: (x, y) => x >= card.x + card.offset[0] && x <= card.x + card.offset[0] + card.w && y >= card.y + card.offset[1] && y <= card.y + card.offset[1] + card.h,
-      trace: (until) => trace.activeUntil(until), debug: () => trace.enabled,
-    }))
+    modelStages.set(card, stage)
   }
   const layers = { wash: layer('wash', body), ink: layer('ink', body), words: layer('words', body) }
   cardViews.set(card, { root, surface, board, body, layers })
@@ -331,113 +353,215 @@ function cardAction(mark: Extract<Mark, { kind: 'card' | 'model' }>, group: numb
   // Marks already on the paper acquire the same explicit parent once.
   for (const [object, node] of objectNodes) if (object.card === card) layers[node.getAttribute('data-layer') as 'wash' | 'ink' | 'words'].append(node)
   const owner = retainObject([card.x + card.w / 2, card.y + 14], card)
-  return [{ group, owner, from: owner.center, to: owner.center, seconds: 0.45,
+  // A model card fades in while its first part already grows; a paper card is drawn first.
+  return [{ group, owner, from: owner.center, to: owner.center, seconds: mark.kind === 'model' ? 0 : 0.45, glides: mark.kind === 'model',
     begin: () => {
       root.setAttribute('data-interactive', 'true')
       wireCard(card, root)
+      if (mark.kind === 'model') { cardFades.push({ node: root, start: performance.now() }); return () => {} }
       return (progress) => root.setAttribute('opacity', String(progress))
     },
   }]
 }
 
-function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag' }>, group: number): Action[] {
+/** The stage for a model card: one prepared from its streamed line, the warm
+ *  spare, or (only if neither exists) a new one built now. */
+function modelStage(mark: Extract<Mark, { kind: 'model' }>): { stage: ModelStage; host: HTMLDivElement } {
+  const ready = preparedModels.get(mark.id)
+  preparedModels.delete(mark.id)
+  if (ready && ready.w === mark.w && ready.h === mark.h) return ready
+  ready?.stage.dispose()
+  const host = document.createElementNS('http://www.w3.org/1999/xhtml', 'div') as HTMLDivElement
+  host.setAttribute('class', 'model-host')
+  const stage = (spareStage ?? new ModelStage()).mount(host, {
+    id: mark.id, width: mark.w - 2, height: mark.h - 30, turntable: mark.turntable, wake,
+    capture: (over, captured) => reportRegion(`card:${mark.id}`, over, captured),
+    overCard: (x, y) => { const card = cardScene.cards.get(mark.id); return !!card && contains(card, [x, y]) },
+    trace: (until) => trace.activeUntil(until), debug: () => trace.enabled,
+  })
+  spareStage = undefined
+  return { stage, host }
+}
+
+/** Keeps a spare stage warm so no @model waits for a context: built when the
+ *  overlay loads, long before any answer, and again once a drawing is cleared.
+ *  Never mid-answer: building one is a long task that would stall the pen. */
+function warmSpareStage(): void {
+  if (!('requestIdleCallback' in globalThis) || spareStage || modelStages.size || preparedModels.size) return
+  spareStage = new ModelStage()
+}
+
+/** Streamed 3D lines: a stage per @model and each @part's geometry, ahead of their beats. */
+function prepareModels(marks: Mark[]): void {
+  for (const mark of marks) {
+    if (mark.kind === 'model') {
+      const live = cardScene.cards.get(mark.id)
+      if (live || preparedModels.has(mark.id) || modelStages.size + preparedModels.size >= MODEL_LIMITS.cards) continue
+      preparedModels.set(mark.id, { ...modelStage(mark), w: mark.w, h: mark.h })
+    } else if (mark.kind === 'part') {
+      const card = cardScene.cards.get(mark.id)
+      ;(preparedModels.get(mark.id)?.stage ?? (card && modelStages.get(card)))?.prepare(mark)
+    }
+  }
+  dressWhenIdle()
+}
+
+/** Builds waiting parts' materials and outlines between frames. */
+function dressWhenIdle(): void {
+  globalThis.requestIdleCallback?.((deadline) => {
+    const stages = [...[...preparedModels.values()].map(({ stage }) => stage), ...modelStages.values()]
+    for (const stage of stages) while (stage.waiting && deadline.timeRemaining() > 4) stage.dressNext()
+    if (stages.some((stage) => stage.waiting)) dressWhenIdle()
+  }, { timeout: 1000 })
+}
+
+function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag' }>, group: number, beat: { start: number }): Action[] {
   const card = cardScene.cards.get(mark.id)
   const model = card && modelStages.get(card)
   if (!card || card.closed || !model) return []
   const at: Point = [card.x + card.w / 2, card.y + card.h / 2]
   const owner = retainObject(at, card)
   if (mark.kind === 'part') {
+    const prepared = model.graph.parts.has(mark.name)
     const part = model.prepare(mark)
     if (!part) return []
-    return [{ group, owner, from: at, to: at, seconds: 0.6, begin: () => (progress) => {
-      const visit = (): void => {
-        const point = model.project(mark.name)
-        moveBuddy(objectPoint(owner, [card.x + 1 + point[0], card.y + 29 + point[1]]), IDLE_ANGLE)
+    // Grows from the moment its turn comes; the pen glides over to it while it grows.
+    return [{ group, owner, from: at, to: at, seconds: 0.6, glides: true, begin: () => {
+      const start = buddyAt ?? at
+      if (trace.enabled && ![...model.graph.parts.values()].some((other) => other.built)) {
+        console.info(`[model-timing] ${JSON.stringify({ id: card.id, part: mark.name, prepared, beatToFirstPartMs: Math.round(performance.now() - beat.start), modelLineToFirstPartMs: Math.round(performance.now() - model.mountedAt) })}`)
       }
-      model.visit = progress < 1 ? visit : undefined
-      model.reveal(part, progress); visit()
+      return (progress) => {
+        const visit = (): void => {
+          const point = model.project(mark.name, projected), glide = Math.min(1, progress / 0.4), eased = glide * glide * (3 - 2 * glide)
+          const target = objectPoint(owner, [card.x + 1 + point[0], card.y + 29 + point[1]])
+          moveBuddy([start[0] + (target[0] - start[0]) * eased, start[1] + (target[1] - start[1]) * eased], IDLE_ANGLE)
+        }
+        model.visit = progress < 1 ? visit : undefined
+        model.reveal(part, progress); visit()
+      }
     } }]
   }
-  if (mark.kind === 'move') return [{ group, owner, from: at, to: at, seconds: 0, begin: () => {
+  if (mark.kind === 'move') return [{ group, owner, from: at, to: at, seconds: 0, glides: true, begin: () => {
     model.move(mark, performance.now())
     return () => {}
   } }]
-  if (mark.kind === 'cut') return [{ group, owner, from: at, to: at, seconds: 0.15, begin: () => {
+  if (mark.kind === 'cut') return [{ group, owner, from: at, to: at, seconds: 0.15, glides: true, begin: () => {
     model.cut(mark.axis)
     return () => {}
   } }]
   return modelTagActions(mark, group, card, model, owner)
 }
 
-function reserveModelLabels(model: ModelStage, card: CardState): void {
-  const labels = modelLabels.get(model) ?? []
-  const pending = labels.filter((label) => !label.slot && model.graph.parts.get(label.mark.part)?.built)
-  const intents = pending.map((label) => {
-    const point = model.project(label.mark.part)
-    return { id: label.mark.part, y: point[1], side: label.mark.side ?? (point[0] < model.options.width / 2 ? 'left' : 'right'), height: label.writing.lines.length * label.writing.lineHeight }
+/** Solves every begun label's slot against the camera the framing settles
+ *  to, never the gliding one, so a slot is right once the view comes to rest.
+ *  Called again only when that framing or the cut changes, not while turning. */
+function layoutModelLabels(model: ModelStage, card: CardState): void {
+  const labels = (modelLabels.get(model) ?? []).filter((label) => label.started && model.graph.parts.get(label.mark.part)?.built)
+  if (!labels.length) return
+  const [left, right] = model.labelEdges()
+  const middle = (left + right) / 2, hysteresis = model.options.width * 0.12, size = labels[0]!.writing.size
+  const intents = labels.map((label) => {
+    // After a hand turn the view is new, so sides are chosen afresh.
+    const previous = label.turned === model.turned ? label.slot?.side : undefined
+    model.locate(label.mark.part, label.mark.side ?? previous)
+    const [x, y] = model.projectSettled(label.mark.part, projected)
+    // A side, once chosen, flips only when its anchor has moved well past the model's middle.
+    // A side the answer asked for is a preference: it gives way rather than cross the whole model.
+    const asked = label.mark.side && Math.abs(x - middle) > model.options.width * 0.3 && (x > middle) !== (label.mark.side === 'right') ? undefined : label.mark.side
+    const side = asked ?? (previous === 'left' ? (x > middle + hysteresis ? 'right' : 'left')
+      : previous === 'right' ? (x < middle - hysteresis ? 'left' : 'right') : x < middle ? 'left' : 'right')
+    return { id: label.mark.part, y, side, height: label.writing.lines.length * label.writing.lineHeight }
   })
-  const slots = labelSlots(intents, 12, model.options.height - 16, labels.flatMap((label) => label.slot ? [label.slot] : []))
-  for (const label of pending) {
+  const slots = labelSlots(intents, 14, model.options.height - 14)
+  const now = performance.now(), overflow = { left: 0, right: 0 }
+  for (const label of labels) {
+    label.framing = model.framing; label.turned = model.turned
     const slot = slots.find((slot) => slot.id === label.mark.part)
     if (!slot) continue
     label.slot = slot
-    const width = Math.max(...label.writing.lines.map((line) => line.width))
-    const [modelLeft, modelRight] = model.labelEdges()
-    const left = slot.side === 'left' ? Math.max(card.x + 12, card.x + modelLeft - width - 10)
-      : Math.min(card.x + card.w - width - 12, card.x + modelRight + 10)
-    label.words = [left, card.y + 29 + slot.baseline - (label.writing.lines.length - 1) * label.writing.lineHeight]
+    // Sit beside the model at the words' own height, so leaders stay short.
+    const first = slot.baseline - (label.writing.lines.length - 1) * label.writing.lineHeight
+    const [near, far] = model.labelEdges(first - size - 6, slot.baseline + 8)
+    const ideal = slot.side === 'left' ? card.x + 1 + near - label.width - 14 : card.x + 1 + far + 14
+    const x = Math.max(card.x + 12, Math.min(card.x + card.w - label.width - 12, ideal))
+    overflow[slot.side] = Math.max(overflow[slot.side], Math.abs(x - ideal))
+    const goal: Point = [x, card.y + 29 + first]
+    if (!label.words) { label.words = goal; label.goal = goal; continue }
+    if (label.goal?.[0] === goal[0] && label.goal[1] === goal[1]) continue
+    label.goal = goal; label.glide = { from: [...label.shift], start: now }
+    model.hold(now + LABEL_GLIDE_MS)
+  }
+  // Words pushed against the card edge would cover the model: make the column wider and re-frame.
+  model.widenReserve(overflow.left, overflow.right)
+}
+
+/** Runs after every render: moves only dots, leader endpoints and gliding word groups. */
+function updateModelLeaders(model: ModelStage, card: CardState): void {
+  const labels = modelLabels.get(model) ?? []
+  if (labels.some((label) => label.words && (label.framing !== model.framing || label.turned !== model.turned))) layoutModelLabels(model, card)
+  const now = performance.now()
+  for (const label of labels) {
+    if (!label.words || !label.dot) continue
+    if (label.glide && label.goal) {
+      const t = Math.min(1, (now - label.glide.start) / LABEL_GLIDE_MS), eased = t * t * (3 - 2 * t)
+      label.shift[0] = label.glide.from[0] + (label.goal[0] - label.words[0] - label.glide.from[0]) * eased
+      label.shift[1] = label.glide.from[1] + (label.goal[1] - label.words[1] - label.glide.from[1]) * eased
+      label.group?.setAttribute('transform', `translate(${label.shift[0]} ${label.shift[1]})`)
+      if (t === 1) label.glide = undefined
+    }
+    const point = model.project(label.mark.part, projected)
+    const dot: Point = [card.x + 1 + point[0], card.y + 29 + point[1]]
+    label.dot.setAttribute('cx', String(dot[0])); label.dot.setAttribute('cy', String(dot[1]))
+    if (label.leader) {
+      const end = leaderEnd(label, label.words[0] + label.shift[0], label.words[1] + label.shift[1])
+      label.leader.setAttribute('d', `M${dot[0]} ${dot[1]}L${end[0]} ${end[1]}`)
+    }
   }
 }
 
-function updateModelLeaders(model: ModelStage, card: CardState): void {
-  for (const label of modelLabels.get(model) ?? []) {
-    if (!label.words || !label.dot) continue
-    const projected = model.project(label.mark.part)
-    const point: Point = [card.x + 1 + projected[0], card.y + 29 + projected[1]]
-    label.dot.setAttribute('cx', String(point[0])); label.dot.setAttribute('cy', String(point[1]))
-    if (label.leader) {
-      const width = Math.max(...label.writing.lines.map((line) => line.width))
-      const end: Point = [label.words[0] + (label.slot!.side === 'left' ? width + 4 : -4), label.words[1] - 7]
-      label.leader.setAttribute('d', `M${point[0]} ${point[1]}L${end[0]} ${end[1]}`)
-    }
-  }
+/** The leader meets the words at their inner edge, just above the first baseline. */
+function leaderEnd(label: ModelLabel, x: number, y: number): Point {
+  return [x + (label.slot!.side === 'left' ? label.width + 4 : -4), y - 7]
 }
 
 function modelTagActions(mark: Extract<Mark, { kind: 'tag' }>, group: number, card: CardState, model: ModelStage, owner: SceneObject): Action[] {
   const labels = modelLabels.get(model) ?? []
   if (labels.length >= MODEL_LIMITS.tags || labels.some((label) => label.mark.part === mark.part) || !model.graph.parts.has(mark.part)) return []
-  const writing = wrapWriting(mark.text, model.margin - 22, 22, measureWriting(22), 2)
-  const label: ModelLabel = { mark, owner, writing }
+  const writing = wrapWriting(mark.text, model.labelWidth, 20, measureWriting(20), 2)
+  const label: ModelLabel = { mark, owner, writing, width: Math.max(...writing.lines.map((line) => line.width)), started: false, shift: [0, 0], framing: -1, turned: model.turned }
   labels.push(label); modelLabels.set(model, labels)
   model.afterRender = () => updateModelLeaders(model, card)
   const at = owner.center
   return [
     { group, owner, from: at, to: at, seconds: 0.15, begin: () => {
-      reserveModelLabels(model, card)
-      if (!label.slot) { console.warn(`[drawing] model ${card.id}: no readable label slot for ${mark.part}`); return () => {} }
+      label.started = true
+      layoutModelLabels(model, card)
+      if (!label.words) { console.warn(`[drawing] model ${card.id}: no readable label slot for ${mark.part}`); return () => {} }
+      label.group = layer('model-label', objectNodes.get(owner)!)
       label.dot = element('circle', { class: 'leader-dot', r: 0 })
       objectNodes.get(owner)!.append(label.dot)
       updateModelLeaders(model, card)
       return (progress) => {
         label.dot!.setAttribute('r', String(2.8 * progress))
-        const point = model.project(mark.part)
+        const point = model.project(mark.part, projected)
         moveBuddy(objectPoint(owner, [card.x + 1 + point[0], card.y + 29 + point[1]]), IDLE_ANGLE)
       }
     } },
     { group, owner, from: at, to: at, seconds: 0.28, begin: () => {
-      if (!label.slot) return () => {}
+      if (!label.words) return () => {}
       label.leader = element('path', { class: 'model-leader', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 1 })
       objectNodes.get(owner)!.append(label.leader)
       updateModelLeaders(model, card)
       return (progress) => {
         label.leader!.setAttribute('stroke-dashoffset', String(1 - progress))
-        const point = model.project(mark.part), width = Math.max(...writing.lines.map((line) => line.width))
-        const near: Point = [label.words![0] + (label.slot!.side === 'left' ? width + 4 : -4), label.words![1] - 7]
+        const point = model.project(mark.part, projected)
+        const near = leaderEnd(label, label.goal![0], label.goal![1])
         const dot: Point = [card.x + 1 + point[0], card.y + 29 + point[1]]
         moveBuddy(objectPoint(owner, [dot[0] + (near[0] - dot[0]) * progress, dot[1] + (near[1] - dot[1]) * progress]), IDLE_ANGLE)
       }
     } },
-    { group, owner, from: at, to: at, seconds: writingDuration(mark.text), begin: (duration) => label.words ? writingAction(writing, label.words, group, owner).begin(duration) : () => {} },
+    { group, owner, from: at, to: at, seconds: writingDuration(mark.text), begin: (duration) => label.words && label.group ? writingAction(writing, label.words, group, owner, label.group).begin(duration) : () => {} },
   ]
 }
 
@@ -596,13 +720,14 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   plannedEnd = last ? last.start + last.durationMs : 0
   const origin: Point = animations.length && plannedTip ? plannedTip : buddyAt ?? [from?.x ?? 20, from?.y ?? 20]
   const actions: Action[] = []
+  const beat = { start: 0 }
   for (const [group, mark] of marks.entries()) {
     if (mark.kind === 'clear') {
       clearScene()
       animations.length = 0
       actions.length = 0
     } else if (mark.kind === 'card' || mark.kind === 'model') actions.push(...cardAction(mark, group))
-    else if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') actions.push(...modelActions(mark, group))
+    else if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') actions.push(...modelActions(mark, group, beat))
     else if (mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') actions.push(...flowActions(mark, group))
     else {
       const owner = retainObject(markCenter(mark)!, undefined, mark.kind === 'highlight' ? 'wash' : ['text', 'label', 'point'].includes(mark.kind) ? 'words' : 'ink')
@@ -625,6 +750,7 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   }
   const now = performance.now()
   const start = Math.max(now, animations.length ? plannedEnd : 0)
+  beat.start = start
   // Time spent queued behind earlier beats comes out of this beat's budget.
   const timeline = scheduleBeat(actions, origin, beatBudget(durationMs, start - now))
   for (const entry of timeline) {
@@ -656,6 +782,11 @@ function warnOmissions(card: CardState): void {
 function clearScene(): void {
   for (const model of modelStages.values()) model.dispose()
   modelStages.clear()
+  for (const { stage } of preparedModels.values()) stage.dispose()
+  preparedModels.clear()
+  cardFades.length = 0
+  // The next answer's stage warms once this one's teardown has settled.
+  setTimeout(() => globalThis.requestIdleCallback?.(warmSpareStage, { timeout: 4000 }), 1500)
   modelLabels.clear()
   for (const card of cardScene.cards.values()) warnOmissions(card)
   warnedOmissions.clear()
@@ -818,6 +949,8 @@ function apply(command: OverlayCommand): void {
       ringLayer.replaceChildren(element('circle', { class: 'ring', cx: command.ring.x, cy: command.ring.y, r: 28 }))
       return
     }
+    case 'prepare':
+      return prepareModels(command.marks)
     case 'beat':
       hideClear()
       epoch = command.epoch
@@ -835,6 +968,7 @@ const waitingCommands: OverlayCommand[] = []
 window.nimbo.onOverlayCommand((command) => fontsReady ? apply(command) : waitingCommands.push(command))
 void document.fonts.load('500 26px Caveat').then(() => document.fonts.ready).then(() => {
   fontsReady = true
+  warmSpareStage()
   for (const command of waitingCommands) apply(command)
   waitingCommands.length = 0
 })

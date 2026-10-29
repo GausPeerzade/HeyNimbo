@@ -11,6 +11,7 @@ import { startGestures } from './gestures'
 import { loadOpenAIKey } from './secrets'
 import { openSetupWindow } from './setup-window'
 import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
+import { configureModelGallery, runModelGallery } from './model-gallery'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { TalkSession } from './voice/talk'
@@ -81,6 +82,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
     onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
+      prepare: (marks, space) => overlays.prepare(marks, space),
       answerDone: () => overlays.answerDone(),
     },
   })
@@ -92,6 +94,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
 let monitor: GestureMonitor | undefined
 configureHomePreview()
 configureDrawDemo()
+configureModelGallery()
 limitDrawDemoRuntime()
 const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()
@@ -99,6 +102,7 @@ if (!ownsInstance) app.quit()
 if (ownsInstance) app.whenReady().then(async () => {
   if (devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
   app.dock?.hide()
+  if (devFlag('NIMBO_DEBUG_3D_GALLERY')) return runModelGallery()
   const notch = createNotchWindow()
   const overlays = new OverlayManager()
   overlays.sync()

@@ -1,0 +1,537 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`gallery fixture scripts > atom parses to its golden marks 1`] = `
+[
+  "model {"id":"atom","x":40,"y":40,"w":640,"h":600,"title":"A carbon atom","turntable":true}",
+  "part {"id":"atom","name":"protons","shape":"sphere","dimensions":{"r":0.15},"at":[0.13,0.07,0],"turn":[0,0,0],"scale":1,"copies":3,"step":[0,0,0],"around":true,"mat":"plastic","half":false,"color":"red"}",
+  "part {"id":"atom","name":"neutrons","shape":"sphere","dimensions":{"r":0.15},"at":[-0.13,-0.07,0],"turn":[0,0,0],"scale":1,"copies":3,"step":[0,0,0],"around":true,"mat":"plastic","half":false,"color":"grey"}",
+  "part {"id":"atom","name":"top","shape":"sphere","dimensions":{"r":0.15},"at":[0,0.2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"red"}",
+  "part {"id":"atom","name":"bottom","shape":"sphere","dimensions":{"r":0.15},"at":[0,-0.2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey"}",
+  "tag {"id":"atom","part":"protons","text":"Nucleus","side":"left"}",
+  "part {"id":"atom","name":"inner","shape":"torus","dimensions":{"r":0.75,"tube":0.008},"at":[0,0,0],"turn":[70,0,15],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"atom","name":"pair","shape":"sphere","dimensions":{"r":0.07},"at":[0.75,0,0],"turn":[0,0,0],"scale":1,"copies":2,"step":[0,0,0],"around":true,"mat":"glow","half":false,"parent":"inner","color":"blue"}",
+  "tag {"id":"atom","part":"pair","text":"Inner shell: 2 electrons","side":"right"}",
+  "part {"id":"atom","name":"outer","shape":"torus","dimensions":{"r":1.35,"tube":0.008},"at":[0,0,0],"turn":[-60,0,-25],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"atom","name":"four","shape":"sphere","dimensions":{"r":0.07},"at":[1.35,0,0],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"glow","half":false,"parent":"outer","color":"blue"}",
+  "tag {"id":"atom","part":"four","text":"Outer shell: 4 electrons","side":"right"}",
+  "move {"id":"atom","part":"pair","motion":"orbit","axis":"y","amount":0.5,"period":2.5}",
+  "move {"id":"atom","part":"four","motion":"orbit","axis":"y","amount":-1,"period":4}",
+]
+`;
+
+exports[`gallery fixture scripts > atom parses to its golden marks 2`] = `
+[
+  "An atom has a tiny, heavy nucleus of protons and neutrons.",
+  "Two electrons move in the inner shell.",
+  "Four more fill the outer shell.",
+  "They never stop moving.",
+]
+`;
+
+exports[`gallery fixture scripts > bicycle parses to its golden marks 1`] = `
+[
+  "model {"id":"bike","x":40,"y":40,"w":640,"h":600,"title":"How a bicycle works","turntable":true}",
+  "part {"id":"bike","name":"rear","shape":"torus","dimensions":{"r":0.6,"tube":0.05},"at":[-1,0,0],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "part {"id":"bike","name":"front","shape":"torus","dimensions":{"r":0.6,"tube":0.05},"at":[1.1,0,0],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "part {"id":"bike","name":"spokes","shape":"cylinder","dimensions":{"r":0.008,"h":1.1,"top":0.008},"at":[0,0,0],"turn":[0,0,90],"scale":1,"copies":12,"step":[0,0,0],"around":true,"mat":"steel","half":false,"parent":"rear"}",
+  "part {"id":"bike","name":"frame","shape":"pipe","dimensions":{"r":0.04},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"red","points":[[-1,0,0],[-0.2,-0.05,0],[0.45,0.7,0],[-0.45,0.75,0],[-1,0,0]]}",
+  "part {"id":"bike","name":"fork","shape":"pipe","dimensions":{"r":0.035},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"points":[[0.45,0.7,0],[0.65,0.8,0],[1.1,0,0]]}",
+  "tag {"id":"bike","part":"frame","text":"Frame","side":"left"}",
+  "part {"id":"bike","name":"crank","shape":"gear","dimensions":{"r":0.18,"teeth":32,"w":0.03,"hole":0.1},"at":[-0.2,-0.05,0.06],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"bike","name":"sprocket","shape":"gear","dimensions":{"r":0.08,"teeth":14,"w":0.03,"hole":0.048},"at":[-1,0,0.06],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"bike","name":"chain","shape":"pipe","dimensions":{"r":0.012},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"points":[[-0.2,0.13,0.06],[-1,0.08,0.06],[-1,-0.08,0.06],[-0.2,-0.23,0.06]]}",
+  "part {"id":"bike","name":"pedals","shape":"box","dimensions":{"w":0.1,"h":0.03,"d":0.12,"round":0},"at":[-0.2,-0.25,0.15],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "tag {"id":"bike","part":"crank","text":"Chainring","side":"right"}",
+  "tag {"id":"bike","part":"sprocket","text":"Rear sprocket","side":"left"}",
+  "part {"id":"bike","name":"seat","shape":"capsule","dimensions":{"r":0.06,"h":0.3},"at":[-0.45,0.85,0],"turn":[0,0,90],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "part {"id":"bike","name":"bars","shape":"cylinder","dimensions":{"r":0.025,"h":0.6,"top":0.025},"at":[0.65,0.95,0],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "tag {"id":"bike","part":"seat","text":"Saddle","side":"left"}",
+  "tag {"id":"bike","part":"bars","text":"Handlebar","side":"right"}",
+  "move {"id":"bike","part":"crank","motion":"spin","axis":"z","amount":-360,"period":2}",
+  "move {"id":"bike","part":"rear","motion":"spin","axis":"z","amount":-360,"period":2}",
+  "move {"id":"bike","part":"front","motion":"spin","axis":"z","amount":-360,"period":2}",
+]
+`;
+
+exports[`gallery fixture scripts > bicycle parses to its golden marks 2`] = `
+[
+  "A bicycle is a light frame on two wheels.",
+  "The pedals turn a chain that drives the back wheel.",
+  "You steer with the handlebar while your legs drive the chain.",
+]
+`;
+
+exports[`gallery fixture scripts > castle parses to its golden marks 1`] = `
+[
+  "model {"id":"castle","x":40,"y":40,"w":640,"h":600,"title":"A medieval castle","turntable":true}",
+  "part {"id":"castle","name":"ground","shape":"box","dimensions":{"w":3.6,"h":0.1,"d":3.6,"round":0},"at":[0,-0.05,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"soil","half":false,"color":"green"}",
+  "part {"id":"castle","name":"walls","shape":"box","dimensions":{"w":2.6,"h":0.9,"d":0.2,"round":0},"at":[0,0.45,1.2],"turn":[0,0,0],"scale":1,"copies":2,"step":[0,0,-2.4],"around":false,"mat":"rock","half":false}",
+  "part {"id":"castle","name":"sides","shape":"box","dimensions":{"w":0.2,"h":0.9,"d":2.4,"round":0},"at":[1.2,0.45,0],"turn":[0,0,0],"scale":1,"copies":2,"step":[-2.4,0,0],"around":false,"mat":"rock","half":false}",
+  "part {"id":"castle","name":"towers","shape":"cylinder","dimensions":{"r":0.32,"h":1.4,"top":0.32},"at":[1.2,0.7,1.2],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"rock","half":false}",
+  "part {"id":"castle","name":"roofs","shape":"cone","dimensions":{"r":0.38,"h":0.5},"at":[1.2,1.65,1.2],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"paint","half":false,"color":"red"}",
+  "tag {"id":"castle","part":"towers","text":"Towers","side":"left"}",
+  "tag {"id":"castle","part":"walls","text":"Curtain wall","side":"right"}",
+  "part {"id":"castle","name":"keep","shape":"box","dimensions":{"w":1,"h":1.6,"d":1,"round":0},"at":[0,0.8,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false}",
+  "part {"id":"castle","name":"battlements","shape":"box","dimensions":{"w":0.12,"h":0.12,"d":0.12,"round":0},"at":[-0.4,1.66,0.45],"turn":[0,0,0],"scale":1,"copies":5,"step":[0.2,0,0],"around":false,"mat":"rock","half":false}",
+  "tag {"id":"castle","part":"keep","text":"Keep","side":"right"}",
+  "part {"id":"castle","name":"gate","shape":"box","dimensions":{"w":0.5,"h":0.6,"d":0.05,"round":0},"at":[0,0.3,1.31],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"castle","name":"pole","shape":"cylinder","dimensions":{"r":0.015,"h":0.5,"top":0.015},"at":[0,1.85,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false}",
+  "part {"id":"castle","name":"flag","shape":"box","dimensions":{"w":0.3,"h":0.18,"d":0.01,"round":0},"at":[0.15,2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"blue"}",
+  "tag {"id":"castle","part":"gate","text":"Gatehouse","side":"left"}",
+  "move {"id":"castle","part":"flag","motion":"bob","axis":"x","amount":0.03,"period":1}",
+]
+`;
+
+exports[`gallery fixture scripts > castle parses to its golden marks 2`] = `
+[
+  "A castle is a ring of thick stone walls with a tower at each corner.",
+  "In the middle stands the keep, the last place to hold out.",
+  "A single gate let friends in and kept enemies out.",
+]
+`;
+
+exports[`gallery fixture scripts > coffee parses to its golden marks 1`] = `
+[
+  "model {"id":"coffee","x":40,"y":40,"w":640,"h":600,"title":"Inside an espresso machine","turntable":true}",
+  "part {"id":"coffee","name":"case","shape":"box","dimensions":{"w":1.6,"h":1.8,"d":1.2,"round":0.08},"at":[0,0.9,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "cut {"id":"coffee","axis":"x"}",
+  "part {"id":"coffee","name":"tank","shape":"box","dimensions":{"w":0.4,"h":0.9,"d":0.8,"round":0},"at":[-0.5,1.2,-0.1],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glass","half":false,"color":"blue"}",
+  "part {"id":"coffee","name":"boiler","shape":"cylinder","dimensions":{"r":0.25,"h":0.6,"top":0.25},"at":[0.2,1.3,0],"turn":[0,0,90],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"copper","half":false}",
+  "tag {"id":"coffee","part":"tank","text":"Water tank","side":"left"}",
+  "tag {"id":"coffee","part":"boiler","text":"Boiler","side":"right"}",
+  "part {"id":"coffee","name":"pump","shape":"cylinder","dimensions":{"r":0.1,"h":0.3,"top":0.1},"at":[-0.1,0.6,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "part {"id":"coffee","name":"pipe","shape":"pipe","dimensions":{"r":0.03},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"copper","half":false,"points":[[-0.5,0.7,0],[-0.1,0.6,0],[0.2,1,0],[0.3,0.8,0.4]]}",
+  "tag {"id":"coffee","part":"pump","text":"Pump","side":"left"}",
+  "part {"id":"coffee","name":"group","shape":"cylinder","dimensions":{"r":0.18,"h":0.2,"top":0.18},"at":[0.3,0.7,0.5],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"coffee","name":"portafilter","shape":"cylinder","dimensions":{"r":0.16,"h":0.12,"top":0.16},"at":[0.3,0.55,0.5],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"coffee","name":"handle","shape":"capsule","dimensions":{"r":0.04,"h":0.5},"at":[0.3,0.55,0.85],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "part {"id":"coffee","name":"cup","shape":"tube","dimensions":{"r":0.15,"inner":0.12,"h":0.2},"at":[0.3,0.12,0.5],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"white"}",
+  "tag {"id":"coffee","part":"portafilter","text":"Portafilter","side":"right"}",
+  "tag {"id":"coffee","part":"cup","text":"Cup","side":"right"}",
+]
+`;
+
+exports[`gallery fixture scripts > coffee parses to its golden marks 2`] = `
+[
+  "An espresso machine heats water and forces it through coffee at high pressure.",
+  "Water from the tank is heated in the boiler.",
+  "A pump pushes the hot water to the group head.",
+  "Out comes a small, strong shot.",
+]
+`;
+
+exports[`gallery fixture scripts > dna parses to its golden marks 1`] = `
+[
+  "model {"id":"dna","x":40,"y":40,"w":640,"h":600,"title":"The DNA double helix","turntable":true}",
+  "part {"id":"dna","name":"strand-a","shape":"spring","dimensions":{"r":0.5,"h":3,"coils":3,"wire":0.06},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"blue"}",
+  "part {"id":"dna","name":"strand-b","shape":"spring","dimensions":{"r":0.5,"h":3,"coils":3,"wire":0.06},"at":[0,0,0],"turn":[0,180,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"red"}",
+  "tag {"id":"dna","part":"strand-a","text":"Backbone","side":"left"}",
+  "part {"id":"dna","name":"rungs","shape":"cylinder","dimensions":{"r":0.035,"h":1,"top":0.035},"at":[0,-1.4,0],"turn":[0,0,90],"scale":1,"copies":12,"step":[0,0.25,0],"around":false,"mat":"paint","half":false,"color":"green"}",
+  "tag {"id":"dna","part":"rungs","text":"Base pairs","side":"right"}",
+  "move {"id":"dna","part":"strand-a","motion":"spin","axis":"y","amount":360,"period":8}",
+  "move {"id":"dna","part":"strand-b","motion":"spin","axis":"y","amount":360,"period":8}",
+  "move {"id":"dna","part":"rungs","motion":"spin","axis":"y","amount":360,"period":8}",
+]
+`;
+
+exports[`gallery fixture scripts > dna parses to its golden marks 2`] = `
+[
+  "DNA is two long strands twisted around each other like a ladder.",
+  "The rungs are pairs of bases: A pairs with T, and C pairs with G.",
+  "To copy itself, it unzips down the middle.",
+]
+`;
+
+exports[`gallery fixture scripts > drone parses to its golden marks 1`] = `
+[
+  "model {"id":"drone","x":40,"y":40,"w":640,"h":600,"title":"How a quadcopter flies","turntable":true}",
+  "part {"id":"drone","name":"body","shape":"box","dimensions":{"w":0.6,"h":0.18,"d":0.6,"round":0.06},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey"}",
+  "part {"id":"drone","name":"arm-a","shape":"box","dimensions":{"w":1.5,"h":0.06,"d":0.08,"round":0},"at":[0,0,0],"turn":[0,45,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey"}",
+  "part {"id":"drone","name":"arm-b","shape":"box","dimensions":{"w":1.5,"h":0.06,"d":0.08,"round":0},"at":[0,0,0],"turn":[0,-45,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey"}",
+  "part {"id":"drone","name":"motors","shape":"cylinder","dimensions":{"r":0.07,"h":0.1,"top":0.07},"at":[0.53,0.06,0.53],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"steel","half":false}",
+  "part {"id":"drone","name":"props","shape":"box","dimensions":{"w":0.6,"h":0.01,"d":0.06,"round":0},"at":[0.53,0.14,0.53],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"plastic","half":false,"color":"white"}",
+  "tag {"id":"drone","part":"motors","text":"Motors","side":"left"}",
+  "tag {"id":"drone","part":"props","text":"Propellers","side":"right"}",
+  "part {"id":"drone","name":"camera","shape":"sphere","dimensions":{"r":0.1},"at":[0,-0.12,0.25],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glass","half":false}",
+  "part {"id":"drone","name":"battery","shape":"box","dimensions":{"w":0.3,"h":0.08,"d":0.4,"round":0},"at":[0,0.13,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"blue"}",
+  "part {"id":"drone","name":"legs","shape":"capsule","dimensions":{"r":0.02,"h":0.3},"at":[0.2,-0.2,0.2],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"plastic","half":false}",
+  "tag {"id":"drone","part":"camera","text":"Camera","side":"left"}",
+  "tag {"id":"drone","part":"battery","text":"Battery","side":"right"}",
+  "move {"id":"drone","part":"props","motion":"spin","axis":"y","amount":360,"period":0.5}",
+]
+`;
+
+exports[`gallery fixture scripts > drone parses to its golden marks 2`] = `
+[
+  "A drone is a light body with four arms, each with a motor and a propeller.",
+  "Each motor spins its propeller to push air down.",
+  "Spinning the propellers at different speeds tilts and steers it.",
+]
+`;
+
+exports[`gallery fixture scripts > fan parses to its golden marks 1`] = `
+[
+  "model {"id":"fan","x":40,"y":40,"w":640,"h":600,"title":"Inside a desk fan","turntable":true}",
+  "part {"id":"fan","name":"housing","shape":"capsule","dimensions":{"r":0.3,"h":0.95},"at":[0,0.55,-0.25],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey"}",
+  "cut {"id":"fan","axis":"x"}",
+  "part {"id":"fan","name":"stator","shape":"tube","dimensions":{"r":0.24,"inner":0.16,"h":0.32},"at":[0,0.55,-0.3],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"fan","name":"windings","shape":"torus","dimensions":{"r":0.2,"tube":0.05},"at":[0,0.55,-0.42],"turn":[90,0,0],"scale":1,"copies":2,"step":[0,0,0.24],"around":false,"mat":"copper","half":false}",
+  "part {"id":"fan","name":"shaft","shape":"cylinder","dimensions":{"r":0.025,"h":1,"top":0.025},"at":[0,0.55,0.05],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "tag {"id":"fan","part":"windings","text":"Copper windings","side":"left"}",
+  "part {"id":"fan","name":"hub","shape":"sphere","dimensions":{"r":0.12},"at":[0,0.55,0.45],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":true,"color":"grey"}",
+  "part {"id":"fan","name":"blades","shape":"box","dimensions":{"w":0.46,"h":0.02,"d":0.26,"round":0.01},"at":[0.3,0,0],"turn":[25,0,0],"scale":1,"copies":3,"step":[0,0,0],"around":true,"mat":"plastic","half":false,"parent":"hub","color":"blue"}",
+  "tag {"id":"fan","part":"blades","text":"Blades","side":"right"}",
+  "part {"id":"fan","name":"guard","shape":"torus","dimensions":{"r":0.66,"tube":0.014},"at":[0,0.55,0.5],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"fan","name":"spokes","shape":"cylinder","dimensions":{"r":0.008,"h":0.62,"top":0.008},"at":[0.33,0,0],"turn":[0,0,90],"scale":1,"copies":12,"step":[0,0,0],"around":true,"mat":"steel","half":false,"parent":"guard"}",
+  "tag {"id":"fan","part":"guard","text":"Wire guard","side":"right"}",
+  "part {"id":"fan","name":"neck","shape":"cylinder","dimensions":{"r":0.06,"h":1.15,"top":0.06},"at":[0,-0.28,-0.25],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"fan","name":"base","shape":"lathe","dimensions":{},"at":[0,-0.86,-0.25],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"grey","profile":[[0,-0.06],[0.6,-0.06],[0.62,-0.02],[0.55,0.06],[0.2,0.12],[0,0.13]]}",
+  "part {"id":"fan","name":"knob","shape":"cylinder","dimensions":{"r":0.07,"h":0.06,"top":0.07},"at":[0.25,-0.74,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"red"}",
+  "tag {"id":"fan","part":"knob","text":"Speed switch","side":"left"}",
+  "move {"id":"fan","part":"hub","motion":"spin","axis":"z","amount":360,"period":1.2}",
+]
+`;
+
+exports[`gallery fixture scripts > fan parses to its golden marks 2`] = `
+[
+  "A desk fan is a small electric motor that spins a set of blades.",
+  "Inside the housing, current in the copper windings turns the shaft.",
+  "The shaft spins three angled blades that push air forward.",
+  "A wire guard keeps fingers away from them.",
+  "A stand and a heavy base keep it steady, with the switch up front.",
+  "Switch it on, and the blades spin.",
+]
+`;
+
+exports[`gallery fixture scripts > gears parses to its golden marks 1`] = `
+[
+  "model {"id":"gears","x":40,"y":40,"w":640,"h":600,"title":"A gear train","turntable":true}",
+  "part {"id":"gears","name":"plate","shape":"box","dimensions":{"w":3.4,"h":2.5,"d":0.12,"round":0.04},"at":[0.06,0.03,-0.35],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false}",
+  "part {"id":"gears","name":"drive","shape":"gear","dimensions":{"r":0.36,"teeth":12,"w":0.16,"hole":0.05},"at":[-1,0.3,0],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "part {"id":"gears","name":"drive-axle","shape":"cylinder","dimensions":{"r":0.05,"h":0.5,"top":0.05},"at":[0,-0.2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"parent":"drive"}",
+  "part {"id":"gears","name":"crank","shape":"box","dimensions":{"w":0.5,"h":0.05,"d":0.08,"round":0},"at":[0.22,0.12,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"parent":"drive"}",
+  "part {"id":"gears","name":"knob","shape":"cylinder","dimensions":{"r":0.05,"h":0.22,"top":0.05},"at":[0.42,0.24,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"parent":"drive"}",
+  "tag {"id":"gears","part":"drive","text":"Drive gear, 12 teeth","side":"left"}",
+  "part {"id":"gears","name":"idler","shape":"gear","dimensions":{"r":0.72,"teeth":24,"w":0.16,"hole":0.05},"at":[0.08,0.3,0],"turn":[90,7.5,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"gears","name":"idler-axle","shape":"cylinder","dimensions":{"r":0.05,"h":0.5,"top":0.05},"at":[0,-0.2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"parent":"idler"}",
+  "tag {"id":"gears","part":"idler","text":"24 teeth, half the speed","side":"right"}",
+  "part {"id":"gears","name":"output","shape":"gear","dimensions":{"r":0.48,"teeth":16,"w":0.16,"hole":0.05},"at":[0.999,-0.471,0],"turn":[90,12.5,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"copper","half":false}",
+  "part {"id":"gears","name":"output-axle","shape":"cylinder","dimensions":{"r":0.05,"h":0.5,"top":0.05},"at":[0,-0.2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"parent":"output"}",
+  "tag {"id":"gears","part":"output","text":"Output gear, 16 teeth","side":"right"}",
+  "move {"id":"gears","part":"drive","motion":"spin","axis":"z","amount":360,"period":4}",
+  "move {"id":"gears","part":"idler","motion":"spin","axis":"z","amount":-360,"period":8}",
+  "move {"id":"gears","part":"output","motion":"spin","axis":"z","amount":360,"period":5.333}",
+]
+`;
+
+exports[`gallery fixture scripts > gears parses to its golden marks 2`] = `
+[
+  "A gear train passes turning from one gear to the next.",
+  "Turning the crank turns the small drive gear.",
+  "Its teeth push the big gear around at half the speed, the other way.",
+  "A third gear turns the same way as the first.",
+  "Each pair of teeth trades speed for force.",
+]
+`;
+
+exports[`gallery fixture scripts > guitar parses to its golden marks 1`] = `
+[
+  "model {"id":"guitar","x":40,"y":40,"w":640,"h":600,"title":"An acoustic guitar","turntable":true}",
+  "part {"id":"guitar","name":"body","shape":"extrude","dimensions":{"d":0.35,"round":0.02},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"outline":[[0,-1],[0.6,-0.85],[0.7,-0.4],[0.45,0],[0.55,0.4],[0.35,0.7],[0,0.75],[-0.35,0.7],[-0.55,0.4],[-0.45,0],[-0.7,-0.4],[-0.6,-0.85]],"smooth":true}",
+  "part {"id":"guitar","name":"hole","shape":"cylinder","dimensions":{"r":0.17,"h":0.02,"top":0.17},"at":[0,0.25,0.18],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "tag {"id":"guitar","part":"hole","text":"Sound hole","side":"left"}",
+  "part {"id":"guitar","name":"neck","shape":"box","dimensions":{"w":0.18,"h":1.6,"d":0.1,"round":0},"at":[0,1.5,0.05],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"guitar","name":"head","shape":"box","dimensions":{"w":0.26,"h":0.45,"d":0.08,"round":0},"at":[0,2.5,0.05],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"guitar","name":"frets","shape":"box","dimensions":{"w":0.18,"h":0.01,"d":0.02,"round":0},"at":[0,0.85,0.11],"turn":[0,0,0],"scale":1,"copies":12,"step":[0,0.12,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"guitar","name":"pegs","shape":"cylinder","dimensions":{"r":0.03,"h":0.12,"top":0.03},"at":[0.17,2.35,0.05],"turn":[0,0,90],"scale":1,"copies":3,"step":[0,0.12,0],"around":false,"mat":"steel","half":false}",
+  "tag {"id":"guitar","part":"frets","text":"Frets","side":"right"}",
+  "tag {"id":"guitar","part":"pegs","text":"Tuning pegs","side":"right"}",
+  "part {"id":"guitar","name":"bridge","shape":"box","dimensions":{"w":0.45,"h":0.08,"d":0.05,"round":0},"at":[0,-0.5,0.2],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"guitar","name":"strings","shape":"cylinder","dimensions":{"r":0.006,"h":3.1,"top":0.006},"at":[-0.06,1.05,0.2],"turn":[0,0,0],"scale":1,"copies":6,"step":[0.024,0,0],"around":false,"mat":"steel","half":false}",
+  "tag {"id":"guitar","part":"bridge","text":"Bridge","side":"left"}",
+  "tag {"id":"guitar","part":"strings","text":"Strings","side":"left"}",
+  "move {"id":"guitar","part":"strings","motion":"bob","axis":"z","amount":0.01,"period":0.5}",
+]
+`;
+
+exports[`gallery fixture scripts > guitar parses to its golden marks 2`] = `
+[
+  "An acoustic guitar is a hollow wooden box that makes the strings louder.",
+  "Frets on the neck mark the notes, and the pegs tune each string.",
+  "Pluck a string and the whole body sings.",
+]
+`;
+
+exports[`gallery fixture scripts > heart parses to its golden marks 1`] = `
+[
+  "model {"id":"heart","x":40,"y":40,"w":640,"h":600,"title":"The human heart","turntable":true}",
+  "part {"id":"heart","name":"muscle","shape":"blob","dimensions":{"w":1.4,"h":1.7,"d":1.1,"lumps":0.12,"seed":3,"taper":0.45},"at":[0,0,0],"turn":[0,0,-20],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"red"}",
+  "cut {"id":"heart","axis":"view"}",
+  "part {"id":"heart","name":"lv","shape":"blob","dimensions":{"w":0.5,"h":0.85,"d":0.45,"lumps":0.1,"seed":1,"taper":0},"at":[-0.25,-0.25,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"red"}",
+  "part {"id":"heart","name":"rv","shape":"blob","dimensions":{"w":0.45,"h":0.7,"d":0.4,"lumps":0.1,"seed":1,"taper":0},"at":[0.25,-0.2,0.1],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"purple"}",
+  "part {"id":"heart","name":"la","shape":"blob","dimensions":{"w":0.4,"h":0.4,"d":0.35,"lumps":0.1,"seed":1,"taper":0},"at":[-0.3,0.45,-0.1],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"red"}",
+  "part {"id":"heart","name":"ra","shape":"blob","dimensions":{"w":0.4,"h":0.45,"d":0.35,"lumps":0.1,"seed":1,"taper":0},"at":[0.35,0.45,0.05],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"purple"}",
+  "tag {"id":"heart","part":"lv","text":"Left ventricle","side":"left"}",
+  "tag {"id":"heart","part":"rv","text":"Right ventricle","side":"right"}",
+  "tag {"id":"heart","part":"ra","text":"Right atrium","side":"right"}",
+  "part {"id":"heart","name":"aorta","shape":"pipe","dimensions":{"r":0.13},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"red","points":[[-0.05,0.6,0],[0,1.1,0],[-0.35,1.25,0],[-0.55,1,0]]}",
+  "part {"id":"heart","name":"pulmonary","shape":"pipe","dimensions":{"r":0.11},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"blue","points":[[0.15,0.6,0.2],[0.2,1,0.25],[0.5,1.1,0.2]]}",
+  "part {"id":"heart","name":"vena","shape":"pipe","dimensions":{"r":0.1},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"blue","points":[[0.45,0.55,0],[0.5,1.2,0]]}",
+  "tag {"id":"heart","part":"aorta","text":"Aorta","side":"left"}",
+  "move {"id":"heart","part":"muscle","motion":"bob","axis":"y","amount":0.04,"period":0.9}",
+]
+`;
+
+exports[`gallery fixture scripts > heart parses to its golden marks 2`] = `
+[
+  "The heart is a muscle about the size of your fist, tipped slightly to the left.",
+  "Inside are four hollow chambers, and the ventricles at the bottom do the strong pumping.",
+  "Blood leaves through the aorta to the body, and through the pulmonary artery to the lungs.",
+  "It beats about seventy times a minute.",
+]
+`;
+
+exports[`gallery fixture scripts > house parses to its golden marks 1`] = `
+[
+  "model {"id":"house","x":40,"y":40,"w":640,"h":600,"title":"Inside a two-story house","turntable":true}",
+  "part {"id":"house","name":"foundation","shape":"box","dimensions":{"w":3,"h":0.2,"d":2,"round":0},"at":[0,-0.1,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"grey"}",
+  "part {"id":"house","name":"walls","shape":"box","dimensions":{"w":2.8,"h":2,"d":1.8,"round":0},"at":[0,1,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"white"}",
+  "part {"id":"house","name":"roof","shape":"extrude","dimensions":{"d":2,"round":0.02},"at":[0,2,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"red","outline":[[-1.6,0],[1.6,0],[0,1]],"smooth":false}",
+  "cut {"id":"house","axis":"z"}",
+  "part {"id":"house","name":"floor","shape":"box","dimensions":{"w":2.7,"h":0.1,"d":1.7,"round":0},"at":[0,1,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false}",
+  "part {"id":"house","name":"stairs","shape":"box","dimensions":{"w":0.4,"h":0.12,"d":0.3,"round":0},"at":[-1,0.1,-0.5],"turn":[0,0,0],"scale":1,"copies":8,"step":[0,0.12,0.15],"around":false,"mat":"wood","half":false}",
+  "tag {"id":"house","part":"stairs","text":"Stairs","side":"left"}",
+  "tag {"id":"house","part":"floor","text":"Upper floor","side":"right"}",
+  "part {"id":"house","name":"door","shape":"box","dimensions":{"w":0.5,"h":0.9,"d":0.05,"round":0},"at":[0.6,0.45,-0.9],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"house","name":"windows","shape":"box","dimensions":{"w":0.5,"h":0.5,"d":0.05,"round":0},"at":[-0.7,1.5,-0.9],"turn":[0,0,0],"scale":1,"copies":2,"step":[1.4,0,0],"around":false,"mat":"glass","half":false}",
+  "part {"id":"house","name":"chimney","shape":"box","dimensions":{"w":0.3,"h":0.8,"d":0.3,"round":0},"at":[0.8,2.6,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"red"}",
+  "tag {"id":"house","part":"roof","text":"Roof","side":"right"}",
+  "tag {"id":"house","part":"chimney","text":"Chimney","side":"left"}",
+]
+`;
+
+exports[`gallery fixture scripts > house parses to its golden marks 2`] = `
+[
+  "A house is a box of walls on a concrete foundation, under a sloping roof.",
+  "Cutting away the front shows an upper floor, with stairs between the levels.",
+  "The roof sheds rain, and the chimney carries smoke up and out.",
+]
+`;
+
+exports[`gallery fixture scripts > padlock parses to its golden marks 1`] = `
+[
+  "model {"id":"lock","x":40,"y":40,"w":640,"h":600,"title":"Inside a padlock","turntable":true}",
+  "part {"id":"lock","name":"body","shape":"box","dimensions":{"w":1.5,"h":1.25,"d":0.7,"round":0.12},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "part {"id":"lock","name":"plug","shape":"cylinder","dimensions":{"r":0.2,"h":0.72,"top":0.2},"at":[0,-0.2,0.01],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false,"color":"orange"}",
+  "tag {"id":"lock","part":"body","text":"Brass body","side":"left"}",
+  "cut {"id":"lock","axis":"x"}",
+  "part {"id":"lock","name":"keypins","shape":"cylinder","dimensions":{"r":0.04,"h":0.2,"top":0.04},"at":[0,-0.06,-0.21],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0.14],"around":false,"mat":"brass","half":false}",
+  "part {"id":"lock","name":"drivers","shape":"cylinder","dimensions":{"r":0.04,"h":0.18,"top":0.04},"at":[0,0.13,-0.21],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0.14],"around":false,"mat":"steel","half":false}",
+  "part {"id":"lock","name":"springs","shape":"spring","dimensions":{"r":0.035,"h":0.26,"coils":6,"wire":0.008},"at":[0,0.35,-0.21],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0.14],"around":false,"mat":"steel","half":false}",
+  "tag {"id":"lock","part":"drivers","text":"Driver pins","side":"right"}",
+  "tag {"id":"lock","part":"springs","text":"Springs","side":"right"}",
+  "part {"id":"lock","name":"key","shape":"box","dimensions":{"w":0.04,"h":0.16,"d":0.62,"round":0},"at":[0,-0.24,0.12],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"color":"grey"}",
+  "part {"id":"lock","name":"bow","shape":"cylinder","dimensions":{"r":0.22,"h":0.05,"top":0.22},"at":[0,-0.24,0.62],"turn":[90,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"color":"grey"}",
+  "tag {"id":"lock","part":"key","text":"Key","side":"left"}",
+  "part {"id":"lock","name":"shackle","shape":"pipe","dimensions":{"r":0.085},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"points":[[-0.42,0.45,0],[-0.42,1,0],[-0.3,1.28,0],[0,1.38,0],[0.3,1.28,0],[0.42,1,0],[0.42,0.55,0]]}",
+  "tag {"id":"lock","part":"shackle","text":"Shackle","side":"right"}",
+  "move {"id":"lock","part":"shackle","motion":"bob","axis":"y","amount":0.3,"period":3}",
+]
+`;
+
+exports[`gallery fixture scripts > padlock parses to its golden marks 2`] = `
+[
+  "A padlock hides a small pin-tumbler lock inside a solid body.",
+  "Cut in half, you can see springs pushing pins down into the plug, so it can't turn.",
+  "The right key lifts every pin to the shear line, and the plug turns.",
+  "Then the shackle springs free.",
+]
+`;
+
+exports[`gallery fixture scripts > pump parses to its golden marks 1`] = `
+[
+  "model {"id":"pump","x":40,"y":40,"w":640,"h":600,"title":"Inside a floor pump","turntable":true}",
+  "card {"id":"pressure","x":720,"y":70,"w":440,"h":420,"title":"Air on the move","board":"grid"}",
+  "heading {"id":"pressure","text":"Small pushes, high pressure"}",
+  "part {"id":"pump","name":"foot","shape":"box","dimensions":{"w":1.9,"h":0.12,"d":0.8,"round":0.04},"at":[0,-1.52,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"color":"grey"}",
+  "part {"id":"pump","name":"base","shape":"lathe","dimensions":{},"at":[0,-1.36,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"color":"grey","profile":[[0.56,-0.1],[0.6,-0.04],[0.6,0.05],[0.5,0.12],[0.44,0.14]]}",
+  "part {"id":"pump","name":"barrel","shape":"tube","dimensions":{"r":0.44,"inner":0.38,"h":2.6},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"pump","name":"cap","shape":"tube","dimensions":{"r":0.48,"inner":0.07,"h":0.14},"at":[0,1.33,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "cut {"id":"pump","axis":"z"}",
+  "tag {"id":"pump","part":"barrel","text":"Air chamber","side":"left"}",
+  "part {"id":"pump","name":"rod","shape":"cylinder","dimensions":{"r":0.06,"h":1.7,"top":0.06},"at":[0,1.5,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"pump","name":"handle","shape":"capsule","dimensions":{"r":0.07,"h":1.1},"at":[0,0.85,0],"turn":[0,0,90],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"parent":"rod"}",
+  "part {"id":"pump","name":"grips","shape":"capsule","dimensions":{"r":0.1,"h":0.38},"at":[-0.36,0.85,0],"turn":[0,0,90],"scale":1,"copies":2,"step":[0.72,0,0],"around":false,"mat":"rubber","half":false,"parent":"rod"}",
+  "tag {"id":"pump","part":"handle","text":"T-handle","side":"right"}",
+  "part {"id":"pump","name":"piston","shape":"cylinder","dimensions":{"r":0.34,"h":0.16,"top":0.34},"at":[0,-0.78,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false,"parent":"rod"}",
+  "part {"id":"pump","name":"seals","shape":"torus","dimensions":{"r":0.34,"tube":0.024},"at":[0,-0.82,0],"turn":[0,0,0],"scale":1,"copies":2,"step":[0,0.08,0],"around":false,"mat":"rubber","half":false,"parent":"rod"}",
+  "tag {"id":"pump","part":"seals","text":"Cup seals","side":"right"}",
+  "part {"id":"pump","name":"valve","shape":"sphere","dimensions":{"r":0.09},"at":[0,-1.18,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false}",
+  "part {"id":"pump","name":"hose","shape":"pipe","dimensions":{"r":0.06},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rubber","half":false,"points":[[0.42,-1.36,0.05],[0.85,-1.42,0.18],[1.2,-1.2,0.25],[1.35,-0.6,0.2],[1.3,-0.1,0.12]]}",
+  "part {"id":"pump","name":"head","shape":"capsule","dimensions":{"r":0.11,"h":0.36},"at":[1.3,0.05,0.12],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "tag {"id":"pump","part":"valve","text":"One-way valve","side":"left"}",
+  "step {"id":"pressure","text":"Push to squeeze the air","direction":"down","color":"orange"}",
+  "part {"id":"pump","name":"gauge","shape":"cylinder","dimensions":{"r":0.2,"h":0.1,"top":0.2},"at":[0.62,-1.2,0.32],"turn":[90,0,-30],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "part {"id":"pump","name":"dial","shape":"cylinder","dimensions":{"r":0.17,"h":0.012,"top":0.17},"at":[0,0.055,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paper","half":false,"parent":"gauge"}",
+  "part {"id":"pump","name":"ticks","shape":"box","dimensions":{"w":0.012,"h":0.01,"d":0.035,"round":0},"at":[0,0.065,0.13],"turn":[0,0,0],"scale":1,"copies":8,"step":[0,0,0],"around":true,"mat":"rubber","half":false,"parent":"gauge"}",
+  "part {"id":"pump","name":"needle","shape":"box","dimensions":{"w":0.02,"h":0.012,"d":0.13,"round":0},"at":[0,0.07,0.05],"turn":[0,-35,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"parent":"gauge","color":"red"}",
+  "tag {"id":"pump","part":"gauge","text":"Pressure gauge","side":"left"}",
+  "step {"id":"pressure","text":"The gauge shows the pressure","direction":"right","color":"blue"}",
+  "move {"id":"pump","part":"rod","motion":"slide","axis":"y","amount":-1.3,"period":3.5}",
+  "note {"id":"pressure","text":"The piston and seals move as one."}",
+]
+`;
+
+exports[`gallery fixture scripts > pump parses to its golden marks 2`] = `
+[
+  "A floor pump is a tall barrel with a plunger inside.",
+  "I've cut the barrel open so you can see the air chamber.",
+  "Pulling the T-handle lifts the plunger rod.",
+  "A brass piston with rubber seals fits snugly in the barrel.",
+  "Pushing down squeezes the air past a one-way valve into the hose.",
+  "The gauge shows how hard the air pushes back.",
+  "Each stroke pushes a little more air into the tire.",
+]
+`;
+
+exports[`gallery fixture scripts > rocket parses to its golden marks 1`] = `
+[
+  "model {"id":"rocket","x":40,"y":40,"w":640,"h":600,"title":"Inside a two-stage rocket","turntable":true}",
+  "part {"id":"rocket","name":"stage1","shape":"tube","dimensions":{"r":0.4,"inner":0.36800000000000005,"h":2},"at":[0,-0.8,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"white"}",
+  "part {"id":"rocket","name":"stage2","shape":"tube","dimensions":{"r":0.4,"inner":0.36800000000000005,"h":1.2},"at":[0,0.9,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"white"}",
+  "part {"id":"rocket","name":"nose","shape":"cone","dimensions":{"r":0.4,"h":0.8},"at":[0,1.9,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"red"}",
+  "cut {"id":"rocket","axis":"z"}",
+  "part {"id":"rocket","name":"fuel","shape":"capsule","dimensions":{"r":0.34,"h":0.9},"at":[0,-0.35,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"rocket","name":"oxidizer","shape":"capsule","dimensions":{"r":0.34,"h":0.9},"at":[0,-1.3,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"color":"blue"}",
+  "tag {"id":"rocket","part":"fuel","text":"Fuel tank","side":"left"}",
+  "tag {"id":"rocket","part":"oxidizer","text":"Oxidizer tank","side":"left"}",
+  "part {"id":"rocket","name":"engine","shape":"lathe","dimensions":{},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false,"profile":[[0.1,-1.85],[0.18,-2.1],[0.32,-2.4]]}",
+  "part {"id":"rocket","name":"fins","shape":"box","dimensions":{"w":0.35,"h":0.6,"d":0.04,"round":0},"at":[0.5,-1.6,0],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"paint","half":false,"color":"grey"}",
+  "part {"id":"rocket","name":"flame","shape":"cone","dimensions":{"r":0.28,"h":0.8},"at":[0,-2.8,0],"turn":[180,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"orange"}",
+  "tag {"id":"rocket","part":"engine","text":"Engine bell","side":"right"}",
+  "part {"id":"rocket","name":"interstage","shape":"cylinder","dimensions":{"r":0.4,"h":0.15,"top":0.4},"at":[0,0.25,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"rocket","name":"upper","shape":"capsule","dimensions":{"r":0.3,"h":0.7},"at":[0,0.75,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"steel","half":false}",
+  "part {"id":"rocket","name":"payload","shape":"sphere","dimensions":{"r":0.25},"at":[0,1.75,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"brass","half":false}",
+  "tag {"id":"rocket","part":"payload","text":"Payload","side":"right"}",
+  "tag {"id":"rocket","part":"interstage","text":"Interstage","side":"right"}",
+  "move {"id":"rocket","part":"flame","motion":"bob","axis":"y","amount":0.08,"period":0.5}",
+]
+`;
+
+exports[`gallery fixture scripts > rocket parses to its golden marks 2`] = `
+[
+  "A rocket is mostly fuel tanks stacked inside a tall, thin tube.",
+  "Inside the first stage, fuel and oxidizer wait to burn together.",
+  "The engine bell shapes the hot gas into a fast jet, and the fins keep it steady.",
+  "Higher up, the second stage takes over and carries the payload under the nose cone.",
+  "Once it is lit, the flame pushes the whole stack upward.",
+]
+`;
+
+exports[`gallery fixture scripts > solar parses to its golden marks 1`] = `
+[
+  "model {"id":"solar","x":40,"y":40,"w":640,"h":600,"title":"The inner solar system","turntable":true}",
+  "part {"id":"solar","name":"sun","shape":"sphere","dimensions":{"r":0.6},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"yellow"}",
+  "tag {"id":"solar","part":"sun","text":"Sun","side":"left"}",
+  "part {"id":"solar","name":"mercury","shape":"sphere","dimensions":{"r":0.08},"at":[1,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"grey"}",
+  "part {"id":"solar","name":"venus","shape":"sphere","dimensions":{"r":0.14},"at":[1.5,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"yellow"}",
+  "part {"id":"solar","name":"earth","shape":"sphere","dimensions":{"r":0.15},"at":[2.1,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paint","half":false,"color":"blue"}",
+  "part {"id":"solar","name":"moon","shape":"sphere","dimensions":{"r":0.05},"at":[0.3,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"parent":"earth","color":"grey"}",
+  "part {"id":"solar","name":"mars","shape":"sphere","dimensions":{"r":0.1},"at":[2.8,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"red"}",
+  "part {"id":"solar","name":"path","shape":"torus","dimensions":{"r":2.1,"tube":0.01},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"paper","half":false}",
+  "tag {"id":"solar","part":"earth","text":"Earth","side":"right"}",
+  "tag {"id":"solar","part":"mars","text":"Mars","side":"right"}",
+  "tag {"id":"solar","part":"moon","text":"Moon","side":"left"}",
+  "move {"id":"solar","part":"mercury","motion":"orbit","axis":"y","amount":1,"period":3}",
+  "move {"id":"solar","part":"venus","motion":"orbit","axis":"y","amount":1.5,"period":6}",
+  "move {"id":"solar","part":"earth","motion":"orbit","axis":"y","amount":2.1,"period":10}",
+  "move {"id":"solar","part":"mars","motion":"orbit","axis":"y","amount":2.8,"period":18}",
+]
+`;
+
+exports[`gallery fixture scripts > solar parses to its golden marks 2`] = `
+[
+  "The Sun sits at the center and holds everything in orbit.",
+  "The four rocky planets circle it, from Mercury out to Mars.",
+  "The closer a planet is, the faster it goes around.",
+]
+`;
+
+exports[`gallery fixture scripts > tree parses to its golden marks 1`] = `
+[
+  "model {"id":"tree","x":40,"y":40,"w":640,"h":600,"title":"How a tree grows","turntable":true}",
+  "part {"id":"tree","name":"trunk","shape":"cylinder","dimensions":{"r":0.15,"h":1.6,"top":0.09},"at":[0,0.8,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"wood","half":false,"color":"brown"}",
+  "part {"id":"tree","name":"roots","shape":"pipe","dimensions":{"r":0.04},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":5,"step":[0,0,0],"around":true,"mat":"wood","half":false,"color":"brown","points":[[0,0.05,0],[0.4,-0.1,0.1],[0.8,-0.2,0.2]]}",
+  "part {"id":"tree","name":"soil","shape":"blob","dimensions":{"w":2.4,"h":0.3,"d":2.4,"lumps":0.1,"seed":1,"taper":0},"at":[0,-0.15,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"soil","half":false}",
+  "tag {"id":"tree","part":"roots","text":"Roots","side":"left"}",
+  "part {"id":"tree","name":"branches","shape":"pipe","dimensions":{"r":0.04},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":4,"step":[0,0,0],"around":true,"mat":"wood","half":false,"color":"brown","points":[[0,1.2,0],[0.3,1.5,0],[0.6,1.6,0.1]]}",
+  "part {"id":"tree","name":"crown","shape":"blob","dimensions":{"w":1.8,"h":1.3,"d":1.8,"lumps":0.25,"seed":4,"taper":0},"at":[0,2.1,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"tissue","half":false,"color":"green"}",
+  "tag {"id":"tree","part":"crown","text":"Leaves","side":"right"}",
+  "tag {"id":"tree","part":"trunk","text":"Trunk","side":"left"}",
+  "part {"id":"tree","name":"apples","shape":"sphere","dimensions":{"r":0.07},"at":[0.7,1.9,0.3],"turn":[0,0,0],"scale":1,"copies":6,"step":[0,0,0],"around":true,"mat":"paint","half":false,"color":"red"}",
+  "tag {"id":"tree","part":"apples","text":"Fruit","side":"right"}",
+  "move {"id":"tree","part":"crown","motion":"bob","axis":"x","amount":0.03,"period":3}",
+]
+`;
+
+exports[`gallery fixture scripts > tree parses to its golden marks 2`] = `
+[
+  "A tree is a woody trunk that lifts its leaves up to the light, while roots drink from the soil.",
+  "The leaves make sugar from sunlight, air and water.",
+  "That sugar feeds new wood, new leaves and fruit.",
+]
+`;
+
+exports[`gallery fixture scripts > volcano parses to its golden marks 1`] = `
+[
+  "model {"id":"volcano","x":40,"y":40,"w":640,"h":600,"title":"Inside a volcano","turntable":true}",
+  "part {"id":"volcano","name":"bedrock","shape":"box","dimensions":{"w":4,"h":1.5,"d":3,"round":0},"at":[0,-1.05,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"grey"}",
+  "part {"id":"volcano","name":"mountain","shape":"lathe","dimensions":{},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"brown","profile":[[2,-0.3],[1.4,0.3],[0.8,1],[0.35,1.6],[0.25,1.5],[0,1.5]]}",
+  "cut {"id":"volcano","axis":"z"}",
+  "part {"id":"volcano","name":"chamber","shape":"blob","dimensions":{"w":1.4,"h":0.5,"d":1,"lumps":0.2,"seed":5,"taper":0},"at":[0,-1.1,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"orange"}",
+  "tag {"id":"volcano","part":"chamber","text":"Magma chamber","side":"left"}",
+  "part {"id":"volcano","name":"vent","shape":"pipe","dimensions":{"r":0.1},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"red","points":[[0,-0.9,0],[0.05,0.3,0],[0,1.5,0]]}",
+  "part {"id":"volcano","name":"side","shape":"pipe","dimensions":{"r":0.06},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"red","points":[[0.03,0.4,0],[0.6,0.9,0]]}",
+  "tag {"id":"volcano","part":"vent","text":"Main vent","side":"right"}",
+  "tag {"id":"volcano","part":"mountain","text":"Layers of rock","side":"right"}",
+  "part {"id":"volcano","name":"ash","shape":"blob","dimensions":{"w":1.2,"h":0.8,"d":1,"lumps":0.3,"seed":2,"taper":0},"at":[0,2.3,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"rock","half":false,"color":"grey"}",
+  "part {"id":"volcano","name":"lava","shape":"blob","dimensions":{"w":0.4,"h":0.08,"d":0.3,"lumps":0.1,"seed":1,"taper":0},"at":[0.9,0.85,0.3],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glow","half":false,"color":"orange"}",
+  "tag {"id":"volcano","part":"ash","text":"Ash cloud","side":"left"}",
+  "move {"id":"volcano","part":"ash","motion":"bob","axis":"y","amount":0.2,"period":3}",
+]
+`;
+
+exports[`gallery fixture scripts > volcano parses to its golden marks 2`] = `
+[
+  "A volcano is a mountain built from layers of cooled lava and ash.",
+  "Deep below it sits a chamber of molten rock.",
+  "Magma rises up a narrow vent and bursts out of the crater.",
+  "Ash and gas billow up into the sky.",
+]
+`;
+
+exports[`gallery fixture scripts > water parses to its golden marks 1`] = `
+[
+  "model {"id":"water","x":40,"y":40,"w":640,"h":600,"title":"A water molecule","turntable":true}",
+  "part {"id":"water","name":"oxygen","shape":"sphere","dimensions":{"r":0.42},"at":[0,0,0],"turn":[0,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"color":"red"}",
+  "tag {"id":"water","part":"oxygen","text":"Oxygen, slightly negative","side":"left"}",
+  "part {"id":"water","name":"bond-a","shape":"cylinder","dimensions":{"r":0.07,"h":1.2,"top":0.07},"at":[0.474,-0.367,0],"turn":[0,0,52.25],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"parent":"oxygen","color":"grey"}",
+  "part {"id":"water","name":"bond-b","shape":"cylinder","dimensions":{"r":0.07,"h":1.2,"top":0.07},"at":[-0.474,-0.367,0],"turn":[0,0,-52.25],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"plastic","half":false,"parent":"oxygen","color":"grey"}",
+  "part {"id":"water","name":"hydrogens","shape":"sphere","dimensions":{"r":0.26},"at":[0.95,-0.73,0],"turn":[0,0,0],"scale":1,"copies":2,"step":[-1.9,0,0],"around":false,"mat":"paper","half":false,"parent":"oxygen"}",
+  "tag {"id":"water","part":"hydrogens","text":"Hydrogen, slightly positive","side":"right"}",
+  "tag {"id":"water","part":"bond-b","text":"Shared electron pair","side":"left"}",
+  "part {"id":"water","name":"lobe-a","shape":"capsule","dimensions":{"r":0.2,"h":0.75},"at":[0,0.36,0.25],"turn":[35,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glass","half":false,"parent":"oxygen","color":"blue"}",
+  "part {"id":"water","name":"lobe-b","shape":"capsule","dimensions":{"r":0.2,"h":0.75},"at":[0,0.36,-0.25],"turn":[-35,0,0],"scale":1,"copies":1,"step":[0,0,0],"around":false,"mat":"glass","half":false,"parent":"oxygen","color":"blue"}",
+  "tag {"id":"water","part":"lobe-a","text":"Lone pairs","side":"right"}",
+  "move {"id":"water","part":"oxygen","motion":"spin","axis":"y","amount":360,"period":12}",
+]
+`;
+
+exports[`gallery fixture scripts > water parses to its golden marks 2`] = `
+[
+  "A water molecule has one oxygen atom in the middle.",
+  "Two hydrogen atoms share electrons with it, about 104 degrees apart.",
+  "Two lone pairs on the oxygen bend the molecule.",
+  "That bend is why water molecules stick together so well.",
+]
+`;
