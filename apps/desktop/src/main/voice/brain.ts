@@ -1,6 +1,8 @@
 import { SseParser } from '../openai/sse'
 
-export const BRAIN_MODEL = 'gpt-6.1-terra'
+export const BRAIN_MODEL = 'gpt-6.1-sol'
+/** Medium gives the model room to plan drawings, cards and models well. */
+const BRAIN_EFFORT = 'medium'
 
 const INSTRUCTIONS = `You are NimboGuide, a friendly helper who lives on the user's computer.
 The user is speaking to you out loud while looking at their screen. The attached image is the display under their mouse pointer, and the pointer position is given in image pixels.
@@ -55,7 +57,7 @@ export async function* streamAnswer(options: {
     headers: { Authorization: `Bearer ${options.key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: BRAIN_MODEL,
-      reasoning: { effort: 'low' },
+      reasoning: { effort: BRAIN_EFFORT },
       instructions: INSTRUCTIONS,
       input: [...historyItems(options.history), questionItem(options.question, options.screenshot)],
       stream: true,
