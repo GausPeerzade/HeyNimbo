@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./secrets', () => ({
   loadSecret: vi.fn(async (name: string) => name === 'anthropic-key' ? 'sk-ant-synthetic-eval-key' : undefined),
-  saveSecret: state.saveSecret, removeSecret: state.removeSecret,
+  saveSecret: state.saveSecret, removeSecret: state.removeSecret, secretSavedAt: vi.fn(async () => undefined),
 }))
 vi.mock('./provider-settings', async (load) => ({ ...await load<typeof import('./provider-settings')>(), noRedirectFetch: state.fetch }))
 vi.mock('./history', () => ({ HistoryRepository: state.history }))

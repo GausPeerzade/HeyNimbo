@@ -13,6 +13,7 @@
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
     "dev": "pnpm --filter @nimboguide/desktop dev",
     "typecheck": "pnpm --filter @nimboguide/desktop typecheck",
-    "dist:mac": "pnpm --filter @nimboguide/desktop dist:mac"
+    "dist:mac": "pnpm --filter @nimboguide/desktop dist:mac",
+    "dev:speech-permissions": "node scripts/prepare-dev-speech-permissions.cjs"
   }
 }

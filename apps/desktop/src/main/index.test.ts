@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  setVoiceKey: undefined as ((key: string | undefined) => void) | undefined,
+  connectionsChanged: undefined as (() => void) | undefined,
+  builtinEars: vi.fn(), builtinMouth: vi.fn(),
   shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
   quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(), evaluation: vi.fn(),
@@ -27,10 +30,12 @@ vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
 vi.mock('./gestures', () => ({ startGestures: mocks.gestures }))
-vi.mock('./connections', () => ({ Connections: vi.fn(function () { let key: string | undefined; return { load: async () => { key = await mocks.key() }, get voiceKey() { return key }, get answerReady() { return Boolean(key) }, snapshot: () => ({}), answer: vi.fn() } }) }))
+vi.mock('./connections', () => ({ Connections: vi.fn(function (_settings, changed) { mocks.connectionsChanged = changed; let key: string | undefined; mocks.setVoiceKey = value => { key = value }; return { load: async () => { key = await mocks.key() }, get voiceKey() { return key }, get voiceEngine() { return { engine: key ? 'openai' : 'builtin' } }, get answerReady() { return Boolean(key) }, snapshot: () => ({}), answer: vi.fn() } }) }))
 vi.mock('./setup-window', () => ({ openSetupWindow: mocks.setup }))
 vi.mock('./voice/ears', () => ({ Ears: mocks.ears }))
 vi.mock('./voice/mouth', () => ({ Mouth: mocks.mouth }))
+vi.mock('./voice/builtin-ears', () => ({ BuiltInEars: mocks.builtinEars.mockImplementation(function () { return { warm: vi.fn() } }) }))
+vi.mock('./voice/builtin-mouth', () => ({ BuiltInMouth: mocks.builtinMouth.mockImplementation(function () { return { warm: vi.fn() } }) }))
 vi.mock('./voice/talk', () => ({ TalkSession: mocks.talk }))
 vi.mock('./windows', () => ({
   createNotchWindow: vi.fn(), positionNotch: vi.fn(), sendNotchStatus: vi.fn(), setNotchVisibility: vi.fn(),
@@ -69,7 +74,7 @@ it('starts each question on a clean screen and shows the ear only while talk is 
   const session = { holdStarted: vi.fn(), holdEnded: vi.fn(), holdCancelled: vi.fn() }
   mocks.talk.mockImplementation(function () { return session })
   mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
-  for (const voice of [mocks.ears, mocks.mouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
+  for (const voice of [mocks.ears, mocks.mouth, mocks.builtinEars, mocks.builtinMouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
   mocks.gestures.mockReturnValue({ ok: true, monitor: { stop: vi.fn() } })
   mocks.key.mockResolvedValue('sk-test')
   vi.spyOn(console, 'info').mockImplementation(() => {})
@@ -146,7 +151,7 @@ it('reconnect resets overlay listening before installing the replacement session
   const close = vi.fn()
   mocks.talk.mockImplementation(function () { return { close } })
   mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
-  for (const voice of [mocks.ears, mocks.mouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
+  for (const voice of [mocks.ears, mocks.mouth, mocks.builtinEars, mocks.builtinMouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
   mocks.gestures.mockReturnValue({ ok: true, monitor: { stop: vi.fn() } }); mocks.key.mockResolvedValue('sk-fixture')
   await import('./index')
   await vi.waitFor(() => expect(mocks.talk).toHaveBeenCalledOnce())
@@ -169,4 +174,21 @@ it('shows an actionable voice message without displaying the listening ear for a
   mocks.overlays.listen.mockClear()
   present({ action: 'talk', phase: 'started' })
   expect(session.holdStarted).not.toHaveBeenCalled(); expect(mocks.overlays.listen).not.toHaveBeenCalledWith(true)
+})
+
+it('a connection key change reconnects from local to OpenAI and back', async () => {
+  vi.resetModules(); vi.clearAllMocks()
+  const close = vi.fn()
+  mocks.talk.mockImplementation(function () { return { close } })
+  mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
+  for (const voice of [mocks.ears, mocks.mouth, mocks.builtinEars, mocks.builtinMouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
+  mocks.gestures.mockReturnValue({ ok: true, monitor: { stop: vi.fn() } }); mocks.key.mockResolvedValue(undefined)
+  await import('./index'); await vi.waitFor(() => expect(mocks.talk).toHaveBeenCalledOnce())
+  expect(mocks.builtinEars).toHaveBeenCalledOnce(); expect(mocks.ears).not.toHaveBeenCalled()
+  mocks.setVoiceKey?.('synthetic-voice'); mocks.connectionsChanged?.()
+  expect(close).toHaveBeenCalledOnce(); expect(mocks.ears).toHaveBeenCalledWith('synthetic-voice')
+  expect(mocks.mouth).toHaveBeenCalledWith('synthetic-voice', 'marin')
+  mocks.setVoiceKey?.(undefined); mocks.connectionsChanged?.()
+  expect(close).toHaveBeenCalledTimes(2); expect(mocks.builtinEars).toHaveBeenCalledTimes(2)
+  expect(mocks.builtinMouth).toHaveBeenCalledTimes(2)
 })

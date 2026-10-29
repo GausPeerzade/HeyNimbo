@@ -39,7 +39,7 @@ function snapshot(provider: ProviderId = 'compatible'): AppSnapshot {
   const config = defaultConnectionSettings(); config.provider = provider
   if (provider === 'compatible') config.models.compatible = { preset: 'custom', customModel: 'model-a' }
   const model = selectedModel(config)
-  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, false])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI key' } }
+  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, false])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI' } }
 }
 it.each(PROVIDERS)('keeps %s connections ordered, with Your AI, one Model picker, all saved providers and collapsed Advanced', provider => {
   renderConnections(fields as unknown as HTMLElement, snapshot(provider), vi.fn())
@@ -114,7 +114,7 @@ it('shows one clear signed-in ChatGPT state without duplicate sign-in or registr
 it('makes voice automatic and read-only, directing setup to the one OpenAI provider row', () => {
   const state = snapshot(); state.connection!.voice = 'unavailable'
   renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  expect(text(byId('your-ai'))).toContain('Voice: not available yet. Add an OpenAI key, or use built-in Mac speech (coming soon)')
+  expect(text(byId('your-ai'))).toContain('Voice: not available. Add an OpenAI key, or use built-in Mac speech.')
   expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
   expect(fields.querySelectorAll('input').some(node => node.id.includes('voice'))).toBe(false)
 })
@@ -123,4 +123,27 @@ it('requests removal from the row, then relies on main-process confirmation', ()
   renderConnections(fields as unknown as HTMLElement, state, vi.fn(), { anthropic: { suffix: 'abcd' } })
   nodes(byId('saved-anthropic')).find(node => node.tag === 'button' && node.textContent === 'Remove')!.onclick!()
   expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'removeKey', provider: 'anthropic' } })
+})
+it('shows one user-click speech permission action in Your AI, with no separate voice settings', async () => {
+  const state = snapshot('anthropic'); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Allow speech recognition.', needsSpeechPermission: true }
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(mocks.request).not.toHaveBeenCalled()
+  const actions = byId('your-ai').querySelectorAll('button').filter(node => node.textContent === 'Allow speech recognition')
+  expect(actions).toHaveLength(1)
+  expect(fields.querySelectorAll('input').some(node => node.id.includes('voice'))).toBe(false)
+  actions[0]!.onclick!()
+  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'allowSpeechRecognition' } })
+  await Promise.resolve()
+})
+it.each(['OpenAI', 'Built into your Mac'] as const)('shows Voice: %s without configuration actions', voice => {
+  const state = snapshot(); state.connection!.voice = voice
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(text(byId('your-ai'))).toContain(`Voice: ${voice}`)
+  expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
+})
+it('shows the unavailable reason without a permission action when usage strings are missing', () => {
+  const state = snapshot(); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Missing usage descriptions.' }
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(text(byId('your-ai'))).toContain('Missing usage descriptions.')
+  expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
 })

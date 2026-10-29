@@ -19,8 +19,9 @@ export interface TalkDeps {
   key?: string
   answer?: () => AnswerConnection
   conversations: ConversationController
-  ears?: Ears
-  mouth?: Mouth
+  ears?: Pick<Ears, 'begin' | 'append' | 'finish' | 'cancel' | 'close'>
+  mouth?: Pick<Mouth, 'speak' | 'cancel' | 'close'>
+  voiceUnavailableReason?: string
   audio: { send(command: VoiceCommand): void }
   capture: () => Promise<ScreenCaptures | undefined>
   /** A label while busy, or undefined to return the notch to rest. */
@@ -64,9 +65,10 @@ export class TalkSession {
   constructor(private readonly deps: TalkDeps) {}
 
   get voiceAvailable(): boolean { return Boolean(this.deps.ears && this.deps.mouth) }
+  get voiceUnavailableReason(): string { return this.deps.voiceUnavailableReason ?? 'Voice unavailable. Open Settings → Connection to allow speech recognition or add an OpenAI key.' }
 
   holdStarted(): void {
-    if (!this.voiceAvailable) { this.deps.onStatus('Voice unavailable: add an OpenAI key in Settings → Connection. ChatGPT plans support answers only.'); return }
+    if (!this.voiceAvailable) { this.deps.onStatus(this.voiceUnavailableReason); return }
     this.interrupt()
     this.deps.ears!.begin()
     const connection = this.deps.answer?.()
@@ -143,6 +145,9 @@ export class TalkSession {
         this.interrupt()
         this.deps.onStatus('Microphone unavailable')
         return
+      case 'playbackError':
+        if (turn) this.fail(turn, new Error(event.message))
+        return
       case 'playbackStarted':
         if (turn) {
           this.mark(turn, 'first audio')
@@ -171,7 +176,7 @@ export class TalkSession {
     const question = await this.deps.ears!.finish()
     this.mark(turn, 'transcript')
     if (turn.abort.signal.aborted) return
-    if (!question) return this.finish(turn)
+    if (!question) { this.finish(turn); this.deps.onStatus("Didn't catch that. Hold Control + Option and try again."); return }
     const history = this.begin(turn, question, 'voice')
     await this.respond(turn, question, history)
   }
@@ -220,7 +225,7 @@ export class TalkSession {
           ? undefined
           : this.deps.mouth!.speak(sentence, (pcm) => {
               if (!turn.abort.signal.aborted) this.deps.audio.send({ kind: 'play', line, pcm })
-            }),
+            }, line),
       )
       // A failed sentence stops the whole turn now, not after the answer streams.
       speech.catch((error: unknown) => this.fail(turn, error))

@@ -22,15 +22,13 @@ Files uploads and the transcription API are explicitly unsupported. Realtime
 speech is **not** an authorized route; support for another client or API is not
 permission for this flow ([errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)).
 
-Consequently **ChatGPT plan tokens power answers only**. Voice retains our
-existing OpenAI realtime implementation and automatically reuses the **one OpenAI
-provider key**, regardless of which provider answers use. There is no separate
-voice credential, setup section or key field: add or replace the key in the
-OpenAI row of Saved connections. Saving it never changes the answer provider,
-including when the selected plan is expired, signed out or identity-only.
-Without that key, typed Home questions still work and retain supported drawings.
-Control + Option explains the limitation without capturing audio. Built-in Mac
-speech is labeled coming soon; no on-device speech fallback is implemented here.
+Consequently **ChatGPT plan tokens power answers only**. Voice automatically uses
+OpenAI realtime when an OpenAI API key is saved, regardless of the answer provider;
+otherwise it uses authorized on-device Mac recognition and local system speech.
+There is no separate voice-key section or engine setting. If local listening is
+unavailable, typed Home questions still work without speech, and Control + Option
+shows the reason without opening the microphone. See [voice.md](voice.md) for
+permissions, development setup, privacy and local-language availability.
 
 ## Sign-in, storage and terms
 

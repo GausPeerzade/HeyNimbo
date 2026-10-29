@@ -836,10 +836,15 @@ function __napiStampBindingTarget(exportsObject, target) {
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
 module.exports.GestureMonitor = nativeBinding.GestureMonitor
+module.exports.SpeechSession = nativeBinding.SpeechSession
 module.exports.captureScreens = nativeBinding.captureScreens
 module.exports.GestureKind = nativeBinding.GestureKind
 module.exports.hasInputMonitoringAccess = nativeBinding.hasInputMonitoringAccess
 module.exports.hasScreenCaptureAccess = nativeBinding.hasScreenCaptureAccess
+module.exports.hasVoiceUsageDescriptions = nativeBinding.hasVoiceUsageDescriptions
 module.exports.ModifierKey = nativeBinding.ModifierKey
 module.exports.requestInputMonitoringAccess = nativeBinding.requestInputMonitoringAccess
 module.exports.requestScreenCaptureAccess = nativeBinding.requestScreenCaptureAccess
+module.exports.requestSpeechAuthorization = nativeBinding.requestSpeechAuthorization
+module.exports.speechAvailability = nativeBinding.speechAvailability
+module.exports.speechLanguage = nativeBinding.speechLanguage

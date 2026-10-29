@@ -76,7 +76,8 @@
       "identity": "-",
       "hardenedRuntime": false,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "NimboGuide uses your microphone only when you ask by voice. Your speech is sent to OpenAI to transcribe your question."
+        "NSMicrophoneUsageDescription": "NimboGuide uses your microphone when you ask by voice. Speech is processed on this Mac, or sent to OpenAI when you have saved an OpenAI API key.",
+        "NSSpeechRecognitionUsageDescription": "NimboGuide transcribes your voice questions on this Mac when you hold Control + Option. Built-in speech never sends your audio to a server."
       },
       "category": "public.app-category.productivity"
     }

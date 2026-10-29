@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, systemPreferences } from 'electron'
+import { hasVoiceUsageDescriptions } from '@nimboguide/native'
 import { Channels, type VoiceCommand, type VoiceEvent } from '../shared/ipc'
 import { loadPage, secureWebPreferences } from './windows'
 
@@ -22,10 +23,10 @@ export class AudioWindow {
     // Only this window may use the microphone, and only for audio.
     contents.session.setPermissionRequestHandler((requester, permission, callback, details) => {
       const audioOnly = 'mediaTypes' in details && details.mediaTypes?.every((type) => type === 'audio')
-      callback(requester === contents && permission === 'media' && Boolean(audioOnly))
+      callback(requester === contents && permission === 'media' && Boolean(audioOnly) && hasVoiceUsageDescriptions())
     })
     contents.session.setPermissionCheckHandler(
-      (requester, permission) => requester === contents && permission === 'media',
+      (requester, permission) => requester === contents && permission === 'media' && hasVoiceUsageDescriptions(),
     )
     ipcMain.on(Channels.voiceEvent, (event, payload: VoiceEvent) => {
       if (event.sender === contents) onEvent(payload)
@@ -49,6 +50,7 @@ export class AudioWindow {
 /** Asks macOS for microphone access once; true when granted. */
 export async function ensureMicrophoneAccess(): Promise<boolean> {
   if (process.platform !== 'darwin') return true
+  if (!hasVoiceUsageDescriptions()) return false
   if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true
   return systemPreferences.askForMediaAccess('microphone')
 }

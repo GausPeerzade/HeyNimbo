@@ -66,6 +66,8 @@ export type VoiceCommand =
   | { kind: 'micStop' }
   /** `line` numbers each spoken sentence so its start can be reported. */
   | { kind: 'play'; line: number; pcm: Uint8Array }
+  /** Local system speech, queued with the same sentence playback events. */
+  | { kind: 'systemSpeak'; line: number; text: string; language?: string }
   /** A soft pencil sound while ink is drawn. */
   | { kind: 'scribble'; durationMs: number }
   /** No more audio for this answer; report when it has finished playing. */
@@ -80,6 +82,7 @@ export type VoiceEvent =
   | { kind: 'micStopped'; id: number }
   | { kind: 'micError'; message: string }
   | { kind: 'playbackStarted' }
+  | { kind: 'playbackError'; message: string }
   /** When a sentence's first audio will reach the speaker. */
   | { kind: 'lineScheduled'; line: number; startsInMs: number }
   | { kind: 'playbackDrained' }

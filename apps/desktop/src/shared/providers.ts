@@ -5,6 +5,7 @@ export type Preset = 'fast' | 'balanced' | 'best' | 'custom'
 export interface ModelChoice { preset: Preset; customModel: string }
 export interface ConnectionSettings { provider: ProviderId; models: Record<ProviderId, ModelChoice>; baseURL: string }
 export interface ModelInfo { id: string; name: string; vision: boolean; tested: boolean }
+export type VoiceSelection = { engine: 'openai' | 'builtin' } | { engine: 'unavailable'; reason: string; needsPermission?: boolean }
 export interface ConnectionSnapshot {
   providers: Record<ProviderId, boolean>
   accounts: Array<{ id: string; name: string; email: string; connected: boolean; sharing: boolean }>
@@ -13,7 +14,9 @@ export interface ConnectionSnapshot {
   models: ModelInfo[]
   answerModel: string
   answerVision: boolean
-  voice: 'OpenAI key' | 'unavailable'
+  voice: 'OpenAI' | 'Built into your Mac' | 'unavailable'
+  voiceReason?: string
+  needsSpeechPermission?: boolean
 }
 /** Connection-only details, never broadcast: at most four key characters and no OAuth token hints. */
 export interface KeyHint { suffix: string; savedAt?: number }
@@ -24,7 +27,7 @@ export type ConnectionRequest =
   | { kind: 'useForAnswers'; provider: ProviderId }
   | { kind: 'test' | 'models'; provider: ProviderId }
   | { kind: 'signIn'; accountId?: string; newAccount?: boolean }
-  | { kind: 'signOut' | 'usage' | 'snapshot' | 'details' | 'settings' }
+  | { kind: 'signOut' | 'usage' | 'snapshot' | 'details' | 'settings' | 'allowSpeechRecognition' }
   | { kind: 'selectAccount'; accountId: string }
 export interface ConnectionResult { ok: boolean; message: string; connection?: ConnectionSnapshot; keyHints?: KeyHints }
 export const PROVIDER_NAMES: Record<ProviderId, string> = { chatgpt: 'ChatGPT', openai: 'OpenAI key', anthropic: 'Anthropic', google: 'Google Gemini', deepseek: 'DeepSeek', openrouter: 'OpenRouter', compatible: 'OpenAI-compatible' }

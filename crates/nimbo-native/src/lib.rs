@@ -3,6 +3,7 @@
 mod capture;
 mod platform;
 mod runtime;
+pub mod speech;
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;

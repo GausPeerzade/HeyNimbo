@@ -37,7 +37,7 @@ export class Mouth {
 
   /** Speaks one line, streaming its audio. Resolves when it was fully spoken or
    *  deliberately cancelled; rejects when speech failed. */
-  speak(text: string, onAudio: (pcm: Uint8Array) => void): Promise<void> {
+  speak(text: string, onAudio: (pcm: Uint8Array) => void, _line?: number): Promise<void> {
     this.cancel()
     const socket = this.session()
     return new Promise<void>((resolve, reject) => {

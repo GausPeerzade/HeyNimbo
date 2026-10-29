@@ -32,7 +32,7 @@ export function parseConnectionSettings(value: unknown): ConnectionSettings {
 export function parseConnectionRequest(value: unknown): ConnectionRequest {
   const input = object(value)
   switch (input.kind) {
-    case 'snapshot': case 'signOut': case 'usage': case 'details': case 'settings': shape(input, ['kind']); return { kind: input.kind }
+    case 'snapshot': case 'signOut': case 'usage': case 'details': case 'settings': case 'allowSpeechRecognition': shape(input, ['kind']); return { kind: input.kind }
     case 'signIn': case 'selectAccount': {
       shape(input, input.kind === 'signIn' ? ['kind', 'accountId', 'newAccount'] : ['kind', 'accountId'])
       if (input.newAccount !== undefined && (typeof input.newAccount !== 'boolean' || input.accountId !== undefined)) throw new Error('Invalid account choice.')

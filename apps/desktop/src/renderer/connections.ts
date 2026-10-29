@@ -32,9 +32,11 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   yourAI.append(element('h2', '', 'Your AI'))
   const answerSummary = element('div', 'ai-summary-row')
   answerSummary.append(element('p', '', `Answers: ${currentModel ? modelName(currentModel, state?.models.find(model => model.id === currentModel)?.name) : 'Choose a model'} · ${providerName(provider)}`), button('Change', () => { const control = document.getElementById('connection-provider'); control?.scrollIntoView({ block: 'center' }); control?.focus() }))
-  yourAI.append(answerSummary, element('p', 'voice-summary', state?.voice === 'OpenAI key' ? 'Voice: OpenAI' : 'Voice: not available yet. Add an OpenAI key, or use built-in Mac speech (coming soon)'))
+  const voiceLine = state?.voice === 'OpenAI' || state?.voice === 'Built into your Mac' ? `Voice: ${state.voice}` : `Voice: not available. ${state?.voiceReason ?? 'Add an OpenAI key, or use built-in Mac speech.'}`
+  yourAI.append(answerSummary, element('p', 'voice-summary', voiceLine))
+  if (state?.needsSpeechPermission) yourAI.append(button('Allow speech recognition', () => { void run({ kind: 'allowSpeechRecognition' }) }))
   const capabilities = element('ul', 'connection-capabilities')
-  capabilities.append(element('li', '', `Sees your screen · ${vision && snapshot.keyPresent ? 'Yes' : 'No'}`), element('li', '', `Draws on screen · ${vision && snapshot.keyPresent ? 'Yes' : 'No'}`), element('li', '', `Reads answers aloud · ${state?.voice === 'OpenAI key' ? snapshot.settings.muted ? 'Muted' : 'Yes' : 'Not available yet'}`))
+  capabilities.append(element('li', '', `Sees your screen · ${vision && snapshot.keyPresent ? 'Yes' : 'No'}`), element('li', '', `Draws on screen · ${vision && snapshot.keyPresent ? 'Yes' : 'No'}`), element('li', '', `Reads answers aloud · ${state && state.voice !== 'unavailable' ? snapshot.settings.muted ? 'Muted' : 'Yes' : 'Not available'}`))
   yourAI.append(capabilities); fields.append(yourAI)
 
   const answer = element('section', 'connection-section'); answer.id = 'connection-answer'
