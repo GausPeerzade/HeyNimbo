@@ -168,6 +168,59 @@ it('forwards each 3D line as it streams in, before its sentence is spoken or dra
   releaseSentence()
   await vi.waitFor(() => expect(deps.mouth!.speak).toHaveBeenCalled())
 })
+it.each([false, true])('streams speech and 2D before later 3D on one high-thinking request; cancel during preparation: %s', async cancel => {
+  vi.useFakeTimers()
+  const frame = { x: 0, y: 0, width: 1200, height: 800 }
+  const { c, deps } = fixture(Promise.resolve({ captureMs: 1, encodeMs: 1, displays: [{ displayId: 1, frame, pixelWidth: 1200, pixelHeight: 800, jpeg: Buffer.from('synthetic-pixels') }] }))
+  const connection = { provider: 'openai' as const, model: 'gpt-6.1-terra', effort: 'medium' as const, vision: true, credential: async () => 'synthetic-only' }
+  const talk = new TalkSession({ ...deps, answer: () => connection })
+  let continueTo2D!: () => void, continueTo3D!: () => void, finish3D!: () => void
+  const page = new Promise<void>(resolve => { continueTo2D = resolve })
+  const model = new Promise<void>(resolve => { continueTo3D = resolve })
+  const detail = new Promise<void>(resolve => { finish3D = resolve })
+  mocks.stream.mockReset()
+  mocks.stream.mockImplementation(async function* () {
+    yield 'A hydraulic jack lifts a load by pushing oil under a piston.\n'
+    await page
+    yield '@card steps 20 20 400 300 "Oil pressure"\n@step steps "Push oil under the piston"\nA small piston pushes the oil.\n'
+    await model
+    yield '@model jack 500 20 600 560 "Hydraulic jack"\n@part jack body tube r=0.45 inner=0.36 h=1.6 mat=steel\n'
+    await detail
+    yield '@part jack ram cylinder r=0.3 h=1.4 at=0,0.4,0 mat=brass\n@tag jack ram "Ram"\nThe larger ram rises under pressure.\n'
+  })
+  talk.askText('Explain a jack with steps and 3D')
+  await vi.advanceTimersByTimeAsync(0)
+  expect(mocks.stream).toHaveBeenCalledOnce()
+  expect(mocks.stream).toHaveBeenCalledWith(expect.objectContaining({ connection }))
+  expect(deps.mouth!.speak).toHaveBeenCalledTimes(1)
+  expect(deps.drawing.prepare).not.toHaveBeenCalled()
+  continueTo2D(); await vi.advanceTimersByTimeAsync(0)
+  expect(deps.mouth!.speak).toHaveBeenCalledTimes(2)
+  talk.onAudioEvent({ kind: 'lineScheduled', line: 2, startsInMs: 0 }); await vi.advanceTimersByTimeAsync(0)
+  expect(vi.mocked(deps.drawing.draw).mock.calls.flatMap(([marks]) => marks.map(mark => mark.kind))).toEqual(['card', 'step'])
+  continueTo3D(); await vi.advanceTimersByTimeAsync(0)
+  expect(vi.mocked(deps.drawing.prepare!).mock.calls.map(([marks]) => marks[0]!.kind)).toEqual(['model', 'part'])
+  // Geometry is prepared while earlier speech can still be playing, not revealed early.
+  expect(deps.drawing.draw).toHaveBeenCalledTimes(1)
+  if (cancel) talk.holdCancelled()
+  finish3D(); await vi.advanceTimersByTimeAsync(0)
+  if (cancel) {
+    expect(deps.drawing.prepare).toHaveBeenCalledTimes(2)
+    expect(deps.mouth!.speak).toHaveBeenCalledTimes(2)
+    talk.onAudioEvent({ kind: 'lineScheduled', line: 3, startsInMs: 0 }); await vi.advanceTimersByTimeAsync(0)
+    expect(deps.drawing.draw).toHaveBeenCalledTimes(1)
+    expect(c.turns()[0]?.state).toBe('interrupted')
+  } else {
+    expect(deps.mouth!.speak).toHaveBeenCalledTimes(3)
+    expect(deps.drawing.draw).toHaveBeenCalledTimes(1)
+    talk.onAudioEvent({ kind: 'lineScheduled', line: 3, startsInMs: 0 }); await vi.advanceTimersByTimeAsync(0)
+    expect(vi.mocked(deps.drawing.draw).mock.calls[1]![0].map(mark => mark.kind)).toEqual(['model', 'part', 'part', 'tag'])
+    talk.onAudioEvent({ kind: 'playbackDrained' })
+    expect(c.turns()[0]?.state).toBe('complete')
+    expect(c.turns()[0]?.scene.beats.flatMap(beat => beat.marks.map(mark => mark.kind))).toEqual(['card', 'step', 'model', 'part', 'part', 'tag'])
+  }
+  expect(mocks.stream).toHaveBeenCalledOnce(); talk.close()
+})
 it('an empty local transcript says it did not catch speech and never asks the answer provider', async () => {
   const { deps, talk, c } = fixture()
   mocks.stream.mockClear()

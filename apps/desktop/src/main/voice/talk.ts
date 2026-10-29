@@ -195,7 +195,10 @@ export class TalkSession {
     if (display) turn.space = { frame: display.frame, pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight }
     // 3D lines go to the overlay as they arrive, so their geometry is ready when speech reaches them.
     const beats = new BeatParser({ width: display?.pixelWidth ?? 0, height: display?.pixelHeight ?? 0 }, (mark) => {
-      if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) this.deps.drawing.prepare?.([mark], turn.space)
+      if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) {
+        if (mark.kind === 'part') this.mark(turn, 'first 3D preparation')
+        this.deps.drawing.prepare?.([mark], turn.space)
+      }
     })
     let speech: Promise<void> = Promise.resolve()
     let lineNumber = 0
@@ -311,7 +314,10 @@ export class TalkSession {
   }
 
   private draw(turn: Turn, marks: Mark[], durationMs: number): void {
-    if (this.turn === turn && turn.space && marks.length) this.deps.drawing.draw(marks, durationMs, turn.space)
+    if (this.turn === turn && turn.space && marks.length) {
+      if (marks.some(mark => mark.kind === 'part')) this.mark(turn, 'first 3D draw queued')
+      this.deps.drawing.draw(marks, durationMs, turn.space)
+    }
   }
 
   private mark(turn: Turn, label: string): void {
