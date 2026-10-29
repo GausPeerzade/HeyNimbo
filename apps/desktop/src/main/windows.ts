@@ -19,6 +19,18 @@ function isInteractiveRegionEvent(payload: unknown): payload is Extract<OverlayE
     && INTERACTIVE_REGION_ID.exec(region.id)?.[0] === region.id && typeof region.over === 'boolean' && typeof region.captured === 'boolean'
 }
 
+/** Frame-gap percentiles for a development trace, in milliseconds. */
+export function frameTraceSummary(deltas: readonly number[]): { frames: number; activeMs: number; p50: number; p95: number; max: number; longestStall: number } {
+  const sorted = [...deltas].sort((a, b) => a - b)
+  const percentile = (p: number): number => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)] ?? 0
+  return {
+    frames: sorted.length,
+    activeMs: deltas.reduce((sum, gap) => sum + gap, 0),
+    p50: percentile(0.5), p95: percentile(0.95), max: sorted.at(-1) ?? 0,
+    longestStall: sorted.filter((gap) => gap > 100).at(-1) ?? 0,
+  }
+}
+
 /** Latest notch state, replayed whenever the notch page (re)loads. */
 let notchStatus: NotchStatus = { kind: 'idle' }
 
@@ -180,15 +192,7 @@ export class OverlayManager {
         this.clear()
       }
       else if (payload.kind === 'frameTrace' && devFlag('NIMBO_DEBUG_DRAW_TRACE')) {
-        const sorted = [...payload.deltas].sort((a, b) => a - b)
-        const percentile = (p: number): number => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)] ?? 0
-        console.info(`[draw-trace] ${JSON.stringify({
-          frames: sorted.length,
-          activeMs: payload.deltas.reduce((sum, gap) => sum + gap, 0),
-          p50: percentile(0.5), p95: percentile(0.95), max: sorted.at(-1) ?? 0,
-          longestStall: sorted.filter((gap) => gap > 100).at(-1) ?? 0,
-          deltas: payload.deltas,
-        })}`)
+        console.info(`[draw-trace] ${JSON.stringify({ ...frameTraceSummary(payload.deltas), deltas: payload.deltas })}`)
       }
     })
   }
@@ -248,6 +252,12 @@ export class OverlayManager {
       from: { x: cursor.x - display.bounds.x, y: cursor.y - display.bounds.y },
       epoch: this.epoch,
     })
+  }
+
+  /** Sends 3D lines ahead of their beat to the display that will draw them. */
+  prepare(marks: Mark[], space: CaptureSpace): void {
+    const display = displayFor(space, screen.getAllDisplays())
+    if (display) this.send(display.id, { kind: 'prepare', marks: toOverlaySpace(marks, space, display.bounds), epoch: this.epoch })
   }
 
   /** Feeds the OS cursor to the display that owns the buddy, so it rides next

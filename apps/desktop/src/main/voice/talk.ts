@@ -28,6 +28,8 @@ export interface TalkDeps {
   drawing: {
     /** Draws marks given in the capture's screenshot pixels. */
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
+    /** Builds 3D lines ahead of their sentence; they still draw with it. */
+    prepare?(marks: Mark[], space: CaptureSpace): void
     /** The answer is over; offer to clear the drawing. */
     answerDone(): void
   }
@@ -186,7 +188,10 @@ export class TalkSession {
     if (turn.abort.signal.aborted) return
     const screenshot = toScreenshot(display)
     if (display) turn.space = { frame: display.frame, pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight }
-    const beats = new BeatParser({ width: display?.pixelWidth ?? 0, height: display?.pixelHeight ?? 0 })
+    // 3D lines go to the overlay as they arrive, so their geometry is ready when speech reaches them.
+    const beats = new BeatParser({ width: display?.pixelWidth ?? 0, height: display?.pixelHeight ?? 0 }, (mark) => {
+      if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) this.deps.drawing.prepare?.([mark], turn.space)
+    })
     let speech: Promise<void> = Promise.resolve()
     let lineNumber = 0
     let answer = ''

@@ -34,6 +34,12 @@ describe('scheduleBeat', () => {
     ])
   })
 
+  it('starts a gliding gesture at once, without a flight, because it moves the pen itself', () => {
+    const far: Gesture = { group: 0, from: [900, 600], to: [900, 600], seconds: 0.6, glides: true }
+    expect(scheduleBeat([far], [0, 0], 3000)).toEqual([{ kind: 'gesture', index: 0, startMs: 0, durationMs: 600 }])
+    expect(scheduleBeat([{ ...far, glides: false }], [0, 0], 3000)[0]).toMatchObject({ kind: 'flight' })
+  })
+
   it('keeps composite parts contiguous, then waits for the whole group', () => {
     const parts = [line(0, [0, 0], [350, 0]), line(0, [350, 0], [700, 0]), line(1, [700, 0], [1050, 0])]
     expect(scheduleBeat(parts, [0, 0], 5000)).toEqual([

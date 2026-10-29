@@ -43,6 +43,8 @@ export interface Gesture {
   from: Point
   to: Point
   seconds: number
+  /** Moves the pen itself while it runs (a 3D part growing), so it starts at once without a flight. */
+  glides?: boolean
 }
 
 export type TimelineEntry =
@@ -57,7 +59,7 @@ export function scheduleBeat(gestures: readonly Gesture[], from: Point, duration
   let previousGroup: number | undefined
   for (const [index, gesture] of gestures.entries()) {
     if (previousGroup !== undefined && gesture.group !== previousGroup) at += 30
-    if (distanceBetween(from, gesture.from) > 0.01) {
+    if (!gesture.glides && distanceBetween(from, gesture.from) > 0.01) {
       const travel = flightDuration(from, gesture.from) * 1000
       entries.push({ kind: 'flight', from, to: gesture.from, startMs: at, durationMs: travel })
       at += travel

@@ -112,16 +112,17 @@ const NUMBER = '-?\\d+(?:\\.\\d+)?'
 
 function parseCardMark(line: string, image: ImageSize): Mark | undefined {
   const textOK = (text: string): boolean => text.trim().length > 0 && Array.from(text).length <= 60
-  const card = new RegExp(`^@(card|model) (${CARD_ID_PATTERN}) (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"(?: (grid|dots|plain|turntable=true|turntable=false))?$`).exec(line)
+  const card = new RegExp(`^@(card|model) (${CARD_ID_PATTERN}) (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"(?: (grid|dots|plain|turntable|turntable=true|turntable=false))?$`).exec(line)
   if (card) {
-    const [, kind, id, ax, ay, aw, ah, title, board] = card
-    if (board && (kind === 'model' ? !board.startsWith('turntable=') : board.startsWith('turntable='))) return undefined
+    const [, kind, id, ax, ay, aw, ah, title, option] = card
+    // An option meant for the other kind is ignored rather than losing the card.
+    const board = option?.startsWith('turntable') ? undefined : option
     const [x, y, w, h] = [ax, ay, aw, ah].map(Number) as [number, number, number, number]
     if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0 || !textOK(title!)) return undefined
     const width = clamp(w, Math.min(240, image.width), image.width)
     const height = clamp(h, Math.min(180, image.height), image.height)
     const box = { id: id!, x: clamp(x, 0, image.width - width), y: clamp(y, 0, image.height - height), w: width, h: height, title: title!.trim() }
-    return kind === 'model' ? { ...box, kind: 'model', turntable: board === 'turntable=true' }
+    return kind === 'model' ? { ...box, kind: 'model', turntable: option === 'turntable' || option === 'turntable=true' }
       : { ...box, kind: 'card', board: (board ?? 'grid') as 'grid' | 'dots' | 'plain' }
   }
   const flow = new RegExp(`^@(heading|note|step) (${CARD_ID_PATTERN}) "([^"\\n]*)"(?: (up|down|left|right))?(?: (blue|red|orange|green|purple|grey))?$`).exec(line)
@@ -156,7 +157,8 @@ export class BeatParser {
   private atLineStart = true
   private markLine: string | undefined
 
-  constructor(private readonly image: ImageSize) {}
+  /** `onCommand` sees each accepted command as its line ends, before its sentence does. */
+  constructor(private readonly image: ImageSize, private readonly onCommand?: (mark: Mark) => void) {}
 
   push(delta: string): Beat[] {
     const beats: Beat[] = []
@@ -211,7 +213,7 @@ export class BeatParser {
         valid = steps !== undefined && !this.models.models.has(mark.id) && (mark.kind !== 'step' || steps < 8)
         if (valid && mark.kind === 'step') this.cards.set(mark.id, steps! + 1)
       } else if (mark.kind === 'clear') { this.cards.clear(); this.models.clear() }
-      if (valid) { this.pendingMarks.push(mark); if (modelCommand) this.modelCommandCount++; else this.commandCount++ }
+      if (valid) { this.pendingMarks.push(mark); if (modelCommand) this.modelCommandCount++; else this.commandCount++; this.onCommand?.(mark) }
     }
     this.markLine = undefined
   }
