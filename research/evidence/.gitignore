@@ -1,0 +1,23 @@
+# Keep downloaded pages, videos, frames and upstream source local.
+# Only compact audit metadata and the no-network SDK probe are publishable.
+*
+!.gitignore
+!README.md
+!clicky-audit-sources.json
+!clicky-verification.json
+!execution-sources.json
+!execution-citation-ledger.json
+!harness-ai-probe.mjs
+!harness-ai-probe-result.json
+!harness-sources.json
+!harness-link-audit.json
+!harness-citations.json
+!harness-verify.py
+!harness-fetch.py
+!harness-requests.json
+!harness-more-requests.json
+!harness-code-requests.json
+!harness-extra-requests.json
+!harness-final-requests.json
+!verify-plan.py
+!opus-5-5-review-audit.json

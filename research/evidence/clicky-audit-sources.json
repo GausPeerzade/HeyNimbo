@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://www.heyclicky.com",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 2,
+      "url": "https://www.heyclicky.com/trust",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 3,
+      "url": "https://www.heyclicky.com/changelog",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 4,
+      "url": "https://www.heyclicky.com/privacy-policy",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 5,
+      "url": "https://www.heyclicky.com/mac",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 6,
+      "url": "https://www.heyclicky.com/windows",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 10,
+      "url": "https://raw.githubusercontent.com/farzaa/clicky/main/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 11,
+      "url": "https://raw.githubusercontent.com/farzaa/clicky/main/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 13,
+      "url": "https://api.github.com/repos/farzaa/clicky-releases/releases/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 14,
+      "url": "https://api.github.com/repos/heyclicky/clicky-releases-windows/releases/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 15,
+      "url": "https://api.github.com/repos/farzaa/clicky-releases/contents",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 16,
+      "url": "https://api.github.com/repos/heyclicky/clicky-releases-windows/contents",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 17,
+      "url": "https://www.youtube.com/watch?v=xOkfw1_ePhg",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 18,
+      "url": "https://www.youtube.com/watch?v=km54y7Xd_7g",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 19,
+      "url": "https://www.youtube.com/watch?v=bLnkvjw7j84",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 21,
+      "url": "https://www.heyclicky.com/assets/heyclicky-draw.mp4",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 22,
+      "url": "https://www.heyclicky.com/assets/changelog/draw-3d.webp",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 23,
+      "url": "https://raw.githubusercontent.com/farzaa/clicky/main/worker/src/index.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 24,
+      "url": "https://raw.githubusercontent.com/farzaa/clicky/main/leanring-buddy/ClaudeAPI.swift",
+      "title": "",
+      "accessed": "2026-10-29"
+    }
+  ]
+}

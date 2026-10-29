@@ -1,0 +1,827 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/commits/main",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 2,
+      "url": "https://api.github.com/repos/openai/codex/commits/main",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 3,
+      "url": "https://api.github.com/repos/badlogic/pi-mono/commits/main",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 4,
+      "url": "https://api.github.com/repos/anomalyco/opencode/commits/dev",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 5,
+      "url": "https://api.github.com/repos/vercel/ai/commits/main",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 6,
+      "url": "https://hermes-agent.nousresearch.com/docs/llms.txt",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 7,
+      "url": "https://developers.openai.com/codex/app-server",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 8,
+      "url": "https://developers.openai.com/codex/sdk",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 9,
+      "url": "https://opencode.ai/docs/sdk",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 10,
+      "url": "https://opencode.ai/docs/server",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 11,
+      "url": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/docs/sdk.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 12,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/trees/fcc26fbd9f1641755e49793d7ed608f3b7214c3d?recursive=1",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 13,
+      "url": "https://api.github.com/repos/openai/codex/git/trees/2681f8cba2831ef72bca2c0672b2e49d5f690745?recursive=1",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 14,
+      "url": "https://api.github.com/repos/badlogic/pi-mono/git/trees/e7a0df27c09d11bf4161d3605246cbf57a129cb2?recursive=1",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 15,
+      "url": "https://api.github.com/repos/anomalyco/opencode/git/trees/87a35fa43ac51ecb89ddafdb8dad07f79e967c43?recursive=1",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 16,
+      "url": "https://api.github.com/repos/vercel/ai/git/trees/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b?recursive=1",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 17,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 18,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/pyproject.toml",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 19,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/agent_init_params.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 20,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/tool_executor.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 21,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tools/approval.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 22,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/acp_adapter/permissions.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 23,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/security.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 24,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/features/memory.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 25,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/features/skills.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 26,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 27,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 28,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 29,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 30,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 31,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/thread.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 32,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/exec.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 33,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/threadOptions.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 34,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/turnOptions.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 35,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/events.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 36,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/core/src/tools/handlers/dynamic.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 37,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/dynamic_tools.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 38,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/core/src/skills.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 39,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 40,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 41,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/agent.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 42,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/types.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 43,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/agent-loop.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 44,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 45,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/src/core/sdk.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 46,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/src/core/extensions/types.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 47,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/sdk.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 48,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/extensions.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 49,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/skills.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 50,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/providers.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 51,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/examples/sdk/12-full-control.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 52,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/examples/sdk/14-codemode-mcp.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 53,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 54,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 55,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 56,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/index.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 57,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/opencode.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 58,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/contracts.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 59,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/tool.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 60,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/test/embedded.test.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 61,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/server/src/handlers/session.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 62,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/server/src/handlers/permission.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 63,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/session/prompt.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 64,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/plugin/src/promise/tool.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 65,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/plugin/src/promise/permission.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 66,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/skill/discovery.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 67,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/LICENSE",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 68,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 69,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 70,
+      "url": "https://ai-sdk.dev/docs/agents/policy-tool-approvals",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 71,
+      "url": "https://ai-sdk.dev/docs/agents/loop-control",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 72,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/51174f3e80773bae5a7b3bfb884053911d796972",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 73,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/8583670f91b9927d0135f94bbe0ff562b74efea9",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 74,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/af647a1c4f1abeb639c59c13e6f18b1ad8224e2c",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 75,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/aa35790f82d9e560ac2d4221107d97e8c09613b9",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 76,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/f272b26bc09766b2d1cb84060f6ac2a14abe166a",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 77,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/56b34bef4233c3fc34690bfd95b4812056b14e15",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 78,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/443155f49b1478f4f470dbd4ba71a7f26235c1ad",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 79,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/53501465c10100377a628c67d211bb4fc5cb2488",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 80,
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/blobs/913a99e86e72e7207a7eee6a5166de7eceaef3ac",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 81,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/promise.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 82,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/internal/host.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 83,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/server/src/api.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 84,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/client/src/promise/generated/types.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 85,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/permission.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 86,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/tool/runtime.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 87,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/plugin/src/promise/plugin.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 88,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/model-provider-info/src/lib.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 89,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/memory.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 90,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/turn_steer.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 91,
+      "url": "https://raw.githubusercontent.com/openai/codex/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/turn_interrupt.rs",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 92,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/rpc.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 93,
+      "url": "https://raw.githubusercontent.com/earendil-works/pi/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/test/agent-loop.test.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 94,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/workflow/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 95,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 96,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-configuration.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 97,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/steering.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 98,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent-steering.test.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 99,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-signature.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 100,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent-settings.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 101,
+      "url": "https://ai-sdk.dev/docs/agents/workflow-agent.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 102,
+      "url": "https://ai-sdk.dev/docs/ai-sdk-harnesses.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 103,
+      "url": "https://ai-sdk.dev/docs/ai-sdk-harnesses/harness-agent.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 104,
+      "url": "https://ai-sdk.dev/docs/agents/memory.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 105,
+      "url": "https://ai-sdk.dev/docs/agents/subagents.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 106,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 107,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-codex/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 108,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-codex/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 109,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-codex/src/bridge/codex-app-server-driver.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 110,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-pi/README.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 111,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-pi/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 112,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness/src/v1/harness-v1-permission-mode.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 113,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness/src/v1/harness-v1-session.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 114,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/mcp/package.json",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 115,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/stream-text.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 116,
+      "url": "https://raw.githubusercontent.com/vercel/ai/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-signature.test.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 117,
+      "url": "https://registry.npmjs.org/@opencode%2fsdk/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 118,
+      "url": "https://registry.npmjs.org/@opencode-ai%2fsdk/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 119,
+      "url": "https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 120,
+      "url": "https://registry.npmjs.org/@ai-sdk%2fharness/latest",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 121,
+      "url": "https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 122,
+      "url": "https://ai-sdk.dev/docs/agents/loop-control.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 123,
+      "url": "https://ai-sdk.dev/docs/agents/policy-tool-approvals.md",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 124,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/provider-runtime",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 125,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/session.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 126,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/permission.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 127,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/event.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 128,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/provider.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 129,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/database/sqlite.node.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 130,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/schema/src/tool.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 131,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/schema/src/session-inbox.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 132,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/test/permission.test.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 133,
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/session/compaction.ts",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 134,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/context_compressor.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 135,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/memory_manager.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 136,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tools/mcp_tool_registration.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    },
+    {
+      "id": 137,
+      "url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tests/acp_adapter/test_permissions.py",
+      "title": "",
+      "accessed": "2026-10-29"
+    }
+  ]
+}

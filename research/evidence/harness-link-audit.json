@@ -1,0 +1,680 @@
+{
+  "lines": 258,
+  "unique_external_links": 107,
+  "missing_evidence": [],
+  "audit": [
+    {
+      "url": "https://ai-sdk.dev/docs/agents/loop-control",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-loop.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/agents/memory",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-memory.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/agents/policy-tool-approvals",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-policy.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/agents/subagents",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-subagents.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/agents/workflow-agent",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-workflow-agent.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-mcp.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/ai-sdk-harnesses",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-harnesses.md"
+    },
+    {
+      "url": "https://ai-sdk.dev/docs/ai-sdk-harnesses/harness-agent",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-harness-agent.md"
+    },
+    {
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/git/trees/fcc26fbd9f1641755e49793d7ed608f3b7214c3d?recursive=1",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-tree.json"
+    },
+    {
+      "url": "https://developers.openai.com/codex/app-server/",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-app-server.html"
+    },
+    {
+      "url": "https://developers.openai.com/codex/sdk/",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk.html"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/LICENSE",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-LICENSE"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/acp_adapter/permissions.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-acp_adapter__permissions.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/acp_adapter/server.py",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-acp_adapter__server.py-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/context_compressor.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-agent__context_compressor.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/conversation_loop.py",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-agent__conversation_loop.py-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/memory_manager.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-agent__memory_manager.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/tool_executor.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-agent__tool_executor.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/agent/tool_guardrails.py",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-agent__tool_guardrails.py-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/pyproject.toml",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-pyproject.toml"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/run_agent.py",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-run_agent.py-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tests/acp_adapter/test_permissions.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-tests__acp_adapter__test_permissions.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tools/approval.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-tools__approval.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tools/mcp_tool_registration.py",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-tools__mcp_tool_registration.py"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/tools/registry.py",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-tools__registry.py-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/developer-guide/middleware.md",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__developer-guide__middleware.md-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/developer-guide/programmatic-integration.md",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__developer-guide__programmatic-integration.md-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/guides/python-library.md",
+      "ok": true,
+      "method": "pinned-blob-api-recovery",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__guides__python-library.md-blob.json"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/features/memory.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__user-guide__features__memory.md"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/features/skills.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__user-guide__features__skills.md"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/blob/fcc26fbd9f1641755e49793d7ed608f3b7214c3d/website/docs/user-guide/security.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-website__docs__user-guide__security.md"
+    },
+    {
+      "url": "https://github.com/NousResearch/hermes-agent/commit/fcc26fbd9f1641755e49793d7ed608f3b7214c3d",
+      "ok": true,
+      "method": "fetched-commit-metadata",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-meta.json"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/LICENSE",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-LICENSE"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/database/sqlite.node.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__src__database__sqlite.node.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/permission.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__src__permission.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/provider.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__src__provider.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/session/compaction.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__src__session__compaction.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/src/skill/discovery.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__src__skill__discovery.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/core/test/permission.test.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__core__test__permission.test.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/plugin/src/promise/tool.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__plugin__src__promise__tool.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/event.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__protocol__src__groups__event.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/permission.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__protocol__src__groups__permission.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/protocol/src/groups/session.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__protocol__src__groups__session.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/schema/src/session-inbox.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__schema__src__session-inbox.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/schema/src/tool.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__schema__src__tool.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/README.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__README.md"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/package.json",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__package.json"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/contracts.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__src__contracts.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/internal/host.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__src__internal__host.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/src/promise.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__src__promise.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/blob/87a35fa43ac51ecb89ddafdb8dad07f79e967c43/packages/sdk/test/embedded.test.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-packages__sdk__test__embedded.test.ts"
+    },
+    {
+      "url": "https://github.com/anomalyco/opencode/commit/87a35fa43ac51ecb89ddafdb8dad07f79e967c43",
+      "ok": true,
+      "method": "fetched-commit-metadata",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-meta.json"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/LICENSE",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-LICENSE"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/README.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__agent__README.md"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/agent-loop.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__agent__src__agent-loop.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/agent.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__agent__src__agent.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/src/types.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__agent__src__types.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/agent/test/agent-loop.test.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__agent__test__agent-loop.test.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/providers.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__docs__providers.md"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/rpc.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__docs__rpc.md"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/sdk.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__docs__sdk.md"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/docs/skills.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__docs__skills.md"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/examples/sdk/14-codemode-mcp.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__examples__sdk__14-codemode-mcp.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/package.json",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__package.json"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/src/core/extensions/types.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__src__core__extensions__types.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/blob/e7a0df27c09d11bf4161d3605246cbf57a129cb2/packages/coding-agent/src/core/sdk.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-packages__coding-agent__src__core__sdk.ts"
+    },
+    {
+      "url": "https://github.com/earendil-works/pi/commit/e7a0df27c09d11bf4161d3605246cbf57a129cb2",
+      "ok": true,
+      "method": "fetched-commit-metadata",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-meta.json"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/LICENSE",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-LICENSE"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/memory.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server-protocol__src__protocol__v2__memory.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server-protocol__src__protocol__v2__permissions.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server-protocol__src__protocol__v2__thread.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server-protocol__src__protocol__v2__turn.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/dynamic_tools.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server__tests__suite__v2__dynamic_tools.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/turn_interrupt.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server__tests__suite__v2__turn_interrupt.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/app-server/tests/suite/v2/turn_steer.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__app-server__tests__suite__v2__turn_steer.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/core/src/skills.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__core__src__skills.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/core/src/tools/handlers/dynamic.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__core__src__tools__handlers__dynamic.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/codex-rs/model-provider-info/src/lib.rs",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-codex-rs__model-provider-info__src__lib.rs"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/events.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk__typescript__src__events.ts"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/exec.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk__typescript__src__exec.ts"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/thread.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk__typescript__src__thread.ts"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/threadOptions.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk__typescript__src__threadOptions.ts"
+    },
+    {
+      "url": "https://github.com/openai/codex/blob/2681f8cba2831ef72bca2c0672b2e49d5f690745/sdk/typescript/src/turnOptions.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-sdk__typescript__src__turnOptions.ts"
+    },
+    {
+      "url": "https://github.com/openai/codex/commit/2681f8cba2831ef72bca2c0672b2e49d5f690745",
+      "ok": true,
+      "method": "fetched-commit-metadata",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-codex-meta.json"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/LICENSE",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-LICENSE"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent-settings.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__agent__tool-loop-agent-settings.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent-steering.test.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__agent__tool-loop-agent-steering.test.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/agent/tool-loop-agent.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__agent__tool-loop-agent.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/steering.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__generate-text__steering.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-configuration.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__generate-text__tool-approval-configuration.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-signature.test.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__generate-text__tool-approval-signature.test.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/ai/src/generate-text/tool-approval-signature.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__ai__src__generate-text__tool-approval-signature.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-codex/src/bridge/codex-app-server-driver.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__harness-codex__src__bridge__codex-app-server-driver.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness-pi/README.md",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__harness-pi__README.md"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness/package.json",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__harness__package.json"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/harness/src/v1/harness-v1-permission-mode.ts",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__harness__src__v1__harness-v1-permission-mode.ts"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/mcp/package.json",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__mcp__package.json"
+    },
+    {
+      "url": "https://github.com/vercel/ai/blob/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b/packages/workflow/package.json",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-packages__workflow__package.json"
+    },
+    {
+      "url": "https://github.com/vercel/ai/commit/ede06e32cf5ac1d79e29bc07cd4e3839e8998a0b",
+      "ok": true,
+      "method": "fetched-commit-metadata",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-meta.json"
+    },
+    {
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/provider-runtime",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-provider.html"
+    },
+    {
+      "url": "https://hermes-agent.nousresearch.com/docs/llms.txt",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-hermes-llms.txt"
+    },
+    {
+      "url": "https://opencode.ai/docs/sdk/",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-sdk.html"
+    },
+    {
+      "url": "https://opencode.ai/docs/server/",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-server.html"
+    },
+    {
+      "url": "https://registry.npmjs.org/@ai-sdk%2fharness/latest",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-ai-harness-npm.json"
+    },
+    {
+      "url": "https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-pi-npm.json"
+    },
+    {
+      "url": "https://registry.npmjs.org/@opencode%2fsdk/latest",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-npm.json"
+    },
+    {
+      "url": "https://registry.npmjs.org/@opencode-ai%2fsdk/latest",
+      "ok": true,
+      "method": "fetched-url",
+      "evidence_path": "/Users/gauspeerzade/Documents/myprojects/heynimbo/research/evidence/harness-evidence/harness-opencode-legacy-npm.json"
+    }
+  ],
+  "probe": {
+    "deniedExecutionCount": 0,
+    "approvalCount": 1,
+    "contexts": {
+      "run": "run-1",
+      "capability": "opaque"
+    },
+    "steeredText": "after",
+    "steeringOutcome": {
+      "type": "delivered",
+      "id": "steer-O4kXbifxi4ontqNxDDlh9jGL",
+      "message": {
+        "role": "user",
+        "content": "new instruction"
+      },
+      "stepNumber": 1
+    },
+    "streamedText": "stream-ok",
+    "streamParts": [
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "finish-step",
+      "finish"
+    ],
+    "preAbortedCallRejected": true,
+    "unguardedAbortToolInvocations": 1,
+    "guardedAbortToolInvocations": 0
+  }
+}

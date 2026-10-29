@@ -1,0 +1,401 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://playwright.dev/docs/api/class-browsertype",
+      "title": "Playwright BrowserType",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "This connection is significantly lower fidelity than the Playwright protocol connection",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "url": "https://developer.chrome.com/blog/remote-debugging-port",
+      "title": "Chrome remote-debugging profile restrictions",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "These switches will no longer be respected if attempting to debug the default Chrome data directory.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "url": "https://raw.githubusercontent.com/microsoft/playwright-mcp/main/README.md",
+      "title": "Playwright MCP implementation README",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Playwright MCP is **not** a security boundary.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28",
+      "title": "MCP current specification 2026-07-28",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Per-request capability negotiation",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports",
+      "title": "MCP transport overview",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "each message is an HTTP POST to a single MCP endpoint",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+      "title": "MCP Streamable HTTP binding",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Servers MUST validate the `Origin` header on all incoming connections to prevent DNS rebinding attacks.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization",
+      "title": "MCP HTTP authorization",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Authorization is OPTIONAL for MCP implementations.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "url": "https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices",
+      "title": "MCP security best practices",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "MCP servers MUST NOT accept any tokens that were not explicitly issued for the MCP server.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/server/tools",
+      "title": "MCP tools and untrusted annotations",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "clients MUST consider tool annotations to be untrusted unless they come from trusted servers.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "url": "https://agentskills.io/specification",
+      "title": "Agent Skills specification",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "The `SKILL.md` file must contain YAML frontmatter followed by Markdown content.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "url": "https://agentskills.io/client-implementation/adding-skills-support",
+      "title": "Agent Skills client integration and project trust",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Project-level skills come from the repository being worked on, which may be untrusted",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "url": "https://raw.githubusercontent.com/anthropic-experimental/sandbox-runtime/main/README.md",
+      "title": "Sandbox Runtime primitives, defaults and limitations",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "By default, read access is allowed everywhere.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "url": "https://raw.githubusercontent.com/containers/bubblewrap/main/README.md",
+      "title": "Bubblewrap policy responsibility",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "bubblewrap is not a complete, ready-made sandbox with a specific security policy.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "url": "https://developer.apple.com/documentation/security/app-sandbox.md",
+      "title": "Apple App Sandbox documentation Markdown",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "App Sandbox provides protection to system resources and user data",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "url": "https://docs.docker.com/engine/security",
+      "title": "Docker Engine security boundaries",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "The attack surface of the Docker daemon itself",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "url": "https://nodejs.org/api/child_process.html",
+      "title": "Node child-process lifecycle and signals",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "The `killed` property does not indicate that the child process has been terminated.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "url": "https://docs.kernel.org/admin-guide/cgroup-v2.html",
+      "title": "Linux cgroup v2 process-tree termination",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Killing a cgroup tree will deal with concurrent forks appropriately and is protected against migrations.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "url": "https://xtermjs.org/docs/guides/security",
+      "title": "xterm.js security",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "it exposes direct shell access to any Javascript code on that page.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "url": "https://www.electronjs.org/docs/latest/tutorial/security",
+      "title": "Electron renderer and IPC security",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Validate the sender of all IPC messages",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "url": "https://docs.langchain.com/oss/javascript/langgraph/persistence",
+      "title": "LangGraph persistence",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "MemorySaver and InMemorySaver store checkpoints in RAM.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "url": "https://docs.langchain.com/oss/javascript/langgraph/interrupts",
+      "title": "LangGraph replay and interrupt side effects",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Side effects called before `interrupt` must be idempotent",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "url": "https://arxiv.org/abs/2407.12784",
+      "title": "AgentPoison paper, latest v1",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "poisoning their long-term memory or RAG knowledge base",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "url": "https://arxiv.org/abs/2503.03704",
+      "title": "MINJA paper, latest v5 revised 2026-02-12",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "without assuming that the attacker can directly modify the memory bank of the agent.",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "url": "https://raw.githubusercontent.com/ethz-spylab/agentdojo/main/README.md",
+      "title": "AgentDojo evaluation implementation",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "url": "https://raw.githubusercontent.com/microsoft/playwright/main/LICENSE",
+      "title": "Playwright license",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Apache License Version 2.0",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "url": "https://raw.githubusercontent.com/microsoft/playwright-mcp/main/LICENSE",
+      "title": "Playwright MCP license",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Apache License Version 2.0",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "url": "https://raw.githubusercontent.com/modelcontextprotocol/typescript-sdk/main/LICENSE",
+      "title": "MCP TypeScript SDK licensing transition",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "The MCP project is undergoing a licensing transition from the MIT License to the Apache License",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "url": "https://raw.githubusercontent.com/agentskills/agentskills/main/skills-ref/pyproject.toml",
+      "title": "skills-ref package license and runtime",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "license = \"Apache-2.0\"",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "url": "https://raw.githubusercontent.com/anthropic-experimental/sandbox-runtime/main/LICENSE",
+      "title": "Sandbox Runtime license",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Apache License Version 2.0",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "url": "https://raw.githubusercontent.com/containers/bubblewrap/main/bubblewrap.c",
+      "title": "Bubblewrap native source SPDX",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "SPDX-License-Identifier: LGPL-2.0-or-later *",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "url": "https://raw.githubusercontent.com/langchain-ai/langgraphjs/main/LICENSE",
+      "title": "LangGraphJS license",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "The MIT License",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "url": "https://raw.githubusercontent.com/ethz-spylab/agentdojo/main/LICENSE",
+      "title": "AgentDojo license",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Permission is hereby granted, free of charge",
+          "added": "2026-10-29"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr",
+      "title": "MCP multi round-trip requests breaking change",
+      "accessed": "2026-10-29",
+      "quotes": [
+        {
+          "text": "Servers MUST send server-to-client requests",
+          "added": "2026-10-29"
+        }
+      ]
+    }
+  ]
+}
