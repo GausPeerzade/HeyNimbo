@@ -1,13 +1,15 @@
 import { EventEmitter } from 'node:events'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SqliteAgentStore } from '../agent/store'
 import { afterEach, expect, it, vi } from 'vitest'
-import { AgentSupervisor } from './agent-supervisor'
-import { DEFAULT_BUDGET, type AgentEvent, type AgentPush, type HostCommand, type MainToHost, type RunSummary } from '../shared/agent-protocol'
+import { AgentSupervisor, type ChildLike } from './agent-supervisor'
+import { DEFAULT_BUDGET, HOST_MESSAGE_MAX_BYTES, type AgentEvent, type AgentPush, type HostCommand, type MainToHost, type RunSummary } from '../shared/agent-protocol'
 
 class Child extends EventEmitter {
   pid?: number
@@ -191,6 +193,109 @@ it('bounds outstanding requests and never respawns after disposal', async () => 
   await expect(supervisor.request(start)).rejects.toThrow('Agent host stopped.')
   expect(children).toHaveLength(1)
 })
+it('reaps a responsive host reporting unsettled cancellation and fences all late generation events before respawning', async () => {
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'stuck' }); await started
+  const stopped = supervisor.stopAll()
+  child.reply({ ok: true, unsettled: 3 })
+  await stopped
+  expect(child.killed).toBe(true)
+  expect(supervisor.state).toBe('stopped')
+  pushes.length = 0
+  child.emit('message', { v: 1, kind: 'events', runs: [], events: [{ runId: 'stuck', seq: 1, id: 'late', at: 0, payload: { type: 'status', status: 'succeeded' } }] })
+  expect(pushes).toEqual([])
+  const retry = supervisor.request({ ...start, requestId: 'fresh' }), fresh = children[1]!
+  fresh.ready(); fresh.reply({ runId: 'fresh' })
+  await expect(retry).resolves.toEqual({ runId: 'fresh' })
+  supervisor.dispose()
+})
+it('reaps a real composed host with three abort-ignoring factories then starts fresh and continues interrupted work without app restart', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-drain-e2e-')), dataDir = join(dir, 'data')
+  const store = new SqliteAgentStore(join(dataDir, 'agent.sqlite'))
+  store.createRun({ id: 'interrupted', requestId: 'interrupted-request', goal: 'Resume me', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: 0 })
+  store.close()
+  const require = createRequire(import.meta.url), root = fileURLToPath(new URL('../../', import.meta.url))
+  // Only the process transport (Node IPC instead of Electron) and external
+  // model are substituted. serveHost -> composeRuntime -> SQLite/runtime is real.
+  const script = `
+    import { pathToFileURL } from 'node:url'
+    const { createServer } = await import(pathToFileURL(${JSON.stringify(require.resolve('vite'))}))
+    const { MockLanguageModelV4 } = await import(pathToFileURL(${JSON.stringify(require.resolve('ai/test'))}))
+    const server = await createServer({ root: ${JSON.stringify(root)}, configFile: false, logLevel: 'error', server: { middlewareMode: true, watch: null, ws: false, hmr: false }, appType: 'custom' })
+    const { serveHost } = await server.ssrLoadModule('/src/agent/host/serve.ts')
+    const { composeRuntime } = await server.ssrLoadModule('/src/agent/host/compose.ts')
+    const model = new MockLanguageModelV4({ doStream: async () => ({ stream: new ReadableStream({ start(c) {
+      c.enqueue({ type: 'finish', finishReason: { unified: 'stop', raw: 'fixture' }, usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } }); c.close()
+    } }) }) })
+    serveHost({ on: (_event, listener) => process.on('message', listener), postMessage: message => process.send(message) }, init => composeRuntime(init, { models: selection => {
+      if (selection.model !== 'hold') return Promise.resolve(model)
+      process.send({ notice: 'held' }); return new Promise(() => {})
+    } }))
+    process.send({ notice: 'boot' })
+  `
+  const children: Array<{ process: ReturnType<typeof spawn>; exited: Promise<unknown>; deliver(message: unknown): void }> = [], pushes: AgentPush[] = []
+  let held = 0
+  const supervisor = new AgentSupervisor({ dataDir, credentials: async () => '', onPush: push => pushes.push(push), spawn: () => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
+    const exited = once(child, 'exit'), listeners: Array<(value: unknown) => void> = [], queued: MainToHost[] = []
+    let booted = false
+    const deliver = (message: unknown) => { for (const listener of listeners) listener(message) }
+    children.push({ process: child, exited, deliver })
+    child.on('message', message => {
+      const m = message as { notice?: string; v?: number }
+      if (m.notice === 'held') held++
+      if (m.notice === 'boot') { booted = true; for (const value of queued.splice(0)) child.send(value) }
+      if (m.v === 1) deliver(message)
+    })
+    return {
+      pid: child.pid,
+      postMessage(message) { if (booted) child.send(message); else queued.push(message) },
+      on(event: string, listener: (value: never) => void) { if (event === 'message') listeners.push(listener as (value: unknown) => void); else child.on('exit', code => listener(code as never)) },
+      kill: () => child.kill(),
+    } satisfies ChildLike
+  } })
+  try {
+    for (let i = 0; i < 3; i++) await supervisor.request({ ...start, requestId: `held-${i}`, model: { provider: 'openai', model: 'hold' } })
+    await vi.waitFor(() => expect(held).toBe(3))
+    await expect(supervisor.request({ ...start, requestId: 'over-capacity' })).rejects.toThrow('Agent request failed.')
+    const at = performance.now()
+    await supervisor.stopAll()
+    expect(supervisor.state).toBe('stopped')
+    await children[0]!.exited
+    const stopMs = performance.now() - at
+    expect(stopMs).toBeLessThanOrEqual(1500)
+    console.info(`[agent-supervisor] composed abort-ignoring host reaped in ${stopMs.toFixed(3)}ms`)
+    pushes.length = 0
+    children[0]!.deliver({ v: 1, kind: 'events', runs: [], events: [{ runId: 'old', seq: 1, id: 'late', at: 0, payload: { type: 'status', status: 'succeeded' } }] })
+    expect(pushes).toEqual([])
+    await expect(supervisor.request({ ...start, requestId: 'fresh' })).resolves.toHaveProperty('runId')
+    expect(children).toHaveLength(2)
+    await expect(supervisor.request({ kind: 'continue', runId: 'interrupted', model: start.model })).resolves.toEqual({ ok: true })
+    await vi.waitFor(async () => {
+      const result = await supervisor.request({ kind: 'list', limit: 10 }) as { runs: RunSummary[] }
+      expect(result.runs.find(run => run.id === 'interrupted')?.status).toBe('succeeded')
+      expect(result.runs.filter(run => run.status === 'succeeded')).toHaveLength(2)
+    })
+  } finally {
+    supervisor.dispose()
+    for (const child of children) if (child.process.exitCode === null && child.process.signalCode === null) child.process.kill('SIGKILL')
+    await Promise.all(children.map(child => child.exited))
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 30_000)
+it.each([{ ok: true }, { ok: true, unsettled: 0 }])('does not reap a responsive legacy or fully drained cancellation reply: %j', async result => {
+  const { supervisor, children } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started
+  const stopped = supervisor.stopAll()
+  expect(supervisor.stopAll()).toBe(stopped)
+  await expect(supervisor.request(start)).rejects.toThrow('Agent host is stopping.')
+  child.reply(result); await stopped
+  expect(child.killed).toBe(false)
+  expect(supervisor.state).toBe('ready')
+  supervisor.dispose()
+})
 it('never dispatches a queued start after Stop-all revokes work during host initialization', async () => {
   const { supervisor, children } = setup()
   const pending = expect(supervisor.request(start)).rejects.toThrow('Agent host stopped.')
@@ -215,15 +320,103 @@ it('drops the 255 by 48KB review batch before deep validation without killing th
   expect(pushes).toEqual([])
   supervisor.dispose()
 })
+it('drops a just-over-512 KiB message before any payload serialization and leaves the child usable', async () => {
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
+  const events: AgentEvent[] = Array.from({ length: 11 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  const message = { v: 1, kind: 'events', events, runs: [] }
+  expect(Buffer.byteLength(JSON.stringify(message))).toBeGreaterThan(HOST_MESSAGE_MAX_BYTES)
+  const stringify = vi.spyOn(JSON, 'stringify')
+  try {
+    child.emit('message', message)
+    expect(stringify).not.toHaveBeenCalled()
+    expect(supervisor.invalidMessages).toBe(1)
+    expect(pushes).toEqual([])
+    expect(child.killed).toBe(false)
+    expect(supervisor.state).toBe('ready')
+  } finally { stringify.mockRestore(); supervisor.dispose() }
+})
+it('rejects a noncompliant oversized artifact reply without killing the host or falsely resolving the request', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started
+  const pending = expect(supervisor.request({ kind: 'artifact', runId: 'run', artifactId: 'artifact' })).rejects.toThrow('Agent request timed out.')
+  child.reply({ name: 'large.txt', mediaType: 'text/plain', bytes: HOST_MESSAGE_MAX_BYTES, text: 'a'.repeat(HOST_MESSAGE_MAX_BYTES) })
+  expect(supervisor.invalidMessages).toBe(1)
+  expect(child.killed).toBe(false)
+  expect(supervisor.state).toBe('ready')
+  await vi.advanceTimersByTimeAsync(30_000); await pending
+  supervisor.dispose()
+})
+it('accepts legal near-cap Unicode and escaped messages rather than multiplying every character by worst-case escape bytes', async () => {
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
+  const events: AgentEvent[] = Array.from({ length: 8 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: '😀'.repeat(10_000) + '"'.repeat(10_000) } }))
+  events.push({ runId: 'run', seq: 9, id: 'terminal', at: 0, payload: { type: 'status', status: 'succeeded' } })
+  const message = { v: 1, kind: 'events', events, runs: [] }
+  expect(Buffer.byteLength(JSON.stringify(message))).toBeLessThanOrEqual(HOST_MESSAGE_MAX_BYTES)
+  child.emit('message', message)
+  expect(supervisor.invalidMessages).toBe(0)
+  expect(pushes.flatMap(p => p.kind === 'events' ? p.events : [])).toEqual(events)
+  supervisor.dispose()
+})
+it('yields between large receives without allowing a small terminal event to overtake queued text', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
+  const events: AgentEvent[] = Array.from({ length: 4 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  const terminal: AgentEvent = { runId: 'run', seq: 5, id: 'end', at: 0, payload: { type: 'status', status: 'succeeded' } }
+  child.emit('message', { v: 1, kind: 'events', events: events.slice(0, 2), runs: [] })
+  child.emit('message', { v: 1, kind: 'events', events: events.slice(2), runs: [] })
+  child.emit('message', { v: 1, kind: 'events', events: [terminal], runs: [] })
+  expect(pushes).toEqual([])
+  await vi.runAllTimersAsync()
+  expect(pushes.flatMap(p => p.kind === 'events' ? p.events : [])).toEqual([...events, terminal])
+  expect(supervisor.invalidMessages).toBe(0)
+  supervisor.dispose(); expect(vi.getTimerCount()).toBe(0)
+})
+it('reports a typed host crash on sliced-inbox overload instead of silently losing valid events or terminal authority', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started
+  const events: AgentEvent[] = Array.from({ length: 10 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  for (let i = 0; i < 40; i++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(supervisor.state).toBe('crashed')
+  expect(child.killed).toBe(true)
+  expect(pushes).toContainEqual({ kind: 'host', state: 'crashed', message: 'Agent host stopped unexpectedly. Try again.' })
+  await vi.runAllTimersAsync()
+  expect(vi.getTimerCount()).toBe(0)
+  supervisor.dispose()
+})
+it('drops queued generation events on forced Stop-all before they can establish new Home authority', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started
+  const events: AgentEvent[] = Array.from({ length: 2 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  child.emit('message', { v: 1, kind: 'events', events: [{ runId: 'run', seq: 3, id: 'approval', at: 0, payload: { type: 'approval.requested', approvalId: 'a', callId: 'c', tool: 'read', preview: 'Read', digest: 'digest' } }], runs: [] })
+  const stopped = supervisor.stopAll(); child.reply({ ok: true, unsettled: 1 }); await stopped
+  pushes.length = 0
+  await vi.runAllTimersAsync()
+  expect(pushes).toEqual([])
+  expect(supervisor.state).toBe('stopped')
+  supervisor.dispose(); expect(vi.getTimerCount()).toBe(0)
+})
 it('flushes before retained event payload exceeds four MiB even across valid sub-threshold messages', async () => {
   vi.useFakeTimers()
   const { supervisor, children, pushes } = setup()
   const started = supervisor.request(start), child = children[0]!
   child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
   const events: AgentEvent[] = Array.from({ length: 200 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
-  for (let offset = 0; offset < 200; offset += 50) child.emit('message', { v: 1, kind: 'events', events: events.slice(offset, offset + 50), runs: [] })
+  for (let offset = 0; offset < 200; offset += 10) child.emit('message', { v: 1, kind: 'events', events: events.slice(offset, offset + 10), runs: [] })
+  await vi.runAllTimersAsync()
   expect(pushes.length).toBeGreaterThan(0)
-  await vi.advanceTimersByTimeAsync(16)
   expect(pushes.flatMap(push => push.kind === 'events' ? push.events : [])).toEqual(events)
   for (const push of pushes) expect(Buffer.byteLength(JSON.stringify(push))).toBeLessThanOrEqual(4 * 1024 * 1024)
   expect(child.killed).toBe(false); expect(supervisor.invalidMessages).toBe(0)

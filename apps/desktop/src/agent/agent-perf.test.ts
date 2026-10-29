@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { setTimeout as delay } from 'node:timers/promises'
+import { MessageChannel } from 'node:worker_threads'
 import { expect, it } from 'vitest'
 import { AgentSupervisor } from '../main/agent-supervisor'
 import { MockLanguageModelV4 } from 'ai/test'
@@ -9,8 +10,8 @@ import { MemoryAgentStore } from './store'
 import { MemoryArtifactStore } from './artifacts'
 import { htmlToText } from './html-text'
 import { serveHost, type HostPort } from './host/serve'
-import type { AgentTool } from './contracts'
-import { DEFAULT_BUDGET, isTerminal, type AgentEvent, type AgentPush, type HostCommand, type MainToHost } from '../shared/agent-protocol'
+import type { AgentTool, RuntimeSink } from './contracts'
+import { DEFAULT_BUDGET, HOST_MESSAGE_MAX_BYTES, isTerminal, type AgentEvent, type AgentPush, type HostCommand, type MainToHost } from '../shared/agent-protocol'
 
 class Child extends EventEmitter {
   postMessage(message: MainToHost): void {
@@ -20,9 +21,9 @@ class Child extends EventEmitter {
   kill(): boolean { this.emit('exit', 0); return true }
 }
 const start: HostCommand = { kind: 'start', requestId: 'load', goal: 'Synthetic background research', mode: 'web', persistence: 'temporary', grants: [], budget: DEFAULT_BUDGET, model: { provider: 'mock', model: 'scripted' } }
-function traffic() {
+function traffic(observe?: (push: AgentPush) => void) {
   const child = new Child(), pushes: AgentPush[] = []
-  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: value => pushes.push(value), dataDir: process.env.TMPDIR! })
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: value => { pushes.push(value); observe?.(value) }, dataDir: process.env.TMPDIR! })
   const event = (seq: number): AgentEvent => ({ id: `event-${seq}`, runId: 'load', seq, at: Date.now(), payload: { type: 'tool.result', callId: `call-${seq}`, ok: true, summary: 'Read a bounded public source. '.repeat(12) } })
   return { child, pushes, supervisor, event }
 }
@@ -38,6 +39,82 @@ it('keeps a valid three-batch burst alive and delivers every event instead of tr
     expect(h.supervisor.state).toBe('ready')
     expect(h.pushes.flatMap(push => push.kind === 'events' ? push.events.map(event => event.seq) : [])).toEqual(Array.from({ length: 768 }, (_, i) => i + 1))
   } finally { h.supervisor.dispose() }
+})
+
+it('keeps the largest accepted 512 KiB receive median below 5 ms including terminal delivery and Home serialization', async () => {
+  const child = new Child(), timings: number[] = [], delivered: AgentEvent[] = []
+  let homeBytes = 0
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', dataDir: process.env.TMPDIR!, onPush(push) {
+    // Node-side serialization surrogate, not measured native Electron copying.
+    homeBytes += Buffer.byteLength(JSON.stringify(push))
+    if (push.kind === 'events') delivered.push(...push.events)
+  } })
+  try {
+    await supervisor.request(start)
+    const events: AgentEvent[] = Array.from({ length: 11 }, (_, i) => ({ runId: 'load', seq: i + 1, id: `large-${i}`, at: 0, payload: { type: 'text', step: i, text: i < 10 ? 'a'.repeat(48_000) : '' } }))
+    events.push({ runId: 'load', seq: 12, id: 'terminal', at: 0, payload: { type: 'status', status: 'succeeded' } })
+    const message = { v: 1, kind: 'events', events, runs: [] }
+    const tail = events[10]!.payload
+    if (tail.type !== 'text') throw new Error('Invalid fixture.')
+    tail.text = 'b'.repeat(HOST_MESSAGE_MAX_BYTES - Buffer.byteLength(JSON.stringify(message)))
+    expect(Buffer.byteLength(JSON.stringify(message))).toBe(HOST_MESSAGE_MAX_BYTES)
+    for (let i = 0; i < 11; i++) {
+      const before = performance.now()
+      child.emit('message', message)
+      if (i) timings.push(performance.now() - before)
+      await delay(25)
+    }
+    const sorted = [...timings].sort((a, b) => a - b), median = (sorted[4]! + sorted[5]!) / 2
+    console.info(`[agent-perf] R2-5 accepted=${HOST_MESSAGE_MAX_BYTES} bytes, receive median=${median.toFixed(3)}ms, max=${Math.max(...timings).toFixed(3)}ms; review 3.84/7.68MB medians=17.451/32.126ms`)
+    // Provisional machine-local gate, not a packaged renderer/audio release SLO.
+    expect(median).toBeLessThanOrEqual(5)
+    expect(delivered).toHaveLength(events.length * 11)
+    expect(delivered.filter(e => e.payload.type === 'status')).toHaveLength(11)
+    expect(homeBytes).toBeGreaterThan(500_000 * 11)
+    expect(supervisor.invalidMessages).toBe(0)
+    expect(supervisor.state).toBe('ready')
+  } finally { supervisor.dispose() }
+})
+
+it('delivers each complete 7.68 MB review burst through real MessagePorts in bounded messages with loop p99 below 20 ms', async () => {
+  let finish: (() => void) | undefined, timer: ReturnType<typeof setTimeout> | undefined
+  const h = traffic(push => { if (push.kind === 'events' && push.events.some(event => event.payload.type === 'status' && event.payload.status === 'succeeded')) finish?.() })
+  const { port1, port2 } = new MessageChannel(), inbound = new EventEmitter(), messages: unknown[] = []
+  let sink!: RuntimeSink
+  const host = serveHost({ on: (_event, listener) => inbound.on('message', listener), postMessage(message) { messages.push(message) } }, async init => { sink = init.sink; return { handle: async () => ({}), shutdown: async () => {} } })
+  port2.on('message', message => h.child.emit('message', message))
+  const lag = monitorEventLoopDelay({ resolution: 1 })
+  try {
+    await h.supervisor.request(start)
+    inbound.emit('message', { v: 1, kind: 'init', dataDir: process.env.TMPDIR! }); await Promise.resolve()
+    const events: AgentEvent[] = Array.from({ length: 160 }, (_, i) => ({ runId: 'load', seq: i + 1, id: `burst-${i}`, at: 0, payload: { type: 'text', step: i, text: 'a'.repeat(48_000) } }))
+    events.push({ runId: 'load', seq: 161, id: 'terminal', at: 0, payload: { type: 'status', status: 'succeeded' } })
+    // Host validation belongs in the child. Prepare its real outgoing messages
+    // before the measured main-side copy/receive window, not on the main loop.
+    sink.events(events, [])
+    lag.enable(); await delay(10)
+    // Three complete bursts provide enough active samples for a meaningful
+    // percentile; a 50 ms window is effectively a max/OS-scheduling gate. Await
+    // actual terminal delivery, never assume a fixed sleep drains the inbox.
+    for (let round = 0; round < 3; round++) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          finish = resolve; timer = setTimeout(() => reject(new Error('Review burst did not reach Home.')), 3000)
+          for (const message of messages.slice(1)) port1.postMessage(message)
+        })
+      } finally { clearTimeout(timer); finish = undefined }
+      await delay(10)
+    }
+    const p99 = lag.percentile(99) / 1e6
+    console.info(`[agent-perf] R2-5 burst=7680000 text bytes x3, messages=${(messages.length - 1) * 3}, loop p99=${p99.toFixed(3)}ms`)
+    expect(messages.length).toBeGreaterThan(2)
+    for (const message of messages) expect(Buffer.byteLength(JSON.stringify(message))).toBeLessThanOrEqual(HOST_MESSAGE_MAX_BYTES)
+    expect(h.pushes.flatMap(push => push.kind === 'events' ? push.events : [])).toEqual(Array.from({ length: 3 }, () => events).flat())
+    expect(h.supervisor.invalidMessages).toBe(0)
+    expect(host.invalidMessages).toBe(0)
+    expect(h.supervisor.state).toBe('ready')
+    expect(p99).toBeLessThan(20)
+  } finally { lag.disable(); port1.close(); port2.close(); await host.dispose(); h.supervisor.dispose() }
 })
 
 async function measureTraffic() {

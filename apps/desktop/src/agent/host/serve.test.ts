@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentRuntime, RuntimeSink, CredentialSource } from '../contracts'
 import { parseMainToHost, parseHostToMain, serveHost } from './serve'
-import { DEFAULT_BUDGET, type HostCommand } from '../../shared/agent-protocol'
+import { DEFAULT_BUDGET, HOST_MESSAGE_MAX_BYTES, parseAgentEvent, type AgentEvent, type HostCommand } from '../../shared/agent-protocol'
 
 class Port extends EventEmitter {
   sent: unknown[] = []
@@ -17,11 +17,76 @@ it('delivers a 600-event flush completely and in order through bounded transport
   port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
   const events = Array.from({ length: 600 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `event${i}`, at: 0, payload: { type: 'text' as const, step: 0, text: `${i}` } }))
   sink.events(events, [])
-  const batches = port.sent.map(parseHostToMain).filter(m => m.kind === 'events')
+  const batches = port.sent.map(m => parseHostToMain(m)).filter(m => m.kind === 'events')
   expect(batches.flatMap(m => m.events)).toEqual(events)
   expect(batches.map(m => m.events.length)).toEqual([256, 256, 88])
   expect(host.invalidMessages).toBe(0)
   await host.dispose()
+})
+it('splits the review 7.68 MB burst by serialized bytes without splitting or losing any event or terminal status', async () => {
+  const port = new Port()
+  let sink!: RuntimeSink
+  const host = serveHost(port, async init => { sink = init.sink; return { handle: async () => ({}), shutdown: async () => {} } })
+  port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
+  const events: AgentEvent[] = Array.from({ length: 160 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: 0, text: 'x'.repeat(48_000) } }))
+  events.push({ runId: 'run', seq: 161, id: 'terminal', at: 0, payload: { type: 'status', status: 'succeeded' } })
+  sink.events(events, [])
+  const batches = port.sent.filter((m): m is { kind: 'events'; events: AgentEvent[] } => (m as { kind: string }).kind === 'events')
+  expect(batches.length).toBeGreaterThan(1)
+  for (const batch of batches) expect(Buffer.byteLength(JSON.stringify(batch))).toBeLessThanOrEqual(HOST_MESSAGE_MAX_BYTES)
+  expect(batches.flatMap(m => m.events)).toEqual(events)
+  expect(host.invalidMessages).toBe(0)
+  await host.dispose()
+})
+it('serializes each outgoing event only once while splitting mixed Unicode and escaped payloads with run summaries', async () => {
+  const port = new Port()
+  let sink!: RuntimeSink
+  const host = serveHost(port, async init => { sink = init.sink; return { handle: async () => ({}), shutdown: async () => {} } })
+  port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
+  const events: AgentEvent[] = Array.from({ length: 30 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: 0, text: i % 2 ? '\u0000\\"'.repeat(6000) : '😀'.repeat(10_000) } }))
+  const runs = Array.from({ length: 50 }, (_, i) => ({ id: `run${i}`, goal: '😀'.repeat(8000), mode: 'web' as const, mixed: false, status: 'running' as const, persistence: 'temporary' as const, created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }))
+  const stringify = vi.spyOn(JSON, 'stringify')
+  try {
+    sink.events(events, runs)
+    // Count either event or payload serialization: moving a second pass from
+    // the envelope to its payload does not satisfy the single-pass budget.
+    expect(stringify.mock.calls.filter(([value]) => events.includes(value as AgentEvent) || events.some(e => e.payload === value))).toHaveLength(events.length)
+  } finally { stringify.mockRestore() }
+  const batches = port.sent.map(m => parseHostToMain(m)).filter(m => m.kind === 'events')
+  expect(batches.flatMap(m => m.events)).toEqual(events)
+  expect(batches.flatMap(m => m.runs)).toEqual(runs)
+  for (const batch of batches) expect(Buffer.byteLength(JSON.stringify(batch))).toBeLessThanOrEqual(HOST_MESSAGE_MAX_BYTES)
+  expect(host.invalidMessages).toBe(0)
+  await host.dispose()
+})
+it('matches the public event vocabulary and exact byte accounting for every variant while rejecting missing or authority-bearing fields', () => {
+  const payloads: AgentEvent['payload'][] = [
+    { type: 'run.created', goal: 'Read', mode: 'web', persistence: 'temporary', budget: DEFAULT_BUDGET },
+    { type: 'status', status: 'running', reason: 'Resume' }, { type: 'text', step: 1, text: '😀\u0000"' },
+    { type: 'tool.call', step: 1, callId: 'call', tool: 'read_file', input: '{}' },
+    { type: 'tool.result', callId: 'call', ok: true, summary: 'Read', artifactId: 'artifact' },
+    { type: 'tool.denied', callId: 'call', reason: 'Denied' },
+    { type: 'approval.requested', approvalId: 'approval', callId: 'call', tool: 'read_file', preview: 'Read', digest: 'digest' },
+    { type: 'approval.decided', approvalId: 'approval', decision: 'denied' },
+    { type: 'question', questionId: 'question', text: 'Which?' }, { type: 'answer', questionId: 'question', text: 'This' },
+    { type: 'artifact', artifactId: 'artifact', name: 'File', mediaType: 'text/plain', bytes: 12 },
+    { type: 'mode.mixed', allowed: 'web' }, { type: 'usage', inputTokens: 1, outputTokens: 2 }, { type: 'error', code: 'host', message: 'Stopped' },
+  ]
+  for (const payload of payloads) {
+    // Deliberately reorder the envelope properties: payload length accounting
+    // must not depend on a particular structured-clone insertion order.
+    const value: AgentEvent = { payload, at: Number.MAX_SAFE_INTEGER, id: 'event', seq: 1, runId: 'run' }
+    const message = { v: 1, kind: 'events', events: [value], runs: [] }, sizes = new Map<object, number>()
+    expect(parseHostToMain(message, sizes)).toMatchObject({ events: [parseAgentEvent(value)] })
+    expect(sizes.get(value)).toBe(Buffer.byteLength(JSON.stringify(value)))
+    expect(sizes.get(message)).toBe(Buffer.byteLength(JSON.stringify(message)))
+    const missing = { ...payload } as Record<string, unknown>
+    delete missing[Object.keys(missing).find(key => key !== 'type')!]
+    for (const p of [missing, { ...payload, root: '/forbidden' }]) {
+      expect(() => parseHostToMain({ ...message, events: [{ ...value, payload: p }] })).toThrow()
+      expect(() => parseAgentEvent({ ...value, payload: p })).toThrow()
+    }
+  }
 })
 it('rejects authority-bearing budget extras in created events before either port forwards them', async () => {
   const port = new Port()
@@ -116,6 +181,18 @@ it('rejects malformed transport replies and summaries while allowing typed failu
   ]
   for (const value of invalid) expect(() => parseHostToMain(value)).toThrow('Invalid')
   for (const value of [{ v: 1, kind: 'unknown' }, { v: 1, kind: 'credential', id: 1, ok: 'yes', secret: 'x' }, { v: 1, kind: 'init', dataDir: 'relative' }]) expect(() => parseMainToHost(value)).toThrow('Invalid')
+})
+it('returns a fixed matching failure for an oversized result instead of posting a reply main must drop until request timeout', async () => {
+  const port = new Port()
+  const host = serveHost(port, async () => ({ handle: async () => ({ text: 'a'.repeat(HOST_MESSAGE_MAX_BYTES) }), shutdown: async () => {} }))
+  port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
+  port.emit('message', { v: 1, kind: 'command', id: 1, command: { kind: 'artifact', runId: 'run', artifactId: 'artifact' } })
+  await vi.waitFor(() => expect(port.sent.some(value => (value as { kind: string }).kind === 'reply')).toBe(true))
+  const reply = port.sent.find(value => (value as { kind: string }).kind === 'reply')
+  expect((reply as { ok: boolean }).ok).toBe(false)
+  expect(reply).toEqual({ v: 1, kind: 'reply', id: 1, ok: false, message: 'Agent response too large.' })
+  for (const message of port.sent) expect(Buffer.byteLength(JSON.stringify(message))).toBeLessThanOrEqual(HOST_MESSAGE_MAX_BYTES)
+  await host.dispose()
 })
 it('contains startup and synchronous runtime failures behind fixed safe replies', async () => {
   const port = new Port()

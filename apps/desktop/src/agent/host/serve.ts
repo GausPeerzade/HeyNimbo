@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path'
 import type { AgentRuntime, CredentialSource, RuntimeSink } from '../contracts'
-import { LIMITS, RUN_STATUSES, ERROR_CODES, parseAgentEvent, parseAgentRequest, type HostCommand, type HostToMain, type MainToHost } from '../../shared/agent-protocol'
+import { HOST_MESSAGE_MAX_BYTES, LIMITS, RUN_STATUSES, ERROR_CODES, parseAgentRequest, type AgentEventType, type AgentEvent, type RunSummary, type HostCommand, type HostToMain, type MainToHost } from '../../shared/agent-protocol'
 
 export interface HostPort {
   postMessage(message: unknown): void
@@ -22,9 +22,49 @@ function budget(value: unknown): void {
   fields(b, keys)
   for (const key of keys) integer(b[key], 1)
 }
-function event(value: unknown): void {
-  const parsed = parseAgentEvent(value)
-  if (parsed.payload.type === 'run.created') budget(parsed.payload.budget)
+const EVENT_FIELDS: Record<AgentEventType, string[]> = {
+  'run.created': ['goal', 'mode', 'persistence', 'budget'], status: ['status', 'reason'], text: ['step', 'text'],
+  'tool.call': ['step', 'callId', 'tool', 'input'], 'tool.result': ['callId', 'ok', 'summary', 'artifactId'], 'tool.denied': ['callId', 'reason'],
+  'approval.requested': ['approvalId', 'callId', 'tool', 'preview', 'digest'], 'approval.decided': ['approvalId', 'decision'],
+  question: ['questionId', 'text'], answer: ['questionId', 'text'], artifact: ['artifactId', 'name', 'mediaType', 'bytes'],
+  'mode.mixed': ['allowed'], usage: ['inputTokens', 'outputTokens'], error: ['code', 'message'],
+}
+const BATCH_BYTES = Buffer.byteLength('{"v":1,"kind":"events","events":[],"runs":[]}')
+const EVENT_SHELL_CHARS = '{"runId":"","seq":,"id":"","at":,"payload":}'.length
+/** Same event vocabulary as the public validator, with one serialization for
+ * both the payload limit and UTF-8 accounting. Main must not serialize again. */
+function event(value: unknown): number {
+  const e = object(value), p = object(e.payload)
+  fields(e, ['runId', 'seq', 'id', 'at', 'payload'])
+  identifier(e.runId); identifier(e.id); integer(e.seq, 1); integer(e.at)
+  check(typeof p.type === 'string' && Object.hasOwn(EVENT_FIELDS, p.type))
+  const type = p.type as AgentEventType
+  fields(p, ['type', ...EVENT_FIELDS[type]])
+  const text = (key: string, max: number = LIMITS.event, nonempty = false): void => {
+    check(typeof p[key] === 'string' && p[key].length <= max && (!nonempty || p[key].trim()))
+  }
+  const member = (value: unknown, values: readonly string[]): void => { check(typeof value === 'string' && values.includes(value)) }
+  switch (type) {
+    case 'run.created': text('goal', LIMITS.goal, true); member(p.mode, ['web', 'local']); member(p.persistence, ['retained', 'temporary']); budget(p.budget); break
+    case 'status': member(p.status, RUN_STATUSES); if (p.reason !== undefined) text('reason', 2000); break
+    case 'text': integer(p.step, 0, 10_000); text('text'); break
+    case 'tool.call': integer(p.step, 0, 10_000); identifier(p.callId); text('tool', 100, true); text('input', 8000); break
+    case 'tool.result': identifier(p.callId); check(typeof p.ok === 'boolean'); text('summary', 8000); if (p.artifactId !== undefined) identifier(p.artifactId); break
+    case 'tool.denied': identifier(p.callId); text('reason', 2000, true); break
+    case 'approval.requested': identifier(p.approvalId); identifier(p.callId); text('tool', 100, true); text('preview', 8000, true); text('digest', 128, true); break
+    case 'approval.decided': identifier(p.approvalId); member(p.decision, ['approved', 'denied']); break
+    case 'question': case 'answer': identifier(p.questionId); text('text', LIMITS.answer, true); break
+    case 'artifact': identifier(p.artifactId); text('name', 300, true); text('mediaType', 200, true); integer(p.bytes); break
+    case 'mode.mixed': member(p.allowed, ['web', 'local']); break
+    case 'usage': integer(p.inputTokens); integer(p.outputTokens); break
+    case 'error': member(p.code, ERROR_CODES); text('message', 2000, true); break
+  }
+  const serialized = JSON.stringify(e)
+  // Metadata is required ASCII and integer-only, so this subtraction is exact
+  // even when MessagePort delivers properties in a different insertion order.
+  const shell = EVENT_SHELL_CHARS + (e.runId as string).length + (e.id as string).length + String(e.seq).length + String(e.at).length
+  check(serialized.length - shell <= LIMITS.event)
+  return Buffer.byteLength(serialized)
 }
 function model(value: unknown): void {
   const m = object(value)
@@ -91,7 +131,7 @@ export function parseMainToHost(value: unknown): MainToHost {
   return m as unknown as MainToHost
 }
 
-function summary(value: unknown): void {
+function summary(value: unknown): number {
   const r = object(value)
   fields(r, ['id', 'conversationId', 'goal', 'mode', 'mixed', 'status', 'persistence', 'created', 'updated', 'usage', 'error'])
   identifier(r.id)
@@ -107,9 +147,11 @@ function summary(value: unknown): void {
     const e = object(r.error)
     fields(e, ['code', 'message']); check(ERROR_CODES.includes(e.code as typeof ERROR_CODES[number])); string(e.message, 2000)
   }
+  return Buffer.byteLength(JSON.stringify(r))
 }
-export function parseHostToMain(value: unknown): HostToMain {
+export function parseHostToMain(value: unknown, sizes = new Map<object, number>()): HostToMain {
   const m = object(value)
+  let bytes: number | undefined
   check(m.v === 1)
   switch (m.kind) {
     case 'ready': fields(m, ['v', 'kind']); break
@@ -123,7 +165,14 @@ export function parseHostToMain(value: unknown): HostToMain {
       fields(m, ['v', 'kind', 'events', 'runs'])
       check(Array.isArray(m.events) && m.events.length <= 256)
       check(Array.isArray(m.runs) && m.runs.length <= 256)
-      m.events.forEach(event); m.runs.forEach(summary)
+      bytes = BATCH_BYTES
+      for (const [values, validate] of [[m.events, event], [m.runs, summary]] as const) {
+        for (const value of values) {
+          const size = validate(value)
+          sizes.set(value, size); bytes += size
+        }
+        bytes += Math.max(0, values.length - 1)
+      }
       break
     case 'partial':
       fields(m, ['v', 'kind', 'runId', 'step', 'text'])
@@ -135,6 +184,9 @@ export function parseHostToMain(value: unknown): HostToMain {
       break
     default: throw new Error('Invalid agent message.')
   }
+  bytes ??= Buffer.byteLength(JSON.stringify(m))
+  check(bytes <= HOST_MESSAGE_MAX_BYTES)
+  sizes.set(m, bytes)
   return m as unknown as HostToMain
 }
 
@@ -156,14 +208,25 @@ export function serveHost(port: HostPort, compose: (init: HostInit) => Promise<A
   })
   const send = (message: HostToMain): void => {
     if (disposed) return
+    // Results are not chunkable in v1. Reject oversized pages/previews in the
+    // host rather than leaving main to drop the reply and wait for its deadline.
+    if (message.kind === 'reply' && message.ok && Buffer.byteLength(JSON.stringify(message)) > HOST_MESSAGE_MAX_BYTES) message = { v: 1, kind: 'reply', id: message.id, ok: false, message: 'Agent response too large.' }
     try { port.postMessage(message) } catch { /* The parent may already be gone. */ }
   }
   const sink: RuntimeSink = {
     events(events, runs) {
-      const valid = events.filter(value => { try { event(value); return true } catch { invalidMessages++; return false } })
-      for (let offset = 0; offset < Math.max(valid.length, runs.length, 1); offset += 256) {
-        try { send(parseHostToMain({ v: 1, kind: 'events', events: valid.slice(offset, offset + 256), runs: runs.slice(offset, offset + 256) })) } catch { invalidMessages++ }
+      let batch: Extract<HostToMain, { kind: 'events' }> = { v: 1, kind: 'events', events: [], runs: [] }, bytes = BATCH_BYTES
+      const flush = (): void => { if (batch.events.length || batch.runs.length) send(batch); batch = { v: 1, kind: 'events', events: [], runs: [] }; bytes = BATCH_BYTES }
+      for (const [kind, values] of [['events', events], ['runs', runs]] as const) for (const value of values) {
+        try {
+          const size = kind === 'events' ? event(value) : summary(value)
+          if (batch[kind].length >= 256 || bytes + size + (batch[kind].length ? 1 : 0) > HOST_MESSAGE_MAX_BYTES) flush()
+          bytes += size + (batch[kind].length ? 1 : 0)
+          if (kind === 'events') batch.events.push(value as AgentEvent)
+          else batch.runs.push(value as RunSummary)
+        } catch { invalidMessages++ }
       }
+      flush()
     },
     partial(runId, step, text) {
       try { send(parseHostToMain({ v: 1, kind: 'partial', runId, step, text })) } catch { invalidMessages++ }
