@@ -25,9 +25,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.80
         version: 3.0.80(zod@4.6.7)
-      '@nimboguide/native':
+      '@heynimbo/native':
         specifier: workspace:*
-        version: link:../../crates/nimbo-native
+        version: link:../../crates/heynimbo-native
       '@openrouter/ai-sdk-provider':
         specifier: 3.1.0
         version: 3.1.0(ai@7.0.156(zod@4.6.7))(zod@4.6.7)
@@ -75,7 +75,7 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@26.6.6)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
 
-  crates/nimbo-native:
+  crates/heynimbo-native:
     devDependencies:
       '@napi-rs/cli':
         specifier: ^3.10.9

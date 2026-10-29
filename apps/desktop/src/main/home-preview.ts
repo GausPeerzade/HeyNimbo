@@ -10,7 +10,7 @@ import { loadPage, secureWebPreferences } from './windows'
 let cleanup: (() => void) | undefined
 
 export function configureHomePreview(): void {
-  if (!devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return
+  if (!devFlag('HEYNIMBO_DEBUG_HOME_PREVIEW')) return
   cleanup = isolateDevProfile('home-preview')
   // Long enough for every screen in both themes; the profile goes with the exit.
   setTimeout(() => { cleanup?.(); app.exit(1) }, 90000).unref()
@@ -25,7 +25,7 @@ export async function runHomePreview(): Promise<void> {
     return { providers: Object.fromEntries(PROVIDERS.map(p => [p, ['chatgpt', 'anthropic', 'compatible'].includes(p) || (p === 'openai' && config.provider !== 'compatible')])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', compatibleKeyPresent: true, models: RECOMMENDED_MODELS[config.provider].map(entry => ({ id: entry.model, name: entry.name, vision: entry.vision, tested: false })), answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'Built into your Mac' : 'OpenAI' }
   }, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
   shell.keyPresent = true
-  const output = '/tmp/nimbo-settings-validation'
+  const output = '/tmp/heynimbo-settings-validation'
   mkdirSync(output, { recursive: true })
   const pause = () => new Promise(resolve => setTimeout(resolve, 350))
   const diagnostics: Record<string, unknown> = {}
@@ -68,7 +68,7 @@ export async function runHomePreview(): Promise<void> {
     notch.webContents.send(AppChannels.snapshot, shell.snapshot())
     await notch.webContents.executeJavaScript("window.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: 400 })); window.dispatchEvent(new MouseEvent('mousemove', { clientX: 192, clientY: 20 }))")
     await pause(); await pause(); await capture(notch, `peek-empty-${theme}`)
-    notch.webContents.send('nimbo:peek-dismiss')
+    notch.webContents.send('heynimbo:peek-dismiss')
     const first = shell.conversations.newConversation()
     const turn = shell.conversations.begin('Where can I export this chart?', 'voice')
     shell.conversations.update(turn, 'Choose Export in the upper-right corner. The download menu lets you save the chart as a PDF.', { version: 1, beats: [{ sentence: 'Choose Export in the upper-right corner.', marks: [{ kind: 'box', x: 700, y: 90, w: 160, h: 50 }, { kind: 'arrow', x1: 500, y1: 240, x2: 720, y2: 130 }, { kind: 'text', x: 480, y: 280, text: 'Export your chart' }], space: { frame: { x: 0, y: 0, width: 960, height: 600 }, pixelWidth: 960, pixelHeight: 600 } }] }, true)
@@ -157,7 +157,7 @@ export async function runHomePreview(): Promise<void> {
       if (overflow) throw new Error('Connection fields overflow their window.')
       settings.setSize(760, 610); await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = 0")
     }
-    notch.webContents.send('nimbo:peek-dismiss')
+    notch.webContents.send('heynimbo:peek-dismiss')
     notch.webContents.send(Channels.notchStatus, { kind: 'idle' })
     notch.webContents.send(AppChannels.snapshot, shell.snapshot())
     await pause(); await capture(notch, `pill-${theme}`)

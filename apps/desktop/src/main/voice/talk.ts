@@ -1,4 +1,4 @@
-import type { ScreenCaptures } from '@nimboguide/native'
+import type { ScreenCaptures } from '@heynimbo/native'
 import { BeatParser, type Beat, type Mark } from '../../shared/beats'
 import type { VoiceCommand, VoiceEvent } from '../../shared/ipc'
 import type { CaptureSpace } from '../overlay-geometry'

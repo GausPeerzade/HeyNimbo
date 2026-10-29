@@ -1,4 +1,4 @@
-import { speechLanguage } from '@nimboguide/native'
+import { speechLanguage } from '@heynimbo/native'
 import type { VoiceCommand } from '../../shared/ipc'
 
 /** System speech is queued in the same renderer that plays realtime PCM. */

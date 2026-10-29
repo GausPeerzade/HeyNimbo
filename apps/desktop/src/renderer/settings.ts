@@ -75,7 +75,7 @@ function render(): void {
       toggle('openAtLogin', 'Open at login', 'Start quietly in the background when you sign in.')
       toggle('showMenuBar', 'Show menu-bar icon')
       toggle('showNotch', 'Show notch pill', 'Hover for recent conversations. Click to open Home.')
-      explanation('Closing Home keeps NimboGuide running. Open it again from the menu bar or notch pill; choose Quit NimboGuide to stop it.')
+      explanation('Closing Home keeps HeyNimbo running. Open it again from the menu bar or notch pill; choose Quit HeyNimbo to stop it.')
       break
     case 'Voice':
       intro('Hold Control + Option to speak. Release to ask.')
@@ -87,7 +87,7 @@ function render(): void {
       toggle('muted', 'Mute speech & drawing sounds', 'The written answer and drawings remain available.')
       explanation('Hold Control + Option to speak; release to ask. Press again to interrupt the current answer. Changing the voice stops the current response.')
       group('Microphone access'); microphoneRow()
-      explanation('Allow microphone access here the first time. If you previously denied it, enable NimboGuide (Electron in development) in System Settings → Privacy & Security → Microphone.')
+      explanation('Allow microphone access here the first time. If you previously denied it, enable HeyNimbo (Electron in development) in System Settings → Privacy & Security → Microphone.')
       break
     case 'History & privacy':
       intro('Your conversations stay here. You decide what to keep.')
@@ -107,8 +107,8 @@ function render(): void {
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
       source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
-      image.src = logo; image.alt = 'NimboGuide pen buddy and ink trail'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
-      const brand = element('div', 'about-brand'); brand.append(picture, element('h2', '', `NimboGuide ${snapshot.version}`)); fields.append(brand)
+      image.src = logo; image.alt = 'HeyNimbo pen buddy and ink trail'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
+      const brand = element('div', 'about-brand'); brand.append(picture, element('h2', '', `HeyNimbo ${snapshot.version}`)); fields.append(brand)
       explanation('Explains your screen with speech and drawings.')
       group('macOS permissions')
       microphoneRow()
@@ -126,12 +126,12 @@ function render(): void {
   if (focused) document.getElementById(focused)?.focus({ preventScroll: true })
   const main = document.querySelector('main'); if (main) main.scrollTop = scroll
 }
-window.nimboApp.onSnapshot(value => {
+window.heynimboApp.onSnapshot(value => {
   snapshot = value
   if (category === 'Connection' && document.activeElement instanceof HTMLInputElement) return
   render()
   if (category === 'Connection') void refreshKeyHints()
 })
-window.nimboApp.onNavigate(value => { if (value.category && categories.some(category => category === value.category)) navigate(value.category) })
+window.heynimboApp.onNavigate(value => { if (value.category && categories.some(category => category === value.category)) navigate(value.category) })
 document.onkeydown = event => { if (event.key === 'Escape') window.close() }
 void request({ kind: 'snapshot' }).then(value => { if (isSnapshot(value)) { snapshot = value; render() } })

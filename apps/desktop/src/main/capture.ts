@@ -8,7 +8,7 @@ import {
   hasScreenCaptureAccess,
   requestScreenCaptureAccess,
   type ScreenCaptures,
-} from '@nimboguide/native'
+} from '@heynimbo/native'
 
 /** Asks for Screen Recording once; capture then fails cleanly without it. */
 export function ensureScreenCaptureAccess(): boolean {
@@ -22,7 +22,7 @@ export function restingStatus(): NotchStatus {
 }
 
 /** Captures the display under the cursor. Nothing is written to disk unless
- *  `NIMBO_DEBUG_CAPTURE_DIR` is set in an unpackaged development build. */
+ *  `HEYNIMBO_DEBUG_CAPTURE_DIR` is set in an unpackaged development build. */
 export async function captureCursorDisplay(): Promise<ScreenCaptures | undefined> {
   try {
     const captures = await captureScreens({ maxLongEdge: 1280 })
@@ -34,7 +34,7 @@ export async function captureCursorDisplay(): Promise<ScreenCaptures | undefined
           `jpeg=${Math.round(display.jpeg.length / 1024)}KB capture=${captures.captureMs.toFixed(0)}ms ` +
           `encode=${captures.encodeMs.toFixed(0)}ms cursor=${cursor}`,
       )
-      const debugDir = devSetting('NIMBO_DEBUG_CAPTURE_DIR')
+      const debugDir = devSetting('HEYNIMBO_DEBUG_CAPTURE_DIR')
       if (debugDir) await writeFile(join(debugDir, 'latest-capture.jpg'), display.jpeg)
     }
     return captures
@@ -47,7 +47,7 @@ export async function captureCursorDisplay(): Promise<ScreenCaptures | undefined
 /** Development check that our own windows are excluded: shows a ring at the
  *  center of the cursor's display, then captures once it is surely on screen. */
 export function scheduleExclusionSelfTest(showRing: (point: Electron.Point) => void): void {
-  if (!devSetting('NIMBO_DEBUG_CAPTURE_DIR') || !devFlag('NIMBO_DEBUG_EXCLUSION_TEST')) return
+  if (!devSetting('HEYNIMBO_DEBUG_CAPTURE_DIR') || !devFlag('HEYNIMBO_DEBUG_EXCLUSION_TEST')) return
   setTimeout(() => {
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     showRing({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 })

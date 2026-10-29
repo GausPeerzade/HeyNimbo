@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
   quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(), evaluation: vi.fn(), show: vi.fn(),
   policy: vi.fn(), menu: vi.fn(), dockHide: vi.fn(),
-  mkdtemp: vi.fn(() => '/tmp/nimbo-draw-demo-fixture'), removeProfile: vi.fn(),
+  mkdtemp: vi.fn(() => '/tmp/heynimbo-draw-demo-fixture'), removeProfile: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
 }))
 
@@ -51,13 +51,13 @@ afterEach(() => {
 
 it('boots the real demo branch without constructing audio, starting talk or accessing credentials', async () => {
   vi.useFakeTimers()
-  vi.stubEnv('NIMBO_DEBUG_DRAW_DEMO', '1')
+  vi.stubEnv('HEYNIMBO_DEBUG_DRAW_DEMO', '1')
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   vi.spyOn(console, 'info').mockImplementation(() => {})
   await import('./index')
   await vi.advanceTimersByTimeAsync(38600)
-  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-draw-demo-')
-  expect(mocks.paths.mock.calls).toEqual([['userData', '/tmp/nimbo-draw-demo-fixture'], ['sessionData', '/tmp/nimbo-draw-demo-fixture']])
+  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/heynimbo-draw-demo-')
+  expect(mocks.paths.mock.calls).toEqual([['userData', '/tmp/heynimbo-draw-demo-fixture'], ['sessionData', '/tmp/heynimbo-draw-demo-fixture']])
   expect(mocks.paths.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
   // Launched background-only with no app menu, so it can never take focus or switch the user's Space.
   expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
@@ -102,17 +102,17 @@ it('starts each question on a clean screen and shows the ear only while talk is 
 })
 
 it('runs the hidden 3D gallery in its own profile, launched background-only, with no capture, gesture, audio or credential pipeline', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_GALLERY', '1')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_3D_GALLERY', '1')
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   await import('./index')
   await vi.waitFor(() => expect(mocks.gallery).toHaveBeenCalledOnce())
-  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-model-gallery-')
+  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/heynimbo-model-gallery-')
   expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
   for (const before of [mocks.policy, mocks.paths]) expect(before.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
   for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
 })
 it('runs the 3D eval on the normal profile, behind the instance lock, with no overlay, capture, gesture, audio or voice pipeline', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL', '1')
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   await import('./index')
   await vi.waitFor(() => expect(mocks.evaluation).toHaveBeenCalledOnce())
@@ -123,17 +123,17 @@ it('runs the 3D eval on the normal profile, behind the instance lock, with no ov
   for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
 })
 it('replays an eval run as a showcase in a throwaway profile, never focusing, with no capture, gesture, audio or credential pipeline', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/nimbo-3d-eval-synthetic/run')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/heynimbo-3d-eval-synthetic/run')
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   await import('./index')
   await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledOnce())
-  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-model-show-')
+  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/heynimbo-model-show-')
   for (const before of [mocks.policy, mocks.paths]) expect(before.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
   expect(mocks.policy).toHaveBeenCalledWith('prohibited')
   for (const dependency of [mocks.evaluation, mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
 })
 it('runs the live showcase on the normal profile behind the instance lock, with no gesture, audio or voice pipeline', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:low')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:low')
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   await import('./index')
   await vi.waitFor(() => expect(mocks.show).toHaveBeenCalledOnce())
@@ -142,7 +142,7 @@ it('runs the live showcase on the normal profile behind the instance lock, with 
   for (const dependency of [mocks.evaluation, mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
 })
 it('cannot start the 3D eval or its showcase in a packaged app', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/nimbo-3d-eval-synthetic/run'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/heynimbo-3d-eval-synthetic/run'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1')
   const electron = await import('electron')
   Object.defineProperty(electron.app, 'isPackaged', { value: true, configurable: true })
   try {
@@ -154,7 +154,7 @@ it('cannot start the 3D eval or its showcase in a packaged app', async () => {
   } finally { Object.defineProperty(electron.app, 'isPackaged', { value: false, configurable: true }) }
 })
 it('routes Home preview before creating any capture, gesture, audio or credential pipeline', async () => {
-  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_HOME_PREVIEW', '1')
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('HEYNIMBO_DEBUG_HOME_PREVIEW', '1')
   await import('./index')
   await vi.waitFor(() => expect(mocks.preview).toHaveBeenCalledOnce())
   expect(mocks.lock).not.toHaveBeenCalled()

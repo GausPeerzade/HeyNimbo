@@ -80,7 +80,7 @@ async function setup(ready = true) {
     createElement: () => ({ getContext: () => ({ font: '', measureText: (text: string) => ({ width: Array.from(text).length * 10 }) }) }),
     fonts: { load: () => font, ready: Promise.resolve() },
   })
-  vi.stubGlobal('window', { nimbo: { onOverlayCommand: (callback: typeof receive) => { receive = callback }, sendOverlayEvent: (event: OverlayEvent) => events.push({ at: now, event }) } })
+  vi.stubGlobal('window', { heynimbo: { onOverlayCommand: (callback: typeof receive) => { receive = callback }, sendOverlayEvent: (event: OverlayEvent) => events.push({ at: now, event }) } })
   vi.stubGlobal('innerWidth', 1200)
   vi.stubGlobal('innerHeight', 900)
   vi.stubGlobal('performance', { now: () => now })

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { BuiltInMouth } from './builtin-mouth'
 const native = vi.hoisted(() => ({ language: vi.fn(() => 'fr') }))
-vi.mock('@nimboguide/native', () => ({ speechLanguage: native.language }))
+vi.mock('@heynimbo/native', () => ({ speechLanguage: native.language }))
 it('queues text with its detected language and sentence line, without producing PCM', async () => {
   const audio = { send: vi.fn() }, pcm = vi.fn(), mouth = new BuiltInMouth(audio)
   mouth.warm(); expect(audio.send).not.toHaveBeenCalled()

@@ -126,8 +126,8 @@ document.onkeydown = event => {
     else question.focus()
   }
 }
-window.nimboApp.onSnapshot(render)
-window.nimboApp.onNavigate(navigation => {
+window.heynimboApp.onSnapshot(render)
+window.heynimboApp.onNavigate(navigation => {
   if (navigation.focusSearch) { document.body.classList.remove('sidebar-hidden'); document.body.classList.add('sidebar-open'); search.focus() }
   if (navigation.turnId) requestAnimationFrame(() => document.getElementById(`turn-${navigation.turnId}`)?.scrollIntoView())
   if (navigation.renameId) { renameId = navigation.renameId; rename.value = title.textContent ?? ''; title.hidden = true; renameForm.hidden = false; rename.focus(); rename.select() }

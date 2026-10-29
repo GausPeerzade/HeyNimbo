@@ -30,7 +30,7 @@ export function brandPath(file: string): string {
 
 /** Brings a window the user asked for to the front on the Space they're on,
  *  even over a full-screen app. Joining every Space just long enough to show
- *  moves it here; afterwards it stays put. This only works because NimboGuide
+ *  moves it here; afterwards it stays put. This only works because HeyNimbo
  *  never takes a Dock icon: since macOS 10.14, Dock apps can't put windows over
  *  another app's full-screen Space. */
 function present(window: BrowserWindow): void {
@@ -96,7 +96,7 @@ export class AppShell {
     if (!this.home) {
       const window = new BrowserWindow({
         ...clampHomeBounds(this.settings.get().homeBounds, screen.getAllDisplays().map(d => d.workArea)), minWidth: 720, minHeight: 520,
-        title: 'NimboGuide', titleBarStyle: 'hiddenInset', backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, show: false,
+        title: 'HeyNimbo', titleBarStyle: 'hiddenInset', backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, show: false,
         paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app'),
       })
       this.home = window
@@ -114,7 +114,7 @@ export class AppShell {
   }
   openSettings(category?: string): BrowserWindow {
     if (!this.preferences) {
-      const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'NimboGuide Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
+      const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'HeyNimbo Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
       this.preferences = window
       window.on('closed', () => { this.preferences = undefined })
       window.once('ready-to-show', () => { if (!this.preview) present(window) })
@@ -132,8 +132,8 @@ export class AppShell {
   newConversation(): void { this.actions.stop(); this.conversations.newConversation(); this.openHome() }
   private installMenu(): void {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'NimboGuide', submenu: [
-        { label: 'About NimboGuide', click: () => this.openSettings('About') }, { type: 'separator' },
+      { label: 'HeyNimbo', submenu: [
+        { label: 'About HeyNimbo', click: () => this.openSettings('About') }, { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => this.openSettings() }, { type: 'separator' },
         { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
       ] },
@@ -148,10 +148,10 @@ export class AppShell {
   private updateTray(): void {
     this.tray?.destroy(); this.tray = undefined
     if (!this.settings.get().showMenuBar || this.preview) return
-    const image = nativeImage.createFromPath(brandPath('NimboGuideTemplate.png'))
+    const image = nativeImage.createFromPath(brandPath('HeyNimboTemplate.png'))
     image.setTemplateImage(true)
     this.tray = new Tray(image)
-    this.tray.setToolTip('NimboGuide')
+    this.tray.setToolTip('HeyNimbo')
     this.tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Open Home', click: () => this.openHome() }, { label: 'New conversation', click: () => this.newConversation() },
       { label: 'Clear drawings', click: () => this.actions.clear() }, { type: 'separator' },
@@ -209,7 +209,7 @@ export class AppShell {
       case 'permission': {
         if (!this.preview && request.permission === 'microphone') {
           const status = microphoneAccessStatus()
-          if (status === 'unavailable') throw new Error('This app is missing voice permission descriptions. For development, run pnpm dev:speech-permissions and restart NimboGuide.')
+          if (status === 'unavailable') throw new Error('This app is missing voice permission descriptions. For development, run pnpm dev:speech-permissions and restart HeyNimbo.')
           if (status === 'not-determined') { await ensureMicrophoneAccess(); this.publish(true); return }
         }
         const panes = { microphone: 'Privacy_Microphone', screen: 'Privacy_ScreenCapture', input: 'Privacy_ListenEvent' }

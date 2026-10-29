@@ -48,7 +48,7 @@ export class Mouth {
         type: 'response.create',
         response: {
           conversation: 'none',
-          metadata: { nimbo_line: id },
+          metadata: { heynimbo_line: id },
           output_modalities: ['audio'],
           input: [],
           instructions: `Say exactly the following, word for word, and nothing else:\n\n${text}`,
@@ -111,10 +111,10 @@ export class Mouth {
     if (event.type === 'error') {
       return this.fail(new Error((event.error as { message?: string } | undefined)?.message ?? 'Speech failed.'))
     }
-    const response = event.response as { id?: string; status?: string; metadata?: { nimbo_line?: string } } | undefined
+    const response = event.response as { id?: string; status?: string; metadata?: { heynimbo_line?: string } } | undefined
     const line = this.line
     if (event.type === 'response.created') {
-      const id = response?.metadata?.nimbo_line
+      const id = response?.metadata?.heynimbo_line
       if (id && this.cancelledBeforeCreated.delete(id)) {
         this.socket?.send({ type: 'response.cancel', response_id: response?.id })
       } else if (line && id === line.id) {

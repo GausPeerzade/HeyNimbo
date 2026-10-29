@@ -32,7 +32,7 @@ const run = (subjects: string[]): EvalRun => ({ label: 'test', mode: 'live', sta
 const sse = (events: Array<{ type: string }>): Response => new Response(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
 let directory: string
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), 'nimbo-eval-test-'))
+  directory = mkdtempSync(join(tmpdir(), 'heynimbo-eval-test-'))
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Network forbidden in tests') }))
 })
 afterEach(() => { rmSync(directory, { recursive: true, force: true }); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); vi.useRealTimers(); state.packaged = false })
@@ -47,7 +47,7 @@ describe('model list', () => {
     expect(new Set(models.map((model) => model.slug)).size).toBe(models.length)
     expect(models.every((model) => /^[a-z0-9.-]+$/.test(model.slug))).toBe(true)
     expect(errors).toHaveLength(2); expect(errors[0]).toContain('mistral:large'); expect(errors[1]).toContain('"openai:"')
-    expect(parseEvalModels(undefined).errors[0]).toContain('NIMBO_DEBUG_3D_EVAL_MODELS')
+    expect(parseEvalModels(undefined).errors[0]).toContain('HEYNIMBO_DEBUG_3D_EVAL_MODELS')
   })
 })
 
@@ -188,7 +188,7 @@ describe('replay', () => {
 describe('launch', () => {
   it('keeps the normal profile for a live run, installs a bounded cap, and never focuses', () => {
     vi.useFakeTimers(); vi.spyOn(process, 'uptime').mockReturnValue(0)
-    vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:medium')
+    vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:medium')
     configureModelEval()
     expect(state.isolate).not.toHaveBeenCalled()
     if (process.platform === 'darwin') expect(state.policy).toHaveBeenCalledWith('prohibited')
@@ -198,7 +198,7 @@ describe('launch', () => {
   })
   it('gives a replay a throwaway profile, and does nothing at all in a packaged app', () => {
     vi.useFakeTimers()
-    vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_REPLAY', '/tmp/nimbo-3d-eval/earlier')
+    vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL', '1'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_REPLAY', '/tmp/heynimbo-3d-eval/earlier')
     configureModelEval()
     expect(state.isolate).toHaveBeenCalledWith('model-eval')
     // Bounded by its work: a replay only draws, a live run also asks, and nothing outlasts 90 minutes.

@@ -17,7 +17,7 @@ import { streamAnswer, type Screenshot } from './voice/brain'
 export const EVAL_DISPLAY = { width: 1440, height: 900 }
 const SPACE: CaptureSpace = { frame: { x: 0, y: 0, ...EVAL_DISPLAY }, pixelWidth: EVAL_DISPLAY.width, pixelHeight: EVAL_DISPLAY.height }
 const POINTER = { x: EVAL_DISPLAY.width / 2, y: EVAL_DISPLAY.height / 2 }
-export const EVAL_OUTPUT = '/tmp/nimbo-3d-eval'
+export const EVAL_OUTPUT = '/tmp/heynimbo-3d-eval'
 /** Requests and hidden renders at once, and the bound on each. Every step is
  *  bounded, so the overall cap only ever stops a run that is stuck. */
 export const EVAL_LIMITS = { requests: 2, renders: 4, requestMs: 90_000, preflightMs: 30_000, renderMs: 60_000, setupMs: 120_000, maxRunMs: 90 * 60_000 }
@@ -71,7 +71,7 @@ export function parseEvalModels(text: string | undefined): { models: EvalModel[]
       models.push({ spec, slug, provider: provider as ProviderId, model, ...(effort && { effort }) })
     }
   }
-  if (!models.length && !errors.length) errors.push('Set NIMBO_DEBUG_3D_EVAL_MODELS, for example anthropic:claude-sonnet-5-5,openai:gpt-6.1-terra:medium.')
+  if (!models.length && !errors.length) errors.push('Set HEYNIMBO_DEBUG_3D_EVAL_MODELS, for example anthropic:claude-sonnet-5-5,openai:gpt-6.1-terra:medium.')
   return { models, errors }
 }
 
@@ -292,21 +292,21 @@ export function blankScreenshot(): Screenshot {
 }
 
 export function subjectsFile(): string {
-  return devSetting('NIMBO_DEBUG_3D_EVAL_SUBJECTS') ?? join(app.getAppPath(), 'scripts', 'eval-3d-subjects.txt')
+  return devSetting('HEYNIMBO_DEBUG_3D_EVAL_SUBJECTS') ?? join(app.getAppPath(), 'scripts', 'eval-3d-subjects.txt')
 }
 
 /** Call before `ready`. A live run keeps the normal profile, since it reads
  *  saved keys; a replay needs none and gets a throwaway one. */
 export function configureModelEval(): void {
-  if (!devFlag('NIMBO_DEBUG_3D_EVAL')) return
+  if (!devFlag('HEYNIMBO_DEBUG_3D_EVAL')) return
   launchInBackground()
-  const replay = devSetting('NIMBO_DEBUG_3D_EVAL_REPLAY')
+  const replay = devSetting('HEYNIMBO_DEBUG_3D_EVAL_REPLAY')
   if (replay) isolateDevProfile('model-eval')
   let cap = EVAL_LIMITS.maxRunMs
   try {
     if (replay) cap = evalCapMs((JSON.parse(readFileSync(join(replay, 'summary.json'), 'utf8')) as EvalRun).records.length, 0, true)
     else {
-      const models = parseEvalModels(devSetting('NIMBO_DEBUG_3D_EVAL_MODELS')).models.length
+      const models = parseEvalModels(devSetting('HEYNIMBO_DEBUG_3D_EVAL_MODELS')).models.length
       cap = evalCapMs(models * parseSubjects(readFileSync(subjectsFile(), 'utf8')).length, models)
     }
   } catch { /* A missing file is reported once the run starts. */ }
@@ -319,8 +319,8 @@ export function configureModelEval(): void {
 export async function runModelEval(): Promise<void> {
   // Hidden overlays stay offline; provider requests are made by this process.
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
-  const label = slugify(devSetting('NIMBO_DEBUG_3D_EVAL_LABEL') ?? new Date().toISOString().replace(/[:.]/g, '-'), 60)
-  const directory = join(EVAL_OUTPUT, label), replay = devSetting('NIMBO_DEBUG_3D_EVAL_REPLAY')
+  const label = slugify(devSetting('HEYNIMBO_DEBUG_3D_EVAL_LABEL') ?? new Date().toISOString().replace(/[:.]/g, '-'), 60)
+  const directory = join(EVAL_OUTPUT, label), replay = devSetting('HEYNIMBO_DEBUG_3D_EVAL_REPLAY')
   const secrets = new Set<string>(), writer = evalWriter(directory, secrets)
   const run: EvalRun = { label, mode: replay ? 'replay' : 'live', ...(replay && { source: replay }), state: 'running', startedAt: new Date().toISOString(), display: EVAL_DISPLAY, limits: EVAL_LIMITS, models: [], subjects: [], records: [], errors: [] }
   const log = (line: string): void => console.info(writer.redact(`[eval] ${line}`))
@@ -350,7 +350,7 @@ export async function savedConnections(secrets: Set<string>, log: (line: string)
 }
 
 async function liveResults(run: EvalRun, writer: ReturnType<typeof evalWriter>, secrets: Set<string>, log: (line: string) => void): Promise<EvalResult[]> {
-  const { models, errors } = parseEvalModels(devSetting('NIMBO_DEBUG_3D_EVAL_MODELS'))
+  const { models, errors } = parseEvalModels(devSetting('HEYNIMBO_DEBUG_3D_EVAL_MODELS'))
   run.errors.push(...errors)
   run.subjects = parseSubjects(readFileSync(subjectsFile(), 'utf8'))
   if (!models.length || !run.subjects.length) throw new Error(run.subjects.length ? 'No models to evaluate.' : 'The subjects file has no requests.')

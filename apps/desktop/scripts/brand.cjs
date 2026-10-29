@@ -3,7 +3,7 @@ const { readFileSync, writeFileSync, copyFileSync, mkdirSync, mkdtempSync, rmSyn
 const { join } = require('node:path')
 const { execFileSync } = require('node:child_process')
 const root = join(__dirname, '../build/brand')
-const scratch = mkdtempSync('/tmp/nimbo-brand-')
+const scratch = mkdtempSync('/tmp/heynimbo-brand-')
 app.setPath('userData', scratch)
 setTimeout(() => app.exit(1), 30000).unref()
 app.whenReady().then(async () => {
@@ -23,21 +23,21 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 80))
     writeFileSync(join(destination, name), (await window.webContents.capturePage()).toPNG())
   }
-  const iconset = join(root, 'NimboGuide.iconset')
+  const iconset = join(root, 'HeyNimbo.iconset')
   mkdirSync(iconset, { recursive: true })
   for (const size of [16, 32, 128, 256, 512]) {
-    await render(`NimboGuide.iconset/icon_${size}x${size}.png`, size, true, brand.foreground)
-    await render(`NimboGuide.iconset/icon_${size}x${size}@2x.png`, size * 2, true, brand.foreground)
+    await render(`HeyNimbo.iconset/icon_${size}x${size}.png`, size, true, brand.foreground)
+    await render(`HeyNimbo.iconset/icon_${size}x${size}@2x.png`, size * 2, true, brand.foreground)
   }
-  for (const [name, size] of [['NimboGuideTemplate.png', 22], ['NimboGuideTemplate@2x.png', 44]]) await render(name, size, false, '#000000')
+  for (const [name, size] of [['HeyNimboTemplate.png', 22], ['HeyNimboTemplate@2x.png', 44]]) await render(name, size, false, '#000000')
   await render('logo.png', 256)
   await render('logo-dark.png', 256, false, brand.darkMark)
-  const validation = '/tmp/nimbo-ui-validation'
+  const validation = '/tmp/heynimbo-ui-validation'
   mkdirSync(validation, { recursive: true })
   copyFileSync(join(iconset, 'icon_512x512@2x.png'), join(validation, 'icon-1024.png'))
   copyFileSync(join(iconset, 'icon_32x32.png'), join(validation, 'icon-32.png'))
   await render('template-16-proof.png', 16, false, '#000000', validation, '#FFFFFF')
-  execFileSync('iconutil', ['-c', 'icns', iconset, '-o', join(root, 'NimboGuide.icns')])
+  execFileSync('iconutil', ['-c', 'icns', iconset, '-o', join(root, 'HeyNimbo.icns')])
   rmSync(page)
   window.destroy()
   app.quit()

@@ -20,7 +20,7 @@ async function fixture() {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {} }))
   vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (name: string) => name === '--hover-dwell' ? '200' : '120' }))
   vi.stubGlobal('document', { documentElement: {}, getElementById: (id: string) => nodes.get(id), createElement: () => new TestNode(), addEventListener() {} })
-  vi.stubGlobal('window', { addEventListener: (_: string, handler: typeof move) => { move = handler }, nimbo: { sendNotchEvent: send, onNotchStatus() {}, onPeekSnapshot: (handler: typeof publish) => { publish = handler }, onPeekDismiss() {} } })
+  vi.stubGlobal('window', { addEventListener: (_: string, handler: typeof move) => { move = handler }, heynimbo: { sendNotchEvent: send, onNotchStatus() {}, onPeekSnapshot: (handler: typeof publish) => { publish = handler }, onPeekDismiss() {} } })
   await import('./notch')
   return { nodes, send, move, publish }
 }

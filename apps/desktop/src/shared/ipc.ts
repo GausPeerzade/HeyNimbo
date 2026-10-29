@@ -56,7 +56,6 @@ export type OverlayEvent =
   | { kind: 'clearClicked' }
   | { kind: 'frameTrace'; deltas: number[] }
 
-export type SaveKeyResult = { ok: true } | { ok: false; reason: string }
 
 /** Main → hidden audio window. Audio is mono PCM16 at 24 kHz. */
 export type VoiceCommand =
@@ -88,11 +87,10 @@ export type VoiceEvent =
   | { kind: 'playbackDrained' }
 
 export const Channels = {
-  notchStatus: 'nimbo:notch-status',
-  overlay: 'nimbo:overlay',
-  overlayEvent: 'nimbo:overlay-event',
-  connection: 'nimbo:setup-connection',
-  saveOpenAIKey: 'nimbo:save-openai-key',
-  voiceCommand: 'nimbo:voice-command',
-  voiceEvent: 'nimbo:voice-event',
+  notchStatus: 'heynimbo:notch-status',
+  overlay: 'heynimbo:overlay',
+  overlayEvent: 'heynimbo:overlay-event',
+  connection: 'heynimbo:setup-connection',
+  voiceCommand: 'heynimbo:voice-command',
+  voiceEvent: 'heynimbo:voice-event',
 } as const

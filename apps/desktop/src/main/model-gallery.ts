@@ -11,7 +11,7 @@ const VIEW = { width: 1200, height: 800 }
 const MODEL_CARD: FixtureRect = { x: 40, y: 40, w: 640, h: 600 }
 const SIDE_CARD: FixtureRect = { x: 720, y: 70, w: 440, h: 420 }
 const CAPTURE = { x: 28, y: 28, width: 664, height: 624 }
-const OUTPUT = '/tmp/nimbo-3d-gallery'
+const OUTPUT = '/tmp/heynimbo-3d-gallery'
 /** Includes Electron start-up, so a stalled run still ends inside a minute. */
 const DEADLINE_MS = 58_000
 /** Hidden windows rendering at once, and speech pace: a full set fits under the deadline. */
@@ -30,7 +30,7 @@ interface GalleryReport {
 }
 
 export function configureModelGallery(): void {
-  if (!devFlag('NIMBO_DEBUG_3D_GALLERY')) return
+  if (!devFlag('HEYNIMBO_DEBUG_3D_GALLERY')) return
   launchInBackground()
   const cleanup = isolateDevProfile('model-gallery')
   setTimeout(() => { console.warn('[gallery] deadline reached'); cleanup(); app.exit(2) }, Math.max(0, DEADLINE_MS - process.uptime() * 1000)).unref()
@@ -40,10 +40,10 @@ export function configureModelGallery(): void {
  *  never shown. No gesture, microphone, audio, network or credential path runs. */
 export async function runModelGallery(): Promise<void> {
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
-  const directory = join(OUTPUT, devSetting('NIMBO_DEBUG_3D_GALLERY_LABEL') ?? new Date().toISOString().replace(/[:.]/g, '-'))
+  const directory = join(OUTPUT, devSetting('HEYNIMBO_DEBUG_3D_GALLERY_LABEL') ?? new Date().toISOString().replace(/[:.]/g, '-'))
   mkdirSync(directory, { recursive: true })
   // A set name ("core", "blind") or fixture names; the core set and the robustness lane by default.
-  const only = devSetting('NIMBO_DEBUG_3D_GALLERY_ONLY')?.split(',')
+  const only = devSetting('HEYNIMBO_DEBUG_3D_GALLERY_ONLY')?.split(',')
   const report: GalleryReport = { activeAtReady: app.isActive(), becameActive: 0, traces: {}, timing: {} }
   app.on('did-become-active', () => { report.becameActive++; console.warn('[gallery] the app became active') })
   const names = new Map<WebContents, string>()
@@ -76,7 +76,7 @@ export async function hiddenOverlay(names: Map<WebContents, string>, name: strin
   })
   names.set(window.webContents, name)
   await loadPage(window, 'overlay')
-  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) sendOverlay(window.webContents, { kind: 'debug', frameTrace: true })
+  if (devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) sendOverlay(window.webContents, { kind: 'debug', frameTrace: true })
   return window
 }
 
@@ -107,7 +107,7 @@ async function runFixture(fixture: ModelFixture, directory: string, names: Map<W
   contents.on('console-message', ({ message }) => timing(fixture.name, message))
   const beats = fixtureBeats(fixture.script(MODEL_CARD, SIDE_CARD), VIEW)
   // 3D lines stream in a sentence ahead of speech, as the parser forwards them; "0" measures without.
-  const streamed = devSetting('NIMBO_DEBUG_3D_GALLERY_PREPARE') !== '0'
+  const streamed = devSetting('HEYNIMBO_DEBUG_3D_GALLERY_PREPARE') !== '0'
   const prepare = (index: number): void => {
     const marks = beats[index]?.marks.filter((mark) => mark.kind === 'model' || mark.kind === 'part') ?? []
     if (streamed && marks.length) sendOverlay(contents, { kind: 'prepare', marks, epoch: 1 })
@@ -130,7 +130,7 @@ async function runFixture(fixture: ModelFixture, directory: string, names: Map<W
   await sleep(450)
   await saveCapture(contents, join(directory, `${fixture.name}-final-b.png`))
   // A swaying model never goes idle, so end the trace explicitly to get its report.
-  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) { sendOverlay(contents, { kind: 'debug', frameTrace: false }); await sleep(400) }
+  if (devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) { sendOverlay(contents, { kind: 'debug', frameTrace: false }); await sleep(400) }
   window.destroy()
 }
 

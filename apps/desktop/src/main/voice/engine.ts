@@ -1,4 +1,4 @@
-import { speechAvailability, requestSpeechAuthorization } from '@nimboguide/native'
+import { speechAvailability, requestSpeechAuthorization } from '@heynimbo/native'
 import type { VoiceSelection } from '../../shared/providers'
 
 /** All callers, including the connection summary, use this one selection rule. */

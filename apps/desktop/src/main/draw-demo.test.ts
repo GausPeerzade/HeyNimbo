@@ -16,7 +16,7 @@ import { pumpDemo } from './pump-demo'
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
-  vi.stubEnv('NIMBO_DEBUG_DRAW_DEMO', '1')
+  vi.stubEnv('HEYNIMBO_DEBUG_DRAW_DEMO', '1')
   vi.spyOn(process, 'uptime').mockReturnValue(2)
   vi.spyOn(console, 'info').mockImplementation(() => {})
   app.isPackaged = false
@@ -74,7 +74,7 @@ describe('drawing demo safety', () => {
   })
 
   it('does nothing unless the dev switch is explicitly enabled', () => {
-    vi.stubEnv('NIMBO_DEBUG_DRAW_DEMO', '0')
+    vi.stubEnv('HEYNIMBO_DEBUG_DRAW_DEMO', '0')
     expect(scheduleDrawDemo({} as OverlayManager)).toBe(false)
     limitDrawDemoRuntime()
     expect(vi.getTimerCount()).toBe(0)

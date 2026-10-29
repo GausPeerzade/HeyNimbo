@@ -1,16 +1,16 @@
-import type { NimboVoiceApi } from '../preload/voice'
+import type { HeyNimboVoiceApi } from '../preload/voice'
 import type { VoiceCommand } from '../shared/ipc'
 import { SystemSpeech } from './system-speech'
 import workletUrl from './pcm-capture-worklet.js?url'
 
 declare global {
   interface Window {
-    nimboVoice: NimboVoiceApi
+    heynimboVoice: HeyNimboVoiceApi
   }
 }
 
 const RATE = 24_000
-const send = window.nimboVoice.send
+const send = window.heynimboVoice.send
 const systemSpeech = new SystemSpeech(window.speechSynthesis, send)
 // Prime Chromium's asynchronous installed-voice discovery before the first answer.
 window.speechSynthesis.getVoices()
@@ -197,4 +197,4 @@ function handle(command: VoiceCommand): void {
   }
 }
 
-window.nimboVoice.onCommand(handle)
+window.heynimboVoice.onCommand(handle)

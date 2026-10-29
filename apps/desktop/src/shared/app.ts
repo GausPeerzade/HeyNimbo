@@ -52,6 +52,6 @@ export type AppRequest =
   | { kind: 'replaceKey' }
   | { kind: 'connection'; request: ConnectionRequest }
   | { kind: 'permission'; permission: 'microphone' | 'screen' | 'input' }
-export const AppChannels = { request: 'nimbo:app-request', snapshot: 'nimbo:app-snapshot', navigate: 'nimbo:app-navigate', notch: 'nimbo:notch-event' } as const
+export const AppChannels = { request: 'heynimbo:app-request', snapshot: 'heynimbo:app-snapshot', navigate: 'heynimbo:app-navigate', notch: 'heynimbo:notch-event' } as const
 
 export type NotchEvent = { kind: 'hover'; over: boolean } | { kind: 'expanded'; expanded: boolean } | { kind: 'home'; id?: string } | { kind: 'new' } | { kind: 'stop' }

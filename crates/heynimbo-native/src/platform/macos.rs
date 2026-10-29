@@ -17,7 +17,7 @@ use core_graphics::event::{
     CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
     CGEventType, CallbackResult,
 };
-use nimbo_gestures::{InputEvent, Modifiers};
+use heynimbo_gestures::{InputEvent, Modifiers};
 
 use crate::runtime::Message;
 
@@ -57,7 +57,7 @@ extern "C" fn stop_current_run_loop(_timer: CFRunLoopTimerRef, _info: *mut c_voi
 pub(crate) fn start(tx: Sender<Message>) -> Result<InputSource, String> {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let thread = std::thread::Builder::new()
-        .name("nimbo-input-tap".into())
+        .name("heynimbo-input-tap".into())
         .spawn(move || run_tap(tx, &ready_tx))
         .map_err(|err| format!("could not spawn the input thread: {err}"))?;
     match ready_rx.recv() {

@@ -1,4 +1,4 @@
-//! Native OS capabilities for NimboGuide's desktop shell, exposed through N-API.
+//! Native OS capabilities for HeyNimbo's desktop shell, exposed through N-API.
 
 mod capture;
 mod platform;
@@ -12,7 +12,7 @@ use std::time::Instant;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use nimbo_gestures::{Binding, Gesture, GestureDetector, Modifiers, Timing};
+use heynimbo_gestures::{Binding, Gesture, GestureDetector, Modifiers, Timing};
 
 #[napi(string_enum)]
 pub enum ModifierKey {
@@ -86,7 +86,7 @@ impl GestureMonitor {
             .map_err(|err| Error::new(Status::InvalidArg, err.to_string()))?;
         let (detector_tx, detector_rx) = mpsc::channel();
         let detector = std::thread::Builder::new()
-            .name("nimbo-gestures".into())
+            .name("heynimbo-gestures".into())
             .spawn(move || {
                 runtime::run_detector(detector, &detector_rx, |gesture| {
                     on_gesture.call(to_event(gesture), ThreadsafeFunctionCallMode::NonBlocking);

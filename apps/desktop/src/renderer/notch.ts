@@ -20,15 +20,15 @@ function setPeek(expanded: boolean): void {
   // CSS retains the exiting surface; inert prevents stale controls during exit.
   peek.inert = !expanded
   peek.hidden = !expanded
-  window.nimbo.sendNotchEvent({ kind: 'expanded', expanded })
+  window.heynimbo.sendNotchEvent({ kind: 'expanded', expanded })
 }
 function dismiss(): void {
   clearTimeout(enterTimer); clearTimeout(leaveTimer); setPeek(false); suppressed = over
-  window.nimbo.sendNotchEvent({ kind: 'hover', over: false })
+  window.heynimbo.sendNotchEvent({ kind: 'hover', over: false })
 }
 function render(status: NotchStatus): void {
   pill.className = `pill ${status.kind}`
-  label.textContent = status.kind === 'idle' ? 'NimboGuide' : status.kind === 'active' ? status.label : status.permission === 'inputMonitoring' ? 'Input Monitoring needed' : 'Screen Recording needed'
+  label.textContent = status.kind === 'idle' ? 'HeyNimbo' : status.kind === 'active' ? status.label : status.permission === 'inputMonitoring' ? 'Input Monitoring needed' : 'Screen Recording needed'
   currentStatus = status.kind === 'idle' ? 'Ready when you are' : label.textContent
   document.getElementById('peek-status')!.textContent = currentStatus
 }
@@ -41,7 +41,7 @@ function renderPeek(snapshot: AppSnapshot): void {
   recent.hidden = snapshot.conversations.length === 0
   for (const c of [...snapshot.conversations].sort((a,b) => b.updated - a.updated).slice(0,3)) {
     const button = document.createElement('button'); button.className = 'recent'; button.textContent = c.title
-    button.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home', id: c.id }); recent.append(button)
+    button.onclick = () => window.heynimbo.sendNotchEvent({ kind: 'home', id: c.id }); recent.append(button)
   }
 }
 function isOver(event: MouseEvent): boolean {
@@ -52,7 +52,7 @@ window.addEventListener('mousemove', event => {
   const hit = isOver(event)
   if (hit === over) return
   over = hit
-  window.nimbo.sendNotchEvent({ kind: 'hover', over: hit })
+  window.heynimbo.sendNotchEvent({ kind: 'hover', over: hit })
   if (hit) {
     clearTimeout(leaveTimer)
     if (!suppressed && peek.hidden) {
@@ -66,15 +66,15 @@ window.addEventListener('mousemove', event => {
 })
 surface.addEventListener('mouseleave', () => {
   over = false; suppressed = false; clearTimeout(enterTimer)
-  window.nimbo.sendNotchEvent({ kind: 'hover', over: false })
+  window.heynimbo.sendNotchEvent({ kind: 'hover', over: false })
   clearTimeout(leaveTimer)
   leaveTimer = setTimeout(() => setPeek(false), leaveGrace)
 })
-pill.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home' })
-document.getElementById('home')!.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home' })
-document.getElementById('new')!.onclick = () => window.nimbo.sendNotchEvent({ kind: 'new' })
-document.getElementById('stop')!.onclick = () => window.nimbo.sendNotchEvent({ kind: 'stop' })
+pill.onclick = () => window.heynimbo.sendNotchEvent({ kind: 'home' })
+document.getElementById('home')!.onclick = () => window.heynimbo.sendNotchEvent({ kind: 'home' })
+document.getElementById('new')!.onclick = () => window.heynimbo.sendNotchEvent({ kind: 'new' })
+document.getElementById('stop')!.onclick = () => window.heynimbo.sendNotchEvent({ kind: 'stop' })
 document.addEventListener('keydown', event => { if (event.key === 'Escape') dismiss() })
-window.nimbo.onNotchStatus(render)
-window.nimbo.onPeekSnapshot(renderPeek)
-window.nimbo.onPeekDismiss(dismiss)
+window.heynimbo.onNotchStatus(render)
+window.heynimbo.onPeekSnapshot(renderPeek)
+window.heynimbo.onPeekDismiss(dismiss)

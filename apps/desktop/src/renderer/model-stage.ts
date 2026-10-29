@@ -71,7 +71,7 @@ function inkShell(ink: { resolution: THREE.Vector2; width: { value: number } }):
         vec2 inkDirection = (normalMatrix * outlineNormal).xy;
         gl_Position.xy += normalize(inkDirection + vec2(1e-6)) * inkWidth * gl_Position.w * 2.0 / inkResolution;`)
   }
-  material.customProgramCacheKey = () => 'nimbo-ink-shell'
+  material.customProgramCacheKey = () => 'heynimbo-ink-shell'
   return material
 }
 

@@ -22,7 +22,7 @@ All four follow-up findings are fixed without an Electron launch:
 
 The supervisor approved a silent Electron run, required a 60-second warning delay and directed private captures to `/tmp/nimbo-p1-validation/` only. No capture was copied into the worktree.
 
-After `sleep 60`, ran from apps/desktop: `pnpm build && NIMBO_DEBUG_DRAW_DEMO=1 NIMBO_DEBUG_NO_CONTENT_PROTECTION=1 ./node_modules/.bin/electron .`.
+After `sleep 60`, ran from apps/desktop: `pnpm build && HEYNIMBO_DEBUG_DRAW_DEMO=1 HEYNIMBO_DEBUG_NO_CONTENT_PROTECTION=1 ./node_modules/.bin/electron .`.
 Recorded with `node scripts/record-overlay.cjs /tmp/nimbo-p1-validation 36`: 556 frames, 36.01 seconds, 15.4 capture fps (not a renderer-cadence claim).
 Viewed these original frames with the read tool:
 - f0195_013895ms: plain paper, original sun/cloud sketch and heading; transparent desktop elsewhere, no fullscreen opaque surface.
@@ -30,7 +30,7 @@ Viewed these original frames with the read tool:
 - f0246_017008ms, f0255_017593ms, f0268_018382ms and f0280_019117ms: badge, arrow, initial E, completed Evaporation in that order.
 - f0344_023030ms, f0410_027004ms, f0442_029019ms and f0466_030489ms: subsequent rows reveal independently; card grows while prior anchors stay fixed; leaders persist.
 - f0554_035899ms: all four semantic arrows/rows, both leaders, note, measured gel pill and Clear; legible dark writing on light paper over the dark desktop.
-The demo self-quit. `pgrep -fl 'nimboguide-p1/node_modules/.pnpm/electron'` returned no processes; no other instance was stopped and no DevTools styles were changed.
+The demo self-quit. `pgrep -fl 'heynimbo-p1/node_modules/.pnpm/electron'` returned no processes; no other instance was stopped and no DevTools styles were changed.
 
 ## Boundaries for reviewer
 

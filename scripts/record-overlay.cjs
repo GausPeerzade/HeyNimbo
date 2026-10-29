@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // Record only your consented desktop. Launch the dev drawing demo with
-// NIMBO_DEBUG_NO_CONTENT_PROTECTION=1; this separate process includes its ink.
-// Usage: node scripts/record-overlay.cjs /tmp/nimbo-draw 18
+// HEYNIMBO_DEBUG_NO_CONTENT_PROTECTION=1; this separate process includes its ink.
+// Usage: node scripts/record-overlay.cjs /tmp/heynimbo-draw 18
 const { mkdir, writeFile } = require('node:fs/promises')
 const { join } = require('node:path')
 const { performance } = require('node:perf_hooks')
-const { captureScreens, hasScreenCaptureAccess } = require('../crates/nimbo-native')
+const { captureScreens, hasScreenCaptureAccess } = require('../crates/heynimbo-native')
 
 async function record() {
   if (!hasScreenCaptureAccess()) throw new Error('Screen Recording access is required; no permission prompt is issued.')
-  const output = process.argv[2] || '/tmp/nimbo-draw'
+  const output = process.argv[2] || '/tmp/heynimbo-draw'
   const seconds = Number(process.argv[3] || 18)
   if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Duration must be a positive number of seconds.')
   await mkdir(output, { recursive: true })

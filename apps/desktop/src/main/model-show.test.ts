@@ -136,7 +136,7 @@ describe('choosing and bounding', () => {
   it('caps the run at forty seconds a subject, launched without focus in a throwaway profile, and does nothing packaged', () => {
     expect(subjectWindowMs(1)).toBe(40_000)
     vi.useFakeTimers(); vi.spyOn(process, 'uptime').mockReturnValue(0)
-    vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/nimbo-3d-eval-synthetic/missing-run')
+    vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW', '/tmp/heynimbo-3d-eval-synthetic/missing-run')
     configureModelShow()
     expect(state.isolate).toHaveBeenCalledWith('model-show')
     if (process.platform === 'darwin') expect(state.policy).toHaveBeenCalledWith('prohibited')
@@ -229,7 +229,7 @@ describe('live show', () => {
   })
 
   it('plays a recorded run back as a provider stream: its first token late, its text verbatim, its failures again', async () => {
-    const source = mkdtempSync(join(tmpdir(), 'nimbo-show-test-'))
+    const source = mkdtempSync(join(tmpdir(), 'heynimbo-show-test-'))
     try {
       writeFileSync(join(source, 'a.txt'), streamed)
       const run = emptyRun(['Lighthouse?', 'Heart?'])
@@ -249,13 +249,13 @@ describe('live show', () => {
 
   it('keeps the normal profile for real requests, a throwaway one for recorded answers, and nothing at all when packaged', () => {
     vi.useFakeTimers()
-    vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1'); vi.stubEnv('NIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:low')
+    vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE', '1'); vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_MODELS', 'openai:gpt-6.1-terra:low')
     configureModelShow()
     expect(state.isolate).not.toHaveBeenCalled()
     if (process.platform === 'darwin') expect(state.policy).toHaveBeenCalledWith('prohibited')
     expect(vi.getTimerCount()).toBe(1)
     vi.clearAllTimers(); vi.clearAllMocks()
-    vi.stubEnv('NIMBO_DEBUG_3D_EVAL_SHOW_MOCK', '/tmp/nimbo-3d-eval-synthetic/missing-run')
+    vi.stubEnv('HEYNIMBO_DEBUG_3D_EVAL_SHOW_MOCK', '/tmp/heynimbo-3d-eval-synthetic/missing-run')
     configureModelShow()
     expect(state.isolate).toHaveBeenCalledWith('model-show')
     vi.clearAllTimers(); vi.clearAllMocks(); state.packaged = true

@@ -52,7 +52,7 @@ export class NotchPeek {
   dismiss(): void {
     this.resetNative()
     if (!this.window.isDestroyed()) {
-      try { this.window.webContents.send('nimbo:peek-dismiss') }
+      try { this.window.webContents.send('heynimbo:peek-dismiss') }
       catch { console.warn('[peek] Renderer unavailable while dismissing.') }
     }
   }

@@ -10,13 +10,13 @@ vi.mock('./audio-window', () => ({ microphoneAccessStatus: mocks.microphoneStatu
 vi.mock('electron', () => ({
   shell: { openExternal: mocks.external },
   app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: true },
-  ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'nimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
+  ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'heynimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
   dialog: { showMessageBox: mocks.confirm },
   nativeTheme: { shouldUseDarkColors: false },
 }))
 let shell: AppShell | undefined, talk: TalkSession | undefined
 function fixture(ask: ShellActions['ask'] = () => ({ accepted: true }), extra: Partial<ShellActions> = {}) {
-  mocks.dir = mkdtempSync('/tmp/nimbo-shell-test-')
+  mocks.dir = mkdtempSync('/tmp/heynimbo-shell-test-')
   mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue({ response: 0 })
   const actions = { ...extra, ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
   shell = new AppShell(actions, true)
@@ -67,7 +67,7 @@ it('coalesces repeated snapshot work and flushes the final idle status without a
   vi.advanceTimersByTime(249); expect(snapshot).not.toHaveBeenCalled()
   vi.advanceTimersByTime(1); expect(snapshot).toHaveBeenCalledTimes(1)
   shell.publish(); shell.setStatus(undefined)
-  expect(contents.send).toHaveBeenLastCalledWith('nimbo:app-snapshot', expect.objectContaining({ busy: false, status: '' }))
+  expect(contents.send).toHaveBeenLastCalledWith('heynimbo:app-snapshot', expect.objectContaining({ busy: false, status: '' }))
   expect(snapshot).toHaveBeenCalledTimes(2)
   vi.advanceTimersByTime(250); expect(snapshot).toHaveBeenCalledTimes(2)
 })

@@ -1,4 +1,4 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "crates/nimbo-native"
+  - "crates/heynimbo-native"

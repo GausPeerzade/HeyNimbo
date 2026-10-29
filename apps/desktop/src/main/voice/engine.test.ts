@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { allowSpeechRecognition, selectVoiceEngine } from './engine'
 const native = vi.hoisted(() => ({ availability: vi.fn(), request: vi.fn() }))
-vi.mock('@nimboguide/native', () => ({ speechAvailability: native.availability, requestSpeechAuthorization: native.request }))
+vi.mock('@heynimbo/native', () => ({ speechAvailability: native.availability, requestSpeechAuthorization: native.request }))
 beforeEach(() => { vi.clearAllMocks(); native.availability.mockReturnValue({ available: true, authorization: 'authorized' }) })
 it('prefers a saved OpenAI key without probing local authorization', () => {
   expect(selectVoiceEngine('synthetic')).toEqual({ engine: 'openai' })

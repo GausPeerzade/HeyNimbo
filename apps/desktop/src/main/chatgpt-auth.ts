@@ -23,7 +23,7 @@ export function matchesState(actual: string | null, expected: string): boolean {
 export function authorizeURL(attempt: ReturnType<typeof createAttempt>, redirectURI: string, hostId: string, profile?: Profile): URL {
   const url = new URL(AUTHORIZE)
   url.search = new URLSearchParams({ client_id: profile?.clientId ?? 'dynamic_agent_client', ext_agent_host_id: hostId, response_type: 'code', redirect_uri: redirectURI, scope: SCOPES, resource: RESOURCE, state: attempt.state, nonce: attempt.nonce, code_challenge_method: 'S256', code_challenge: attempt.challenge }).toString()
-  if (!profile) url.searchParams.set('agent_name_hint', 'NimboGuide')
+  if (!profile) url.searchParams.set('agent_name_hint', 'HeyNimbo')
   if (profile?.tokens?.id) url.searchParams.set('id_token_hint', profile.tokens.id)
   if (profile?.identity?.email) url.searchParams.set('login_hint', profile.identity.email)
   if (profile?.identity && !profile.tokens?.scopes.includes('chatgpt.tokens.use.direct')) url.searchParams.set('prompt', 'consent')
@@ -55,8 +55,8 @@ export async function startCallback(state: string, clientId?: string, timeoutMs 
     response.setHeader('Content-Type', 'text/plain; charset=utf-8'); response.setHeader('Cache-Control', 'no-store')
     if (request.method !== 'GET' || url.pathname !== '/auth/callback' || used) { response.writeHead(404); response.end('Not found.'); return }
     used = true
-    try { const callback = parseCallback(url, state, clientId); response.end('Return to NimboGuide to finish connecting.'); resolve(callback) }
-    catch (error) { response.writeHead(400); response.end('Sign-in was not accepted. Return to NimboGuide.'); reject(error as Error) }
+    try { const callback = parseCallback(url, state, clientId); response.end('Return to HeyNimbo to finish connecting.'); resolve(callback) }
+    catch (error) { response.writeHead(400); response.end('Sign-in was not accepted. Return to HeyNimbo.'); reject(error as Error) }
     finally { close(false) }
   })
   await new Promise<void>((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', yes) })
@@ -196,6 +196,6 @@ export class ChatGPTAuth {
       }
     } catch { confirmed = false }
     finally { delete profile.tokens; await this.save() }
-    return confirmed ? 'Signed out.' : 'Signed out locally. Remote revocation was not confirmed; disconnect NimboGuide in ChatGPT Settings.'
+    return confirmed ? 'Signed out.' : 'Signed out locally. Remote revocation was not confirmed; disconnect HeyNimbo in ChatGPT Settings.'
   }
 }

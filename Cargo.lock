@@ -249,6 +249,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "heynimbo-gestures"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "heynimbo-native"
+version = "0.1.0"
+dependencies = [
+ "block2",
+ "core-foundation",
+ "core-graphics",
+ "heynimbo-gestures",
+ "jpeg-decoder",
+ "jpeg-encoder",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "objc2",
+ "objc2-avf-audio",
+ "objc2-foundation",
+ "objc2-natural-language",
+ "objc2-speech",
+ "screencapturekit",
+ "windows",
+]
+
+[[package]]
 name = "jpeg-decoder"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -341,35 +370,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d153beb7d5c973f4b9395be8a83054a28968b61188f1dd1a2cc2321af22daea2"
 dependencies = [
  "libloading",
-]
-
-[[package]]
-name = "nimbo-gestures"
-version = "0.1.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "nimbo-native"
-version = "0.1.0"
-dependencies = [
- "block2",
- "core-foundation",
- "core-graphics",
- "jpeg-decoder",
- "jpeg-encoder",
- "napi",
- "napi-build",
- "napi-derive",
- "nimbo-gestures",
- "objc2",
- "objc2-avf-audio",
- "objc2-foundation",
- "objc2-natural-language",
- "objc2-speech",
- "screencapturekit",
- "windows",
 ]
 
 [[package]]

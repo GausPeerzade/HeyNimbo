@@ -4,7 +4,7 @@ import { app, Menu } from 'electron'
 /** Call before taking an instance lock or opening any persistent store. */
 export function isolateDevProfile(name: 'draw-demo' | 'home-preview' | 'model-gallery' | 'model-eval' | 'model-show'): () => void {
   if (app.isPackaged) return () => {}
-  const directory = mkdtempSync(`/tmp/nimbo-${name}-`)
+  const directory = mkdtempSync(`/tmp/heynimbo-${name}-`)
   app.setPath('userData', directory)
   app.setPath('sessionData', directory)
   const cleanup = (): void => rmSync(directory, { recursive: true, force: true })

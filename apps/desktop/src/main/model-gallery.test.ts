@@ -24,20 +24,20 @@ vi.mock('electron', async () => {
     session: { defaultSession: { webRequest: { onBeforeRequest: (handler: typeof state.request) => { state.request = handler } } } },
   }
 })
-vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: (file: string) => { state.files.push(file) }, mkdtempSync: () => '/tmp/nimbo-model-gallery-test', rmSync: vi.fn() }))
+vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: (file: string) => { state.files.push(file) }, mkdtempSync: () => '/tmp/heynimbo-model-gallery-test', rmSync: vi.fn() }))
 vi.mock('./windows', () => ({ loadPage: vi.fn(async () => {}), secureWebPreferences: () => ({}), frameTraceSummary: () => ({}) }))
 
 beforeEach(() => {
   vi.useFakeTimers()
   state.windows.length = 0; state.files.length = 0; state.packaged = false
-  vi.stubEnv('NIMBO_DEBUG_3D_GALLERY', '1')
+  vi.stubEnv('HEYNIMBO_DEBUG_3D_GALLERY', '1')
   vi.spyOn(console, 'info').mockImplementation(() => {})
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.clearAllMocks() })
 
 it('renders fixtures only in windows that are never shown or focused, offline, then quits by itself', async () => {
-  vi.stubEnv('NIMBO_DEBUG_3D_GALLERY_ONLY', 'water')
-  vi.stubEnv('NIMBO_DEBUG_3D_GALLERY_LABEL', 'test')
+  vi.stubEnv('HEYNIMBO_DEBUG_3D_GALLERY_ONLY', 'water')
+  vi.stubEnv('HEYNIMBO_DEBUG_3D_GALLERY_LABEL', 'test')
   const { runModelGallery } = await import('./model-gallery')
   const done = runModelGallery()
   await vi.advanceTimersByTimeAsync(40_000)
@@ -52,7 +52,7 @@ it('renders fixtures only in windows that are never shown or focused, offline, t
   const decide = (url: string) => { let cancel: boolean | undefined; state.request!({ url }, (result) => { cancel = result.cancel }); return cancel }
   expect(decide('https://example.com/')).toBe(true); expect(decide('file:///app/overlay.html')).toBe(false)
   expect(state.files.length).toBeGreaterThan(2)
-  expect(state.files.every((file) => file.startsWith('/tmp/nimbo-3d-gallery/test/'))).toBe(true)
+  expect(state.files.every((file) => file.startsWith('/tmp/heynimbo-3d-gallery/test/'))).toBe(true)
   expect(state.quit).toHaveBeenCalledOnce()
 })
 

@@ -5,7 +5,7 @@ import {
   type GestureBinding,
   type GestureEvent,
   type GestureKind,
-} from '@nimboguide/native'
+} from '@heynimbo/native'
 import type { GestureAction, GestureMessage, GesturePhase } from '../shared/ipc'
 
 const PHASES: Record<GestureKind, GesturePhase> = {

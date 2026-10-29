@@ -1,7 +1,7 @@
-import type { NimboApi } from '../preload'
+import type { HeyNimboApi } from '../preload'
 
 declare global {
   interface Window {
-    nimbo: NimboApi
+    heynimbo: HeyNimboApi
   }
 }

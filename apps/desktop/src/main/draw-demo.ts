@@ -8,21 +8,21 @@ import { isolateDevProfile, launchInBackground } from './dev-profile'
 let cleanupProfile: (() => void) | undefined
 
 export function configureDrawDemo(): void {
-  if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return
+  if (!devFlag('HEYNIMBO_DEBUG_DRAW_DEMO')) return
   launchInBackground()
   cleanupProfile = isolateDevProfile('draw-demo')
 }
 
 /** A last-resort process deadline, installed before waiting for app readiness. */
 export function limitDrawDemoRuntime(): void {
-  if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return
+  if (!devFlag('HEYNIMBO_DEBUG_DRAW_DEMO')) return
   setTimeout(() => { cleanupProfile?.(); app.exit(0) }, Math.max(0, 40_000 - process.uptime() * 1000))
 }
 
 /** Silent teaching beats; main returns before starting audio, gestures,
  *  credentials, microphone capture or OpenAI connections. */
 export function scheduleDrawDemo(overlays: OverlayManager): boolean {
-  if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return false
+  if (!devFlag('HEYNIMBO_DEBUG_DRAW_DEMO')) return false
   setTimeout(() => {
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     const space = { frame: bounds, pixelWidth: bounds.width, pixelHeight: bounds.height }

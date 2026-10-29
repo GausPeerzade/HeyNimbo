@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   check: undefined as ((requester: unknown, permission: string) => boolean) | undefined,
   contents: {} as Record<string, unknown>,
 }))
-vi.mock('@nimboguide/native', () => ({ hasVoiceUsageDescriptions: mocks.descriptions }))
+vi.mock('@heynimbo/native', () => ({ hasVoiceUsageDescriptions: mocks.descriptions }))
 vi.mock('./windows', () => ({ loadPage: vi.fn(), secureWebPreferences: vi.fn() }))
 vi.mock('electron', () => ({
   systemPreferences: { getMediaAccessStatus: mocks.status, askForMediaAccess: mocks.ask }, ipcMain: { on: vi.fn() },

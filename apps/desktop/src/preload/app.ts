@@ -12,5 +12,5 @@ const api = {
     ipcRenderer.on(AppChannels.navigate, (_event, navigation) => listener(navigation))
   },
 }
-export type NimboAppApi = typeof api
-contextBridge.exposeInMainWorld('nimboApp', api)
+export type HeyNimboAppApi = typeof api
+contextBridge.exposeInMainWorld('heynimboApp', api)

@@ -1,4 +1,4 @@
-import type { ScreenCaptures } from '@nimboguide/native'
+import type { ScreenCaptures } from '@heynimbo/native'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConversationController } from '../conversations'
 import { HistoryRepository } from '../history'

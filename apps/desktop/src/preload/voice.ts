@@ -10,6 +10,6 @@ const api = {
   send: (event: VoiceEvent): void => ipcRenderer.send(Channels.voiceEvent, event),
 }
 
-export type NimboVoiceApi = typeof api
+export type HeyNimboVoiceApi = typeof api
 
-contextBridge.exposeInMainWorld('nimboVoice', api)
+contextBridge.exposeInMainWorld('heynimboVoice', api)

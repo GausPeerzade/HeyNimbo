@@ -32,7 +32,7 @@ it('keeps hover nonactivating, authenticates the main frame and file URL, and re
   mocks.receive?.(sender, { kind: 'home', id: 'conversation' })
   expect(shell.openHome).toHaveBeenCalledWith('conversation')
   expect(mocks.unregister).toHaveBeenCalledWith('Escape')
-  expect(contents.send).toHaveBeenCalledWith('nimbo:peek-dismiss')
+  expect(contents.send).toHaveBeenCalledWith('heynimbo:peek-dismiss')
   peek.close()
 })
 it.each(['render-process-gone', 'unresponsive', 'did-start-loading'])('restores click-through and releases Escape on %s without messaging a failing renderer', event => {

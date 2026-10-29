@@ -322,24 +322,24 @@ function readRun(source: string): EvalRun {
  *  a throwaway profile; a real live show keeps the normal profile, read-only,
  *  for the saved keys. Neither ever takes focus, and each has a time cap. */
 export function configureModelShow(): void {
-  const source = devSetting('NIMBO_DEBUG_3D_EVAL_SHOW'), live = devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')
+  const source = devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW'), live = devFlag('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE')
   if (!source && !live) return
   launchInBackground()
-  const mock = devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_MOCK')
+  const mock = devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_MOCK')
   if (!live || mock) isolateDevProfile('model-show')
   let cap: number
   if (live) {
-    let subjects = 15, models = parseEvalModels(devSetting('NIMBO_DEBUG_3D_EVAL_MODELS')).models.length
+    let subjects = 15, models = parseEvalModels(devSetting('HEYNIMBO_DEBUG_3D_EVAL_MODELS')).models.length
     try {
       const list = mock ? readRun(mock).subjects : parseSubjects(readFileSync(subjectsFile(), 'utf8'))
       if (mock && !models) models = readRun(mock).models.length
-      subjects = selectSubjects(list, devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_ONLY')).length
+      subjects = selectSubjects(list, devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY')).length
     } catch { /* Reported once the show starts. */ }
     cap = liveCapMs(subjects, Math.min(SHOW_LIMITS.columns, models))
   } else {
     let subjects = 15
-    try { subjects = selectSubjects(readRun(source!).subjects, devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_ONLY')).length } catch { /* Reported once the show starts. */ }
-    cap = SHOW_LIMITS.startupMs + Math.max(1, subjects) * subjectWindowMs(showSpeed(devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_SPEED')))
+    try { subjects = selectSubjects(readRun(source!).subjects, devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY')).length } catch { /* Reported once the show starts. */ }
+    cap = SHOW_LIMITS.startupMs + Math.max(1, subjects) * subjectWindowMs(showSpeed(devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_SPEED')))
   }
   setTimeout(() => { console.warn('[show] stopped at the time cap'); app.exit(2) }, Math.max(0, cap - process.uptime() * 1000)).unref()
 }
@@ -397,8 +397,8 @@ export async function runModelShow(): Promise<void> {
   let activated = 0
   app.on('did-become-active', () => { activated++; console.warn('[show] the app became active') })
   try {
-    if (devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) await showLive()
-    else await showReplay(devSetting('NIMBO_DEBUG_3D_EVAL_SHOW')!)
+    if (devFlag('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) await showLive()
+    else await showReplay(devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW')!)
     console.info(`[show] done; the app became active ${activated} times`)
   } catch (error) {
     console.warn(`[show] ${error instanceof Error ? error.message : 'stopped'}`)
@@ -410,11 +410,11 @@ export async function runModelShow(): Promise<void> {
 /** Per subject, each model's saved 3D answer builds in its own column at its
  *  measured pace, holds, then clears. No network, keys, settings or history. */
 async function showReplay(source: string): Promise<void> {
-  const captureDirectory = devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE')
-  const speed = showSpeed(devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_SPEED'))
+  const captureDirectory = devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE')
+  const speed = showSpeed(devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_SPEED'))
   const run = readRun(source)
-  const chosen = selectSubjects(run.subjects, devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_ONLY'))
-  if (!chosen.length) throw new Error('No subject matches NIMBO_DEBUG_3D_EVAL_SHOW_ONLY.')
+  const chosen = selectSubjects(run.subjects, devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY'))
+  if (!chosen.length) throw new Error('No subject matches HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY.')
   if (run.models.length > SHOW_LIMITS.columns) console.warn(`[show] showing the first ${SHOW_LIMITS.columns} of ${run.models.length} models`)
   const cursor = screen.getCursorScreenPoint(), display = screen.getDisplayNearestPoint(cursor)
   const layout = showLayout(display, Math.min(SHOW_LIMITS.columns, run.models.length))
@@ -449,18 +449,18 @@ async function showReplay(source: string): Promise<void> {
 /** Real requests, one model at a time, drawn as they stream, with the
  *  answers and timings saved like a live eval run. */
 async function showLive(): Promise<void> {
-  const mock = devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_MOCK'), mockRun = mock ? readRun(mock) : undefined
-  const label = slugify(devSetting('NIMBO_DEBUG_3D_EVAL_LABEL') ?? `show-${new Date().toISOString().replace(/[:.]/g, '-')}`, 60)
+  const mock = devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_MOCK'), mockRun = mock ? readRun(mock) : undefined
+  const label = slugify(devSetting('HEYNIMBO_DEBUG_3D_EVAL_LABEL') ?? `show-${new Date().toISOString().replace(/[:.]/g, '-')}`, 60)
   const directory = join(EVAL_OUTPUT, label), secrets = new Set<string>(), writer = evalWriter(directory, secrets)
   const log = (line: string): void => console.info(writer.redact(`[show] ${line}`))
   const run: EvalRun = { label, mode: 'live', state: 'running', startedAt: new Date().toISOString(), display: EVAL_DISPLAY, limits: EVAL_LIMITS, models: [], subjects: [], records: [], errors: [] }
   try {
-    const parsed = parseEvalModels(devSetting('NIMBO_DEBUG_3D_EVAL_MODELS'))
+    const parsed = parseEvalModels(devSetting('HEYNIMBO_DEBUG_3D_EVAL_MODELS'))
     const models = mockRun && !parsed.models.length ? mockRun.models.map((model) => ({ ...model, effort: ['low', 'medium'].includes(model.effort) ? model.effort as 'low' | 'medium' : undefined })) : parsed.models
     if (!mockRun || parsed.models.length) run.errors.push(...parsed.errors)
     if (models.length > SHOW_LIMITS.columns) { run.errors.push(`Showing the first ${SHOW_LIMITS.columns} models.`); models.length = SHOW_LIMITS.columns }
     run.subjects = mockRun ? mockRun.subjects : parseSubjects(readFileSync(subjectsFile(), 'utf8'))
-    const chosen = selectSubjects(run.subjects, devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_ONLY'))
+    const chosen = selectSubjects(run.subjects, devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY'))
     if (!models.length || !chosen.length) throw new Error(models.length ? 'No subject to ask.' : 'No models to ask.')
     const connectionFor = mockRun
       ? (model: EvalModel): AnswerConnection => ({ provider: model.provider, model: model.model, effort: model.effort, vision: true, credential: async () => '' })
@@ -469,7 +469,7 @@ async function showLive(): Promise<void> {
     writer.summary(run)
     const cursor = screen.getCursorScreenPoint(), display = screen.getDisplayNearestPoint(cursor)
     const layout = showLayout(display, models.length, 2)
-    const surface = await openSurface(display, models.length + 1, devSetting('NIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE'))
+    const surface = await openSurface(display, models.length + 1, devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE'))
     await sleep(1500)
     log(`${chosen.length} subjects × ${models.map((model) => model.spec).join(', ')}${mockRun ? ` (recorded answers from ${mock})` : ''}`)
     await runLiveShow({

@@ -6,13 +6,13 @@ import { Connections } from './connections'
 import { SettingsStore } from './settings'
 import { defaultConnectionSettings } from '../shared/providers'
 const mocks = vi.hoisted(() => ({ speech: vi.fn(), requestSpeech: vi.fn(), secrets: new Map<string, string>(), browser: vi.fn() }))
-vi.mock('@nimboguide/native', () => ({ speechAvailability: mocks.speech, requestSpeechAuthorization: mocks.requestSpeech }))
+vi.mock('@heynimbo/native', () => ({ speechAvailability: mocks.speech, requestSpeechAuthorization: mocks.requestSpeech }))
 vi.mock('electron', () => ({ shell: { openExternal: mocks.browser } }))
 vi.mock('./secrets', () => ({ secretSavedAt: async () => 1793232000000, loadSecret: async (name: string) => mocks.secrets.get(name), saveSecret: async (name: string, value: string) => { mocks.secrets.set(name, value) }, removeSecret: async (name: string) => { mocks.secrets.delete(name) } }))
 let directory = '', settings: SettingsStore
-beforeEach(() => { mocks.speech.mockReturnValue({ available: false, authorization: 'unavailable', reason: 'Missing usage descriptions.' }); directory = mkdtempSync(join(tmpdir(), 'nimbo-connections-test-')); settings = new SettingsStore(join(directory, 'settings.json')); mocks.secrets.clear(); vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Network forbidden') })) })
+beforeEach(() => { mocks.speech.mockReturnValue({ available: false, authorization: 'unavailable', reason: 'Missing usage descriptions.' }); directory = mkdtempSync(join(tmpdir(), 'heynimbo-connections-test-')); settings = new SettingsStore(join(directory, 'settings.json')); mocks.secrets.clear(); vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Network forbidden') })) })
 afterEach(() => { rmSync(directory, { recursive: true, force: true }); vi.unstubAllGlobals(); vi.clearAllMocks(); vi.restoreAllMocks() })
-it('keeps legacy OpenAI and Anthropic keys at once, separates answer billing from voice, and excludes secrets from snapshots/settings', async () => {
+it('keeps OpenAI and Anthropic keys at once, separates answer billing from voice, and excludes secrets from snapshots/settings', async () => {
   mocks.secrets.set('openai-key', 'synthetic-openai'); mocks.secrets.set('anthropic-key', 'synthetic-anthropic')
   const config = defaultConnectionSettings(); config.provider = 'anthropic'; settings.set({ ...settings.get(), connection: config })
   const connections = new Connections(settings, vi.fn()); await connections.load()
@@ -106,7 +106,7 @@ it('requires an explicitly entered key for a new compatible endpoint, including 
   expect(connections.snapshot().compatibleKeyPresent).toBe(true)
 })
 
-it('ignores legacy compatible keys without an endpoint binding', async () => {
+it('rejects stored compatible credentials without an endpoint binding', async () => {
   mocks.secrets.set('compatible-key', 'synthetic-unbound')
   const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'https://b.example.invalid/v1'
   config.models.compatible = { model: 'model-b' }; settings.set({ ...settings.get(), connection: config })

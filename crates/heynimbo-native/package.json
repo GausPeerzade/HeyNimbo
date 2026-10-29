@@ -1,12 +1,12 @@
 {
-  "name": "@nimboguide/native",
+  "name": "@heynimbo/native",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
-    "binaryName": "nimbo-native",
+    "binaryName": "heynimbo-native",
     "targets": ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc"]
   },
   "scripts": {

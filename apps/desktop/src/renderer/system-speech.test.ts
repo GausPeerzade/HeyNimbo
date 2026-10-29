@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { bestSystemVoice, SystemSpeech } from './system-speech'
 import { BuiltInMouth } from '../main/voice/builtin-mouth'
 import type { VoiceCommand, VoiceEvent } from '../shared/ipc'
-vi.mock('@nimboguide/native', () => ({ speechLanguage: () => 'fr' }))
+vi.mock('@heynimbo/native', () => ({ speechLanguage: () => 'fr' }))
 const voice = (name: string, lang = 'fr-FR', isDefault = false, localService = true): SpeechSynthesisVoice => ({ name, lang, default: isDefault, localService, voiceURI: name })
 afterEach(() => { vi.useRealTimers() })
 function fixture() {

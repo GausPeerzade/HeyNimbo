@@ -4,7 +4,7 @@
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use nimbo_gestures::{Gesture, GestureDetector, InputEvent};
+use heynimbo_gestures::{Gesture, GestureDetector, InputEvent};
 
 pub(crate) enum Message {
     Input(InputEvent, Instant),
@@ -49,7 +49,7 @@ pub(crate) fn run_detector<A: Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nimbo_gestures::{Binding, Modifiers, Timing};
+    use heynimbo_gestures::{Binding, Modifiers, Timing};
     use std::sync::mpsc;
 
     #[test]

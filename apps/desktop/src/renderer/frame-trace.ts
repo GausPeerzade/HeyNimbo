@@ -17,7 +17,7 @@ export class FrameTrace {
       if (now < this.until) requestAnimationFrame(tick)
       else {
         this.running = false
-        window.nimbo.sendOverlayEvent({ kind: 'frameTrace', deltas })
+        window.heynimbo.sendOverlayEvent({ kind: 'frameTrace', deltas })
       }
     }
     requestAnimationFrame(tick)

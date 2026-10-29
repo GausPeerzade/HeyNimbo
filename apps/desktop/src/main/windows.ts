@@ -78,7 +78,7 @@ function floatAboveEverything(window: BrowserWindow): void {
   window.setAlwaysOnTop(true, 'screen-saver')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   // Turning this off in development proves the capture filter excludes us on its own.
-  window.setContentProtection(!devFlag('NIMBO_DEBUG_NO_CONTENT_PROTECTION'))
+  window.setContentProtection(!devFlag('HEYNIMBO_DEBUG_NO_CONTENT_PROTECTION'))
 }
 
 /** Centers the notch at the top of the primary display; call on display changes. */
@@ -191,7 +191,7 @@ export class OverlayManager {
         sender[1].setIgnoreMouseEvents(true, { forward: true })
         this.clear()
       }
-      else if (payload.kind === 'frameTrace' && devFlag('NIMBO_DEBUG_DRAW_TRACE')) {
+      else if (payload.kind === 'frameTrace' && devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) {
         console.info(`[draw-trace] ${JSON.stringify({ ...frameTraceSummary(payload.deltas), deltas: payload.deltas })}`)
       }
     })
@@ -218,7 +218,7 @@ export class OverlayManager {
       window.webContents.on('did-finish-load', () => {
         this.interactiveRegions.delete(display.id)
         window.setIgnoreMouseEvents(true, { forward: true })
-        if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) this.send(display.id, { kind: 'debug', frameTrace: true })
+        if (devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) this.send(display.id, { kind: 'debug', frameTrace: true })
         if (this.shown?.displayId === display.id) this.send(display.id, this.shown.command)
       })
       this.windows.set(display.id, window)

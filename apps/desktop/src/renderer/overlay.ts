@@ -205,7 +205,7 @@ function follow(now: number): boolean {
 function settle(now: number): void {
   mode = 'parked'
   buddyFadeStarted = now
-  window.nimbo.sendOverlayEvent({ kind: 'buddyIdle' })
+  window.heynimbo.sendOverlayEvent({ kind: 'buddyIdle' })
 }
 
 /** Flies from wherever the buddy is to the cursor, then resumes following. */
@@ -225,7 +225,7 @@ function flyHome(at: number): void {
         fly(progress)
         if (progress === 1) {
           mode = 'following'
-          window.nimbo.sendOverlayEvent({ kind: 'buddyIdle' })
+          window.heynimbo.sendOverlayEvent({ kind: 'buddyIdle' })
         }
       }
     },
@@ -254,7 +254,7 @@ function strokeAction(geometry: StrokeGeometry, group: number, owner?: SceneObje
       if (color) path.style.fill = color
       const target = owner ? objectNodes.get(owner)! : geometry.style === 'marker' ? washLayer : inkLayer
       target.append(mask, path)
-      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
+      window.heynimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       // Progressive reveal/pen presence adapted from Jason Kneen's MIT overlay;
       // both use our final centerline, correcting the upstream tip mismatch.
       return (progress) => {
@@ -295,7 +295,7 @@ function writingAction(layout: WritingLayout, at: Point, group: number, owner: S
         target.append(gradient, mask, text)
         return { solid, edge, text }
       })
-      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
+      window.heynimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       return (progress) => {
         const sample = sampleWriting(layout, at, progress)
         for (const [i, part] of parts.entries()) {
@@ -818,7 +818,7 @@ function offerClear(): void {
 function reportRegion(id: string, over: boolean, captured: boolean): void {
   if (over || captured) regions.set(id, { over, captured })
   else regions.delete(id)
-  window.nimbo.sendOverlayEvent({ kind: 'interactiveRegion', id, over, captured })
+  window.heynimbo.sendOverlayEvent({ kind: 'interactiveRegion', id, over, captured })
 }
 
 function wireRegion(node: Element, id: string): void {
@@ -897,7 +897,7 @@ function hideClear(): void {
 wireRegion(clearButton, 'clear')
 clearButton.addEventListener('click', () => {
   hideClear()
-  window.nimbo.sendOverlayEvent({ kind: 'clearClicked' })
+  window.heynimbo.sendOverlayEvent({ kind: 'clearClicked' })
 })
 
 /** After clear or fade: fly home if the cursor is here, else hand the buddy over. */
@@ -965,7 +965,7 @@ function apply(command: OverlayCommand): void {
 
 let fontsReady = false
 const waitingCommands: OverlayCommand[] = []
-window.nimbo.onOverlayCommand((command) => fontsReady ? apply(command) : waitingCommands.push(command))
+window.heynimbo.onOverlayCommand((command) => fontsReady ? apply(command) : waitingCommands.push(command))
 void document.fonts.load('500 26px Caveat').then(() => document.fonts.ready).then(() => {
   fontsReady = true
   warmSpareStage()

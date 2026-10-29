@@ -6,7 +6,7 @@ const repository = () => { const r = new HistoryRepository(); repositories.push(
 afterEach(() => repositories.splice(0).forEach(r => r.close()))
 
 describe('HistoryRepository', () => {
-  it('migrates once, saves the question before dispatch, and retains partial answers after interruption', () => {
+  it('creates the current schema, saves the question before dispatch, and retains partial answers after interruption', () => {
     const r = repository()
     expect(r.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
     const c = r.create(100), t = r.begin(c, '  Find the export button  ', 'voice', 101)
@@ -53,10 +53,10 @@ describe('HistoryRepository', () => {
     expect(r.db.prepare('SELECT count(*) AS n FROM turns').get()).toMatchObject({ n: 0 })
   })
 })
-it('reopens a private WAL file without rerunning migrations or losing content', async () => {
+it('reopens a private WAL file without rebuilding its schema or losing content', async () => {
   const { mkdtempSync, rmSync, statSync } = await import('node:fs')
   const { join } = await import('node:path')
-  const dir = mkdtempSync('/tmp/nimbo-history-test-'), path = join(dir, 'history.sqlite')
+  const dir = mkdtempSync('/tmp/heynimbo-history-test-'), path = join(dir, 'history.sqlite')
   try {
     const first = new HistoryRepository(path), c = first.create(), t = first.begin(c, 'Remember this', 'text')
     first.finish(t, 'complete')
@@ -79,14 +79,13 @@ it('bounds the sidebar query while old conversations remain searchable and indiv
   expect(r.search('waypoint')[0]).toMatchObject({ conversationId: old, updated: 1 })
 })
 
-it('migrates a real v1 history file to v2 and records provider/model without changing context or older turns', async () => {
+it('retains explicit provider/model attribution across reopen and rejects unsupported schemas instead of migrating them', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { join } = await import('node:path')
-  const dir = mkdtempSync('/tmp/nimbo-history-v1-test-'), path = join(dir, 'history.sqlite')
+  const dir = mkdtempSync('/tmp/heynimbo-history-schema-test-'), path = join(dir, 'history.sqlite')
   try {
     const original = new HistoryRepository(path), c = original.create(), old = original.begin(c, 'Old question', 'voice')
     original.update(old, 'Old answer', { version: 1, beats: [] }, true); original.finish(old, 'complete')
-    original.db.exec('ALTER TABLE turns DROP COLUMN provider; ALTER TABLE turns DROP COLUMN model; PRAGMA user_version=1;')
     original.close()
     const migrated = new HistoryRepository(path)
     expect(migrated.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
@@ -95,6 +94,8 @@ it('migrates a real v1 history file to v2 and records provider/model without cha
     expect(migrated.turns(c).at(-1)).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5' })
     expect(migrated.context(c)).toEqual([{ question: 'Old question', answer: 'Old answer' }])
     migrated.close()
-    const reopened = new HistoryRepository(path); expect(reopened.turns(c)).toHaveLength(2); reopened.close()
+    const reopened = new HistoryRepository(path); expect(reopened.turns(c)).toHaveLength(2)
+    reopened.db.exec('PRAGMA user_version=1'); reopened.close()
+    expect(() => new HistoryRepository(path)).toThrow('Unsupported HeyNimbo history schema.')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

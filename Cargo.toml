@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/nimbo-gestures", "crates/nimbo-native"]
+members = ["crates/heynimbo-gestures", "crates/heynimbo-native"]
 
 [workspace.package]
 edition = "2024"

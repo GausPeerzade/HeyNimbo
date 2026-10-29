@@ -293,12 +293,12 @@ Severity: **B** = bug, **A** = accuracy or look, **P** = performance,
 
 ## Hidden gallery
 
-Run it with `pnpm build && NIMBO_DEBUG_3D_GALLERY=1 ./node_modules/.bin/electron .`
+Run it with `pnpm build && HEYNIMBO_DEBUG_3D_GALLERY=1 ./node_modules/.bin/electron .`
 from `apps/desktop` (dev only). Optional settings:
-- `NIMBO_DEBUG_3D_GALLERY_ONLY=core|blind|<names>` picks the fixtures;
-- `NIMBO_DEBUG_3D_GALLERY_LABEL=<dir>` names the output folder;
-- `NIMBO_DEBUG_DRAW_TRACE=1` records frame traces and latency;
-- `NIMBO_DEBUG_3D_GALLERY_PREPARE=0` is a control run without streamed
+- `HEYNIMBO_DEBUG_3D_GALLERY_ONLY=core|blind|<names>` picks the fixtures;
+- `HEYNIMBO_DEBUG_3D_GALLERY_LABEL=<dir>` names the output folder;
+- `HEYNIMBO_DEBUG_DRAW_TRACE=1` records frame traces and latency;
+- `HEYNIMBO_DEBUG_3D_GALLERY_PREPARE=0` is a control run without streamed
   lines.
 
 It uses an isolated /tmp profile, the prohibited activation policy and no
@@ -332,17 +332,17 @@ readable labels. Remaining caveats:
 All of these are dev-only and can't run in a packaged app. They run from
 `apps/desktop` after `pnpm build`.
 
-- **Eval** (`NIMBO_DEBUG_3D_EVAL=1`): asks each model in
-  `NIMBO_DEBUG_3D_EVAL_MODELS` (`provider:model[:low|medium]`, comma
+- **Eval** (`HEYNIMBO_DEBUG_3D_EVAL=1`): asks each model in
+  `HEYNIMBO_DEBUG_3D_EVAL_MODELS` (`provider:model[:low|medium]`, comma
   separated) every request in `scripts/eval-3d-subjects.txt`.
   - It uses the real answer path, a blank 1440×900 screenshot and no
     history.
   - It reads saved keys from the normal profile, read-only, so quit
-    NimboGuide first.
+    HeyNimbo first.
   - Answers render in hidden windows to `/tmp/nimbo-3d-eval/<label>/`, with
     `summary.json` and `summary.md`.
-  - `NIMBO_DEBUG_3D_EVAL_REPLAY=<run dir>` re-renders a saved run with no keys.
-- **Showcase replay** (`NIMBO_DEBUG_3D_EVAL_SHOW=<run dir>`): replays a saved
+  - `HEYNIMBO_DEBUG_3D_EVAL_REPLAY=<run dir>` re-renders a saved run with no keys.
+- **Showcase replay** (`HEYNIMBO_DEBUG_3D_EVAL_SHOW=<run dir>`): replays a saved
   run on the desktop of the cursor's display. It uses a throwaway profile, no
   network or keys, and never takes focus.
   - **Layout:** per subject, each model's answer gets an equal column, with
@@ -360,12 +360,12 @@ All of these are dev-only and can't run in a packaged app. They run from
   - **Fitting:** a subject that would run past 40 s is shown uniformly
     faster, keeping the models' order, and its pill says by how much.
   - **After building:** finished models hold for 6 s, then clear.
-  - **Options:** `NIMBO_DEBUG_3D_EVAL_SHOW_ONLY=<number|slug|word>` shows one
-    subject, and `NIMBO_DEBUG_3D_EVAL_SHOW_SPEED` (0.25–8, default 1) scales
+  - **Options:** `HEYNIMBO_DEBUG_3D_EVAL_SHOW_ONLY=<number|slug|word>` shows one
+    subject, and `HEYNIMBO_DEBUG_3D_EVAL_SHOW_SPEED` (0.25–8, default 1) scales
     the pacing.
-- **Live showcase** (`NIMBO_DEBUG_3D_EVAL_SHOW_LIVE=1`): real requests, with
+- **Live showcase** (`HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE=1`): real requests, with
   the same models, subjects and label variables as the eval.
-  - It uses the eval's normal read-only profile and lock, so quit NimboGuide
+  - It uses the eval's normal read-only profile and lock, so quit HeyNimbo
     first.
   - **Flow:** per subject, each model is asked in turn, and its answer draws
     in its column as lines stream in. Like a text-only answer in talk.ts, each
@@ -382,15 +382,15 @@ All of these are dev-only and can't run in a packaged app. They run from
   window, so models build in parallel or in turn. Cards can't be dragged or
   closed during a show, and each column has its own pen.
 - **Hidden validation knobs:**
-  - `NIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE=<dir>` renders either mode in hidden
+  - `HEYNIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE=<dir>` renders either mode in hidden
     windows and writes composited frames.
-  - `NIMBO_DEBUG_3D_EVAL_SHOW_MOCK=<run dir>` feeds the live mode a saved
+  - `HEYNIMBO_DEBUG_3D_EVAL_SHOW_MOCK=<run dir>` feeds the live mode a saved
     run's answers at their recorded times, in a throwaway profile, with no
     keys.
 
 ## Measurements
 
-These are frame gaps from the existing `NIMBO_DEBUG_DRAW_TRACE` trace, at
+These are frame gaps from the existing `HEYNIMBO_DEBUG_DRAW_TRACE` trace, at
 60 Hz in hidden windows, covering build, motion, sway and a drag.
 
 | Run | p50 | p95 | max |

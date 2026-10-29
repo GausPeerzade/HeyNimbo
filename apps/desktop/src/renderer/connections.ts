@@ -139,7 +139,7 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
     label.append(input, button('Save endpoint', () => saveEndpoint(input.value))); advanced.append(endpoints, label)
     advanced.append(element('p', 'explanation', 'Changing endpoints clears the model selection. Find models, then choose one. Enter a new key only if the new endpoint needs it. Use HTTPS, or HTTP on localhost or 127.0.0.1 for local servers.'))
   }
-  advanced.append(element('p', 'explanation', 'Storage: keys and sign-in tokens are encrypted and kept only on this Mac, separate from settings and history. Models remain Experimental until evaluated in NimboGuide.'))
+  advanced.append(element('p', 'explanation', 'Storage: keys and sign-in tokens are encrypted and kept only on this Mac, separate from settings and history. Models remain Experimental until evaluated in HeyNimbo.'))
   fields.append(advanced)
 
   if (state?.accounts.length) {

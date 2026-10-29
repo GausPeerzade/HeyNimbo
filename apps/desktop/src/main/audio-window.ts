@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, systemPreferences } from 'electron'
-import { hasVoiceUsageDescriptions } from '@nimboguide/native'
+import { hasVoiceUsageDescriptions } from '@heynimbo/native'
 import { Channels, type VoiceCommand, type VoiceEvent } from '../shared/ipc'
 import { loadPage, secureWebPreferences } from './windows'
 

@@ -1,5 +1,5 @@
 {
-  "name": "nimboguide",
+  "name": "heynimbo",
   "private": true,
   "description": "An open-source AI buddy that sees your screen, talks, draws, and does tasks.",
   "license": "MIT",
@@ -11,9 +11,9 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test && cargo test --workspace",
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
-    "dev": "pnpm --filter @nimboguide/desktop dev",
-    "typecheck": "pnpm --filter @nimboguide/desktop typecheck",
-    "dist:mac": "pnpm --filter @nimboguide/desktop dist:mac",
+    "dev": "pnpm --filter @heynimbo/desktop dev",
+    "typecheck": "pnpm --filter @heynimbo/desktop typecheck",
+    "dist:mac": "pnpm --filter @heynimbo/desktop dist:mac",
     "dev:speech-permissions": "node scripts/prepare-dev-speech-permissions.cjs"
   }
 }

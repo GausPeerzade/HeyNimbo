@@ -35,7 +35,7 @@ vi.mock('electron', async () => {
     app: { isPackaged: false },
     ipcMain: {
       on: (channel: string, handler: (event: { sender: unknown }, payload: unknown) => void) => {
-        if (channel === 'nimbo:overlay-event') state.overlayEvent = handler
+        if (channel === 'heynimbo:overlay-event') state.overlayEvent = handler
       },
     },
     screen: {

@@ -35,11 +35,11 @@ permissions, development setup, privacy and local-language availability.
 The [registration guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
 [identity verification reference](https://developers.openai.com/siwc/website), and
 [accounts/sessions guide](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
-are the protocol sources. NimboGuide generates a stable local UUID host ID,
+are the protocol sources. HeyNimbo generates a stable local UUID host ID,
 starts an ephemeral-port `127.0.0.1` listener before opening the system browser,
 and uses fresh S256 PKCE, state and nonce for every attempt. The listener is
 single-use and expires after three minutes. First registration uses
-`dynamic_agent_client` and `agent_name_hint=NimboGuide`; the callback-issued
+`dynamic_agent_client` and `agent_name_hint=HeyNimbo`; the callback-issued
 client ID is saved before exchange, and reused even after an expired code.
 Tokens are never exchanged using the dynamic-registration sentinel.
 
@@ -93,7 +93,7 @@ app snapshots. Key hints are an explicit, limited disclosure for this local UI,
 not a masking of a full key sent to the renderer.
 
 The saved date is the encrypted credential file's last-write time, read in main.
-This preserves legacy files without rewriting their contents or inventing a
+This reads saved files without rewriting their contents or inventing a
 provider-side creation date; a restored file can therefore reflect its restored
 mtime. A missing timestamp is left unknown. Removing a key deletes its hint and
 date from main's cache as well as deleting the encrypted record, after a native
@@ -107,7 +107,7 @@ challenge. Implementation proceeded with supervisor-supplied verbatim excerpts
 of sections 1, 2 and 4 and Service Terms §15, plus the official technical docs.
 The user must review the **full current terms before release**. Implemented
 obligations: use our own app name; store tokens only locally under the user's
-control; make requests only for that user's activity in NimboGuide; provide no
+control; make requests only for that user's activity in HeyNimbo; provide no
 general-purpose plan-token proxy; charge nothing for plan use; never pool, sell,
 share, rotate accounts to bypass limits, or use one person's plan for another.
 There is no background inference, automatic billing fallback, or plan access to
@@ -148,12 +148,11 @@ separate answer model.
 | OpenRouter | `openai/gpt-6.1-terra` | `google/gemini-3.5-flash-lite`, `anthropic/claude-opus-5.5` |
 | Compatible / local | Choose an installed model | Discovered or custom model ID |
 
-Existing Fast/Balanced/Best settings migrate to their exact model and effective
-thinking level, not the new defaults. Custom IDs are retained without an
-assumed thinking level. The original settings file is left untouched at load,
-and a private `settings.json.before-model-settings` backup is created before
-the first settings write. Repeated loads/writes do not overwrite that backup.
-The migration never changes the selected provider or any credential.
+Each provider stores a model ID and optional thinking level directly. There is
+no preset layer, old-settings migration, former-name alias or legacy setup IPC.
+This is an unreleased app: local development data transfers are one-time owner
+operations, not runtime compatibility features. Custom IDs have no assumed
+thinking level.
 
 OpenAI effort is `reasoning.effort`; Anthropic effort is `output_config.effort`,
 not the obsolete manual thinking-budget parameter. Claude's adaptive thinking
@@ -195,14 +194,13 @@ Ollama and LM Studio buttons select `http://127.0.0.1:11434/v1` and
 
 ## History, validation and remaining release checks
 
-History schema **v2** adds non-null `turns.provider` and `turns.model`. Old v1
-turns are attributed to their actual legacy defaults, `openai` /
-`gpt-6.1-terra`; transcripts, scenes, context selection and FTS remain unchanged.
-A migration/reopen test verifies attribution and context preservation.
+History creates schema **v2** directly, including non-null `turns.provider` and
+`turns.model`. Reopening current files retains attribution, scenes, context and
+FTS; other schema versions are rejected rather than migrated.
 
 Offline tests cover PKCE, authorize query, callback binding/single use/timeout,
 claim/signature rejection, exact exchange/refresh/revoke forms, rotation and
-expired grants, scope refusal, safeStorage isolation and legacy reuse, SDK
+expired grants, scope refusal, safeStorage isolation and encrypted credential loading, SDK
 request/stream normalization for all providers, terminal/error/interrupted streams,
 custom URL validation, model discovery/capability gating, voice gating and history.
 All fixtures use synthetic credentials, mocked transports and a mocked callback
@@ -217,7 +215,7 @@ attribution. Each required an actual assertion failure, not a syntax/import erro
 sources were restored after each check. The one-off driver is not in the repository.
 
 Follow-up regressions cover full-endpoint credential ownership (including a
-same-host path change), explicit key replacement, unbound legacy keys, disjoint
+same-host path change), explicit key replacement, malformed endpoint bindings, disjoint
 catalog switching, unreachable old endpoints, an unselected compatible state,
 the unified Model picker/collapsed sections/plain copy, and turn cancellation
 aborting stalled OpenAI and Anthropic SDK fetches. The follow-up mutation run was

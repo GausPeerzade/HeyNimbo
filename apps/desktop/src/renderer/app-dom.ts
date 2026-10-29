@@ -1,8 +1,8 @@
-import type { NimboAppApi } from '../preload/app'
+import type { HeyNimboAppApi } from '../preload/app'
 import type { AppRequest, AppSnapshot } from '../shared/app'
-declare global { interface Window { nimboApp: NimboAppApi } }
+declare global { interface Window { heynimboApp: HeyNimboAppApi } }
 export const request = async (value: AppRequest): Promise<unknown> => {
-  try { return await window.nimboApp.request(value) }
+  try { return await window.heynimboApp.request(value) }
   catch (error) { const status = document.getElementById('feedback'); if (status) status.textContent = error instanceof Error ? error.message.replace(/^Error invoking remote method[^:]*: /, '') : 'This action failed. Try again.'; return undefined }
 }
 export const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] => {

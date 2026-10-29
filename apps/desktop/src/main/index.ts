@@ -1,5 +1,5 @@
 import { app, screen, type BrowserWindow } from 'electron'
-import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
+import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@heynimbo/native'
 import { AppShell } from './app-shell'
 import { NotchPeek } from './notch-peek'
 import { configureHomePreview, runHomePreview } from './home-preview'
@@ -103,19 +103,19 @@ configureModelGallery()
 configureModelEval()
 configureModelShow()
 limitDrawDemoRuntime()
-const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
+const ownsInstance = devFlag('HEYNIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
 if (!ownsInstance) {
   // A live eval or live show shares the normal profile, so the running app must be quit first.
-  if (devFlag('NIMBO_DEBUG_3D_EVAL') || devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) console.error('[eval] Quit the running NimboGuide first; it holds this profile.')
+  if (devFlag('HEYNIMBO_DEBUG_3D_EVAL') || devFlag('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) console.error('[eval] Quit the running HeyNimbo first; it holds this profile.')
   app.quit()
 }
 
 if (ownsInstance) app.whenReady().then(async () => {
-  if (devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
+  if (devFlag('HEYNIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
   app.dock?.hide()
-  if (devFlag('NIMBO_DEBUG_3D_GALLERY')) return runModelGallery()
-  if (devSetting('NIMBO_DEBUG_3D_EVAL_SHOW') || devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) return runModelShow()
-  if (devFlag('NIMBO_DEBUG_3D_EVAL')) return runModelEval()
+  if (devFlag('HEYNIMBO_DEBUG_3D_GALLERY')) return runModelGallery()
+  if (devSetting('HEYNIMBO_DEBUG_3D_EVAL_SHOW') || devFlag('HEYNIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) return runModelShow()
+  if (devFlag('HEYNIMBO_DEBUG_3D_EVAL')) return runModelEval()
   const notch = createNotchWindow()
   const overlays = new OverlayManager()
   overlays.sync()
@@ -139,7 +139,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     },
     stop: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
     clear: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
-    replaceKey: () => openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true })),
+    replaceKey: () => openSetupWindow(request => connections.request(request, { selectSavedProvider: true })),
     connectionRequest: request => connections.request(request),
     connectionSnapshot: () => connections.snapshot(),
     validateSettings: async settings => ({ ...settings, connection: await connections.validateSettings(settings.connection) }),
@@ -179,7 +179,7 @@ if (ownsInstance) app.whenReady().then(async () => {
 
   try { await connections.load() } catch { shell.setStatus('Connection storage unavailable; reconnect in Settings.') }
   reconnect()
-  if (!connections.answerReady) openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true }))
+  if (!connections.answerReady) openSetupWindow(request => connections.request(request, { selectSavedProvider: true }))
 })
 
 // A menu-bar style app keeps running with no focused window.

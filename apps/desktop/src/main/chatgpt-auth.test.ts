@@ -32,7 +32,7 @@ it('builds the documented authorization URL with scopes, resource, host and exac
   const attempt = createAttempt(), redirect = 'http://127.0.0.1:54321/auth/callback', url = authorizeURL(attempt, redirect, 'urn:uuid:test')
   expect(url.origin + url.pathname).toBe(AUTHORIZE)
   expect(url.searchParams.get('scope')?.split(' ')).toEqual(['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'])
-  for (const [name, value] of Object.entries({ client_id: 'dynamic_agent_client', agent_name_hint: 'NimboGuide', scope: SCOPES, resource: RESOURCE, redirect_uri: redirect, nonce: attempt.nonce, state: attempt.state, code_challenge: attempt.challenge, code_challenge_method: 'S256', ext_agent_host_id: 'urn:uuid:test' })) expect(url.searchParams.get(name)).toBe(value)
+  for (const [name, value] of Object.entries({ client_id: 'dynamic_agent_client', agent_name_hint: 'HeyNimbo', scope: SCOPES, resource: RESOURCE, redirect_uri: redirect, nonce: attempt.nonce, state: attempt.state, code_challenge: attempt.challenge, code_challenge_method: 'S256', ext_agent_host_id: 'urn:uuid:test' })) expect(url.searchParams.get(name)).toBe(value)
   const returning = authorizeURL(attempt, redirect, 'urn:uuid:test', { id: 'p', clientId: 'oaiapp_test' })
   expect(returning.searchParams.get('client_id')).toBe('oaiapp_test'); expect(returning.searchParams.has('agent_name_hint')).toBe(false)
   expect(validateAuthorizeURL(url)).toBe(url.href)

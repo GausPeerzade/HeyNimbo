@@ -84,7 +84,7 @@ pnpm dev:speech-permissions
 
 `scripts/prepare-dev-speech-permissions.cjs` patches only the resolved Electron.app
 inside this checkout's node_modules. It refuses an Electron dependency outside the
-checkout, creates `Info.plist.before-nimbo-speech` once before editing, and sets both
+checkout, creates `Info.plist.before-heynimbo-speech` once before editing, and sets both
 strings idempotently. It opens no windows, accesses no microphone, and requests no
 permission. Restart Electron after patching. Reinstalling Electron replaces the
 patch; rerun the script. Restore the backup or reinstall Electron to undo it.
@@ -122,7 +122,7 @@ rerun and the final full suite passed without changing that test.
 ### Optional offline fixture (approval required)
 
 ```sh
-NIMBO_DEBUG_LOCAL_SPEECH_CHECK=1 node scripts/check-local-speech.cjs
+HEYNIMBO_DEBUG_LOCAL_SPEECH_CHECK=1 node scripts/check-local-speech.cjs
 ```
 
 Ask before running: this may show a one-time macOS Speech Recognition prompt. The

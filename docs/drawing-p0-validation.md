@@ -6,13 +6,13 @@ During the initial validation I used DevTools to set the live overlay body's bac
 
 The corrected demo returns before creating the audio window, sound callback, gestures, capture self-test or voice pipeline. It plays **no sound**, accesses no credentials, and opens no microphone or AI connection. It fades immediately after its eight-second sequence, calls `app.quit()` three seconds later, and installs an `app.exit(0)` fallback at twenty seconds of total process uptime. Overlay and notch windows have explicit `backgroundColor: '#00000000'` native backing, remain hidden until successful load plus first paint, and hide on load failure.
 
-Before **every** launch, obtain explicit user/supervisor coordination, verify that no NimboGuide Electron process exists, and run `pnpm --filter @nimboguide/desktop typecheck` and `pnpm --filter @nimboguide/desktop build`. Launch at most one instance, from `apps/desktop`:
+Before **every** launch, obtain explicit user/supervisor coordination, verify that no HeyNimbo Electron process exists, and run `pnpm --filter @heynimbo/desktop typecheck` and `pnpm --filter @heynimbo/desktop build`. Launch at most one instance, from `apps/desktop`:
 
 ```sh
-NIMBO_DEBUG_DRAW_DEMO=1 NIMBO_DEBUG_DRAW_TRACE=1 ./node_modules/.bin/electron .
+HEYNIMBO_DEBUG_DRAW_DEMO=1 HEYNIMBO_DEBUG_DRAW_TRACE=1 ./node_modules/.bin/electron .
 ```
 
-Verify self-exit; do not relaunch without another approval. Do not change live runtime styling. For separately consented recording only, add the dev-only `NIMBO_DEBUG_NO_CONTENT_PROTECTION=1` switch and run `node scripts/record-overlay.cjs /tmp/nimbo-draw 20` from the root. It requires existing Screen Recording permission, captures the cursor's initial display without moving the OS pointer, runs sequential captures at maximum sustainable rate, and writes JPEGs plus a timestamp manifest. Captures include your desktop: choose the output directory accordingly. All development switches are gated by `devFlag`, never active in a packaged app. If a run does not exit, stop only its verified `nimboguide/node_modules/.pnpm/electron` PID.
+Verify self-exit; do not relaunch without another approval. Do not change live runtime styling. For separately consented recording only, add the dev-only `HEYNIMBO_DEBUG_NO_CONTENT_PROTECTION=1` switch and run `node scripts/record-overlay.cjs /tmp/nimbo-draw 20` from the root. It requires existing Screen Recording permission, captures the cursor's initial display without moving the OS pointer, runs sequential captures at maximum sustainable rate, and writes JPEGs plus a timestamp manifest. Captures include your desktop: choose the output directory accordingly. All development switches are gated by `devFlag`, never active in a packaged app. If a run does not exit, stop only its verified `heynimbo/node_modules/.pnpm/electron` PID.
 
 ## Measured cadence
 
@@ -27,7 +27,7 @@ Measured on the available macOS / Electron 45 machine, with an unfocused, click-
 | Final pipeline, light fixture recording + tip probe (historical unsafe styling; do not repeat) | 423 | 7.05s | 16.7 | 17.5 | 18.7 | 0 |
 | Corrected silent demo, single approved trace-only run | 444 | 7.38s | 16.7 | 17.6 | 17.8 | 0 |
 
-The corrected silent run was approved before launch, with no capture, DevTools or styling mutation. Preflight found no NimboGuide Electron process; it exited itself with code 0 after **17.017s wall time**, no forced kill, and no remaining task Electron process. Evidence: `/tmp/nimbo-silent-safe.log`, `/tmp/nimbo-silent-safe-exit.json`, `/tmp/nimbo-silent-safe-cadence.json`. No further visual run was made.
+The corrected silent run was approved before launch, with no capture, DevTools or styling mutation. Preflight found no HeyNimbo Electron process; it exited itself with code 0 after **17.017s wall time**, no forced kill, and no remaining task Electron process. Evidence: `/tmp/nimbo-silent-safe.log`, `/tmp/nimbo-silent-safe-exit.json`, `/tmp/nimbo-silent-safe-cadence.json`. No further visual run was made.
 
 Historical raw samples, source log paths and summaries are at `/tmp/nimbo-draw-evidence/cadence.json`. The final pool includes 27.99s of desktop samples plus the 7.05s light recording. Two repeated launch attempts did not finish the entire demo, so only their emitted active trace segments are counted; no missing interval is treated as a zero gap. These are observed samples, not a guarantee about every fullscreen/occlusion configuration. The same-reveal flag-only comparison isolates that change, but does not establish that throttling caused every original stall.
 
@@ -41,7 +41,7 @@ An initial full-viewport-mask implementation had a 300ms first-reveal stall duri
 
 ## Automated validation and boundaries
 
-`pnpm --filter @nimboguide/desktop test`: 45 tests pass, including the original 18. New safety suites test the real main-process demo branch's exclusion of audio/AI/credentials/gestures, normal quit and hard cap, packaged/dev guards, transparent native backing, successful-load/paint ordering, and failure-before/after-paint handling. The two drawing suites exercise uneven curve arc lengths, immutable geometry, connected contours, shaft/head topology, natural durations/clamps, groups, gaps, travel-inclusive overrun compression (1/10/50 strokes), and flight endpoints/bow/tangent/scale/glow/duration. An initial endpoint assertion caught floating-point endpoint drift; bowed paths now retain exact input endpoints.
+`pnpm --filter @heynimbo/desktop test`: 45 tests pass, including the original 18. New safety suites test the real main-process demo branch's exclusion of audio/AI/credentials/gestures, normal quit and hard cap, packaged/dev guards, transparent native backing, successful-load/paint ordering, and failure-before/after-paint handling. The two drawing suites exercise uneven curve arc lengths, immutable geometry, connected contours, shaft/head topology, natural durations/clamps, groups, gaps, travel-inclusive overrun compression (1/10/50 strokes), and flight endpoints/bow/tangent/scale/glow/duration. An initial endpoint assertion caught floating-point endpoint drift; bowed paths now retain exact input endpoints.
 
 Desktop `typecheck`, desktop `build`, workspace `pnpm build`, `node --check scripts/record-overlay.cjs`, and `git diff --check` pass. No files were staged or committed. Only the approved behavior notes and MIT license files were read in the research tree; no prohibited extraction/download/harness path was opened. Full Farza and Jason Kneen MIT notices and adaptation descriptions are in `THIRD_PARTY_NOTICES.md`.
 

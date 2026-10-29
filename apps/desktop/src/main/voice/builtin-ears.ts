@@ -1,4 +1,4 @@
-import { SpeechSession } from '@nimboguide/native'
+import { SpeechSession } from '@heynimbo/native'
 
 /** One on-device task per hold, fed only by the existing audio window. */
 export class BuiltInEars {

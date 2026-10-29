@@ -34,7 +34,7 @@ it('temporary mode never writes questions, scenes or search rows to the persiste
 })
 it('starts fresh after a restart, and continues old context only after an explicit open', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs')
-  const dir = mkdtempSync('/tmp/nimbo-conversation-restart-'), path = `${dir}/history.sqlite`
+  const dir = mkdtempSync('/tmp/heynimbo-conversation-restart-'), path = `${dir}/history.sqlite`
   try {
     const before = new ConversationController(new HistoryRepository(path), () => DEFAULT_SETTINGS)
     const old = before.newConversation(), t = before.begin('Old question', 'voice')

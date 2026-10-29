@@ -14,7 +14,7 @@ function fakeSocket(): { connect: SocketFactory; server: (event: RealtimeEvent) 
 
 const created = (line: string, id: string): RealtimeEvent => ({
   type: 'response.created',
-  response: { id, metadata: { nimbo_line: line } },
+  response: { id, metadata: { heynimbo_line: line } },
 })
 
 describe('Mouth', () => {

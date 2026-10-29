@@ -2,7 +2,7 @@
 
 ## Boundaries
 
-Only the `nimboguide-app` worktree was edited. No commit, staging, /Applications
+Only the `heynimbo-app` worktree was edited. No commit, staging, /Applications
 copy, packaged-app launch, reference UI/assets, extracted binaries or forbidden
 research paths were used. Original Cloudpath artwork is in `build/brand/logo.svg`.
 Lucide paths and both applicable notices are recorded in THIRD_PARTY_NOTICES.md.
@@ -49,9 +49,9 @@ and failed as expected, then original sources were restored and tests passed:
 ## Bundle inspection and remaining manual gates
 
 `plutil -p Contents/Info.plist` verified display/product name, stable
-`dev.nimboguide.desktop` identifier, version, icon and honest microphone purpose.
+`dev.heynimbo.desktop` identifier, version, icon and honest microphone purpose.
 `codesign -dv` reported an arm64 ad-hoc signature. Native .node is unpacked at
-`Contents/Resources/app.asar.unpacked/node_modules/@nimboguide/native/` and was
+`Contents/Resources/app.asar.unpacked/node_modules/@heynimbo/native/` and was
 loaded with Node without starting gestures or capture. The asar contains the
 workspace package's loader and package.json. No bundle was launched.
 
@@ -135,7 +135,7 @@ Final commands after restoring every deliberate mutation:
 restored in `finally` before the next mutation. Logs and exact target commands
 are in `/tmp/nimbo-app-review-mutations/{results.json,*.log}`; the driver is
 `/tmp/nimbo-review-mutations.py`. The checks below are independently runnable
-with `pnpm --filter @nimboguide/desktop exec vitest run <test-path>`.
+with `pnpm --filter @heynimbo/desktop exec vitest run <test-path>`.
 
 | Finding | Deliberate regressions detected | Tests that failed as intended |
 | --- | --- | --- |

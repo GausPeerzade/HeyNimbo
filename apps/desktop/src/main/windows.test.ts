@@ -49,7 +49,7 @@ beforeEach(() => {
   state.windows.length = 0
   state.load = Promise.resolve()
   vi.stubEnv('ELECTRON_RENDERER_URL', '')
-  vi.stubEnv('NIMBO_DEBUG_NO_CONTENT_PROTECTION', '0')
+  vi.stubEnv('HEYNIMBO_DEBUG_NO_CONTENT_PROTECTION', '0')
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 
@@ -70,7 +70,7 @@ describe('3D lines ahead of their beat', () => {
     const manager = new OverlayManager(); manager.sync()
     const window = state.windows[0]!
     manager.prepare([{ kind: 'model', id: 'pump', x: 100, y: 50, w: 600, h: 500, title: 'Pump', turntable: true }], { frame: { x: 0, y: 0, width: 1440, height: 900 }, pixelWidth: 2880, pixelHeight: 1800 })
-    expect(window.webContents.send).toHaveBeenCalledWith('nimbo:overlay', { kind: 'prepare', marks: [{ kind: 'model', id: 'pump', x: 50, y: 25, w: 320, h: 250, title: 'Pump', turntable: true }], epoch: 0 })
+    expect(window.webContents.send).toHaveBeenCalledWith('heynimbo:overlay', { kind: 'prepare', marks: [{ kind: 'model', id: 'pump', x: 50, y: 25, w: 320, h: 250, title: 'Pump', turntable: true }], epoch: 0 })
   })
 })
 

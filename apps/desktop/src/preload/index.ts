@@ -11,12 +11,12 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 const api = {
   onPeekSnapshot: (listener: (snapshot: AppSnapshot) => void) => subscribe(AppChannels.snapshot, listener),
   sendNotchEvent: (event: NotchEvent) => ipcRenderer.send(AppChannels.notch, event),
-  onPeekDismiss: (listener: () => void) => subscribe('nimbo:peek-dismiss', listener),
+  onPeekDismiss: (listener: () => void) => subscribe('heynimbo:peek-dismiss', listener),
   onNotchStatus: (listener: (status: NotchStatus) => void) => subscribe(Channels.notchStatus, listener),
   onOverlayCommand: (listener: (command: OverlayCommand) => void) => subscribe(Channels.overlay, listener),
   sendOverlayEvent: (event: OverlayEvent) => ipcRenderer.send(Channels.overlayEvent, event),
 }
 
-export type NimboApi = typeof api
+export type HeyNimboApi = typeof api
 
-contextBridge.exposeInMainWorld('nimbo', api)
+contextBridge.exposeInMainWorld('heynimbo', api)

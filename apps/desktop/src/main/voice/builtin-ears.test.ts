@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { BuiltInEars } from './builtin-ears'
 const native = vi.hoisted(() => ({ construct: vi.fn() }))
-vi.mock('@nimboguide/native', () => ({ SpeechSession: vi.fn(function () { return native.construct() }) }))
+vi.mock('@heynimbo/native', () => ({ SpeechSession: vi.fn(function () { return native.construct() }) }))
 beforeEach(() => vi.clearAllMocks())
 function fixture() {
   let resolve!: (text: string) => void

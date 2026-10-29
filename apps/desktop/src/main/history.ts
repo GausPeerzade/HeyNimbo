@@ -15,15 +15,16 @@ export class HistoryRepository {
       chmodSync(path, 0o600)
     }
     this.db = new DatabaseSync(path)
-    this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;')
     const version = Number((this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
-    if (version > 2) throw new Error('This history was created by a newer NimboGuide version.')
-    if (version < 1) this.db.exec(`
+    if (version !== 0 && version !== 2) { this.db.close(); throw new Error('Unsupported HeyNimbo history schema.') }
+    this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;')
+    if (version === 0) this.db.exec(`
       BEGIN;
       CREATE TABLE conversations(id TEXT PRIMARY KEY, title TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE turns(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, created INTEGER NOT NULL,
         mode TEXT NOT NULL CHECK(mode IN ('voice','text')), question TEXT NOT NULL, answer TEXT NOT NULL DEFAULT '',
-        state TEXT NOT NULL CHECK(state IN ('complete','interrupted','error')), error TEXT, scene TEXT NOT NULL, screen_context_used INTEGER NOT NULL DEFAULT 0);
+        state TEXT NOT NULL CHECK(state IN ('complete','interrupted','error')), error TEXT, scene TEXT NOT NULL, screen_context_used INTEGER NOT NULL DEFAULT 0,
+        provider TEXT NOT NULL, model TEXT NOT NULL);
       CREATE INDEX turns_conversation ON turns(conversation_id, created);
       CREATE VIRTUAL TABLE turn_search USING fts5(title, question, answer, conversation_id UNINDEXED, turn_id UNINDEXED);
       CREATE TRIGGER turn_insert AFTER INSERT ON turns BEGIN
@@ -35,13 +36,6 @@ export class HistoryRepository {
       END;
       CREATE TRIGGER turn_delete AFTER DELETE ON turns BEGIN DELETE FROM turn_search WHERE turn_id=old.id; END;
       CREATE TRIGGER conversation_title AFTER UPDATE OF title ON conversations BEGIN UPDATE turn_search SET title=new.title WHERE conversation_id=new.id; END;
-      PRAGMA user_version=1;
-      COMMIT;
-    `)
-    if (version < 2) this.db.exec(`
-      BEGIN;
-      ALTER TABLE turns ADD COLUMN provider TEXT NOT NULL DEFAULT 'openai';
-      ALTER TABLE turns ADD COLUMN model TEXT NOT NULL DEFAULT 'gpt-6.1-terra';
       PRAGMA user_version=2;
       COMMIT;
     `)

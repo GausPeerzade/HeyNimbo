@@ -27,7 +27,7 @@ beforeEach(() => {
   const main = new TestNode('main')
   vi.stubGlobal('document', { getElementById: (id: string) => nodes.get(id) ?? [...nodes.values()].flatMap(all).find(node => node.id === id), querySelector: () => main, activeElement: null })
   vi.stubGlobal('HTMLInputElement', class {})
-  vi.stubGlobal('window', { nimboApp: { onSnapshot: (handler: typeof mocks.onSnapshot) => { mocks.onSnapshot = handler }, onNavigate: (handler: typeof mocks.onNavigate) => { mocks.onNavigate = handler } } })
+  vi.stubGlobal('window', { heynimboApp: { onSnapshot: (handler: typeof mocks.onSnapshot) => { mocks.onSnapshot = handler }, onNavigate: (handler: typeof mocks.onNavigate) => { mocks.onNavigate = handler } } })
   mocks.request.mockImplementation(async value => value.kind === 'snapshot' ? snapshot() : new Promise<ConnectionResult>(resolve => { pending.push(resolve) }))
 })
 afterEach(() => vi.unstubAllGlobals())

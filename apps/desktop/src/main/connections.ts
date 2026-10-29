@@ -23,7 +23,7 @@ export class Connections {
       const key = await loadSecret(`${provider}-key`)
       if (provider === 'compatible') {
         this.compatibleKey = undefined
-        // Unbound legacy keys cannot safely be assigned to the current endpoint.
+        // A stored compatible credential is valid only with its explicit endpoint binding.
         try {
           const saved = JSON.parse(key ?? '') as { baseURL?: unknown; key?: unknown }
           if (typeof saved.key === 'string' && saved.key) this.compatibleKey = { baseURL: validateBaseURL(saved.baseURL), key: saved.key }
