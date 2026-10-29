@@ -28,7 +28,7 @@ vi.mock('./model-eval', async (load) => ({ ...await load<typeof import('./model-
 vi.mock('./model-show', async (load) => ({ ...await load<typeof import('./model-show')>(), runModelShow: mocks.show }))
 vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
-vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
+vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn(), microphoneAccessStatus: vi.fn(() => 'granted') }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
 vi.mock('./gestures', () => ({ startGestures: mocks.gestures }))
 vi.mock('./connections', () => ({ Connections: vi.fn(function (_settings, changed) { mocks.connectionsChanged = changed; let key: string | undefined; mocks.setVoiceKey = value => { key = value }; return { load: async () => { key = await mocks.key() }, get voiceKey() { return key }, get voiceEngine() { return { engine: key ? 'openai' : 'builtin' } }, get answerReady() { return Boolean(key) }, snapshot: () => ({}), answer: vi.fn() } }) }))

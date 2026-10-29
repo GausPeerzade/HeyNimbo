@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { AudioWindow, ensureMicrophoneAccess } from './audio-window'
+import { AudioWindow, ensureMicrophoneAccess, microphoneAccessStatus } from './audio-window'
 const mocks = vi.hoisted(() => ({
   descriptions: vi.fn(), status: vi.fn(), ask: vi.fn(),
   request: undefined as ((requester: unknown, permission: string, callback: (allow: boolean) => void, details: { mediaTypes: string[] }) => void) | undefined,
@@ -25,6 +25,12 @@ it('only asks for microphone access after the metadata guard passes', async () =
   expect(await ensureMicrophoneAccess()).toBe(true)
   expect(mocks.descriptions.mock.invocationCallOrder[0]!).toBeLessThan(mocks.status.mock.invocationCallOrder[0]!)
   expect(mocks.ask).toHaveBeenCalledWith('microphone')
+})
+it.each(['granted', 'denied', 'restricted', 'unknown'] as const)('reports %s without attempting a first-time prompt', async status => {
+  mocks.descriptions.mockReturnValue(true); mocks.status.mockReturnValue(status)
+  expect(microphoneAccessStatus()).toBe(status)
+  expect(await ensureMicrophoneAccess()).toBe(status === 'granted')
+  expect(mocks.ask).not.toHaveBeenCalled()
 })
 it('denies Chromium microphone requests without usage strings and restricts them to its audio window', () => {
   new AudioWindow(vi.fn())

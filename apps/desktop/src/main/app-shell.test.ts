@@ -5,8 +5,10 @@ import { AppShell, type ShellActions } from './app-shell'
 import { pageURL } from './page-security'
 import { DEFAULT_SETTINGS } from './settings'
 import { TalkSession, type TalkDeps } from './voice/talk'
-const mocks = vi.hoisted(() => ({ dir: '', confirm: vi.fn(), handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
+const mocks = vi.hoisted(() => ({ dir: '', confirm: vi.fn(), microphoneStatus: vi.fn(), allowMicrophone: vi.fn(), external: vi.fn(), handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
+vi.mock('./audio-window', () => ({ microphoneAccessStatus: mocks.microphoneStatus, ensureMicrophoneAccess: mocks.allowMicrophone }))
 vi.mock('electron', () => ({
+  shell: { openExternal: mocks.external },
   app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: true },
   ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'nimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
   dialog: { showMessageBox: mocks.confirm },
@@ -82,6 +84,24 @@ it('serves key hints only to the Settings page through the dedicated details req
   shell.publish(true)
   for (const target of [contents, settingsContents]) expect(JSON.stringify(target.send.mock.calls)).not.toMatch(/keyHints|abcd/)
   expect(JSON.stringify(await mocks.handler?.(settingsEvent, { kind: 'snapshot' }))).not.toMatch(/keyHints|abcd/)
+})
+it('requests first-time microphone access from an explicit app action, opens Settings after denial, and never prompts in preview', async () => {
+  const { shell, event } = fixture()
+  mocks.microphoneStatus.mockReset(); mocks.allowMicrophone.mockReset(); mocks.external.mockReset()
+  const request = { kind: 'permission', permission: 'microphone' }
+  await mocks.handler?.(event, request)
+  expect(mocks.microphoneStatus).not.toHaveBeenCalled(); expect(mocks.allowMicrophone).not.toHaveBeenCalled(); expect(mocks.external).not.toHaveBeenCalled()
+  Object.assign(shell, { preview: false })
+  mocks.microphoneStatus.mockReturnValue('not-determined'); mocks.allowMicrophone.mockResolvedValue(true)
+  const publish = vi.spyOn(shell, 'publish')
+  await mocks.handler?.(event, request)
+  expect(mocks.allowMicrophone).toHaveBeenCalledOnce(); expect(mocks.external).not.toHaveBeenCalled(); expect(publish).toHaveBeenCalledWith(true)
+  mocks.microphoneStatus.mockReturnValue('denied'); await mocks.handler?.(event, request)
+  expect(mocks.allowMicrophone).toHaveBeenCalledOnce()
+  expect(mocks.external).toHaveBeenCalledWith('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone')
+  mocks.microphoneStatus.mockReturnValue('unavailable')
+  await expect(mocks.handler?.(event, request)).rejects.toThrow('missing voice permission descriptions')
+  expect(mocks.allowMicrophone).toHaveBeenCalledOnce()
 })
 it.each([{ kind: 'removeKey', provider: 'anthropic' }, { kind: 'signOut' }])('requires native confirmation before $kind removes a saved connection', async request => {
   const connectionRequest = vi.fn(async () => ({ ok: true, message: 'Removed.' }))

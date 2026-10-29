@@ -60,12 +60,23 @@ action requests it. Denied/restricted access shows the reason. Microphone captur
 is still initiated only by holding Control + Option. External permission changes
 may require restarting the app.
 
+Settings → Voice and About now show microphone status separately from the
+answer/voice engine. **Allow microphone…** requests first-time macOS access from
+that click; opening the Privacy pane alone cannot register an app that has never
+requested access. After denial, the action opens the Microphone pane instead of
+repeating a prompt macOS will not show. Missing usage metadata has an actionable
+build-repair explanation, not a button that silently fails. Permission status
+queries share the guarded microphone helper; rendering Settings never asks for
+permission or starts recording.
+
 Packaged apps receive both honest usage descriptions from electron-builder's
 `mac.extendInfo` in `apps/desktop/package.json`. OpenAI audio is explicitly disclosed
 in the microphone copy. The built-in speech description promises on-device audio
 processing, which is enforced rather than silently falling back to Apple's servers.
 
-For development, after installing Electron in **this checkout**:
+`pnpm dev` prepares this checkout's permission metadata automatically before
+launching the development app. For a direct `electron .` launch after installing
+or replacing Electron in **this checkout**, prepare it explicitly first:
 
 ```sh
 pnpm dev:speech-permissions
@@ -78,8 +89,9 @@ strings idempotently. It opens no windows, accesses no microphone, and requests 
 permission. Restart Electron after patching. Reinstalling Electron replaces the
 patch; rerun the script. Restore the backup or reinstall Electron to undo it.
 If Electron's download is missing, run its `install.js` in this checkout first.
-Never patch the user's running checkout. Do not launch development or packaged
-apps for validation without approval for any windows, prompts or microphone use.
+Quit this checkout's running Electron before repairing its bundle, then restart
+it. Do not launch development or packaged apps for validation without approval
+for any windows, prompts or microphone use.
 
 ## Validation
 

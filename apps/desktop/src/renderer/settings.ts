@@ -50,6 +50,15 @@ function group(title: string): void {
   groupTarget = element('section', 'settings-group'); groupTarget.setAttribute('aria-label', title); fields.append(groupTarget)
 }
 function intro(text: string): void { fields.append(element('p', 'settings-intro', text)) }
+function microphoneRow(): void {
+  const status = snapshot?.permissions.microphone ?? 'unknown'
+  const names: Record<string, string> = { granted: 'Allowed', 'not-determined': 'Not requested yet', denied: 'Denied in System Settings', restricted: 'Restricted by macOS', unavailable: 'Unavailable in this build' }
+  const row = element('div', 'permission'), text = element('span')
+  text.append(element('strong', '', 'Microphone'), element('small', '', names[status] ?? status))
+  const action = button(status === 'not-determined' ? 'Allow microphone…' : 'Open System Settings', () => { void request({ kind: 'permission', permission: 'microphone' }) }); action.id = 'microphone-permission'
+  if (status === 'unavailable') { action.disabled = true; text.append(element('small', '', 'Development build: run pnpm dev:speech-permissions, then restart the app.')) }
+  row.append(text, action); groupTarget.append(row)
+}
 function render(): void {
   if (!snapshot) return
   const focused = document.activeElement?.id
@@ -77,6 +86,8 @@ function render(): void {
       if (snapshot.connection?.voiceReason) explanation(snapshot.connection.voiceReason)
       toggle('muted', 'Mute speech & drawing sounds', 'The written answer and drawings remain available.')
       explanation('Hold Control + Option to speak; release to ask. Press again to interrupt the current answer. Changing the voice stops the current response.')
+      group('Microphone access'); microphoneRow()
+      explanation('Allow microphone access here the first time. If you previously denied it, enable NimboGuide (Electron in development) in System Settings → Privacy & Security → Microphone.')
       break
     case 'History & privacy':
       intro('Your conversations stay here. You decide what to keep.')
@@ -100,7 +111,8 @@ function render(): void {
       const brand = element('div', 'about-brand'); brand.append(picture, element('h2', '', `NimboGuide ${snapshot.version}`)); fields.append(brand)
       explanation('Explains your screen with speech and drawings.')
       group('macOS permissions')
-      for (const [key, label] of [['microphone', 'Microphone'], ['screen', 'Screen Recording'], ['input', 'Input Monitoring']] as const) {
+      microphoneRow()
+      for (const [key, label] of [['screen', 'Screen Recording'], ['input', 'Input Monitoring']] as const) {
         const row = element('div', 'permission'), text = element('span')
         text.append(element('strong', '', label), element('small', '', snapshot.permissions[key]))
         row.append(text, button('Open System Settings', () => { void request({ kind: 'permission', permission: key }) }))

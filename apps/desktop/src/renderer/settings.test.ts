@@ -66,6 +66,20 @@ it('retains open Manage disclosures, keyboard focus and scroll on a snapshot, bu
   mocks.onNavigate!({ category: 'General' }); expect(document.querySelector('main')!.scrollTop).toBe(0)
   for (const resolve of pending) resolve({ ok: true, message: '', keyHints: {} }); await tick()
 })
+it('offers an explicit first-time microphone action, a denied-permission recovery, and no dead action for missing metadata', async () => {
+  await import('./settings'); await tick(); mocks.onNavigate!({ category: 'Voice' })
+  const state = snapshot(); state.permissions.microphone = 'not-determined'; mocks.onSnapshot!(state)
+  const action = document.getElementById('microphone-permission') as unknown as TestNode & { onclick(): void; disabled?: boolean }
+  expect(action.textContent).toBe('Allow microphone…')
+  expect(mocks.request).not.toHaveBeenCalledWith({ kind: 'permission', permission: 'microphone' })
+  action.onclick()
+  expect(mocks.request).toHaveBeenCalledWith({ kind: 'permission', permission: 'microphone' })
+  for (const resolve of pending) resolve({ ok: true, message: '' }); await tick()
+  state.permissions.microphone = 'denied'; mocks.onSnapshot!(state)
+  expect(document.getElementById('microphone-permission')?.textContent).toBe('Open System Settings')
+  state.permissions.microphone = 'unavailable'; mocks.onSnapshot!(state)
+  expect((document.getElementById('microphone-permission') as unknown as { disabled: boolean }).disabled).toBe(true)
+})
 it('does not request key hints if an old Connection action finishes after navigation away', async () => {
   await import('./settings'); await tick()
   mocks.onNavigate!({ category: 'Connection' })

@@ -47,10 +47,16 @@ export class AudioWindow {
   }
 }
 
-/** Asks macOS for microphone access once; true when granted. */
+/** The metadata guard owns every microphone authorization query. */
+export function microphoneAccessStatus(): ReturnType<typeof systemPreferences.getMediaAccessStatus> | 'unavailable' {
+  if (process.platform !== 'darwin') return 'granted'
+  return hasVoiceUsageDescriptions() ? systemPreferences.getMediaAccessStatus('microphone') : 'unavailable'
+}
+
+/** Only a user action should call this; denied/restricted access needs System Settings. */
 export async function ensureMicrophoneAccess(): Promise<boolean> {
-  if (process.platform !== 'darwin') return true
-  if (!hasVoiceUsageDescriptions()) return false
-  if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true
+  const status = microphoneAccessStatus()
+  if (status === 'granted') return true
+  if (status !== 'not-determined') return false
   return systemPreferences.askForMediaAccess('microphone')
 }

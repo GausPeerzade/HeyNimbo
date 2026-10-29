@@ -10,6 +10,7 @@ import { parseAppRequest } from './app-requests'
 import { isPageSender } from './page-security'
 import { loadPage, secureWebPreferences } from './windows'
 import { WINDOW_PALETTE } from '../shared/ui-palette'
+import { ensureMicrophoneAccess, microphoneAccessStatus } from './audio-window'
 
 export interface ShellActions {
   ask(question: string): { accepted: true }
@@ -206,6 +207,11 @@ export class AppShell {
       }
       case 'replaceKey': if (!this.preview) this.actions.replaceKey(); return
       case 'permission': {
+        if (!this.preview && request.permission === 'microphone') {
+          const status = microphoneAccessStatus()
+          if (status === 'unavailable') throw new Error('This app is missing voice permission descriptions. For development, run pnpm dev:speech-permissions and restart NimboGuide.')
+          if (status === 'not-determined') { await ensureMicrophoneAccess(); this.publish(true); return }
+        }
         const panes = { microphone: 'Privacy_Microphone', screen: 'Privacy_ScreenCapture', input: 'Privacy_ListenEvent' }
         if (request.permission in panes && !this.preview) await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${panes[request.permission]}`)
         return

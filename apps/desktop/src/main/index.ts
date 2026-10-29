@@ -1,11 +1,11 @@
-import { app, screen, systemPreferences, type BrowserWindow } from 'electron'
-import { hasVoiceUsageDescriptions, hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
+import { app, screen, type BrowserWindow } from 'electron'
+import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
 import { AppShell } from './app-shell'
 import { NotchPeek } from './notch-peek'
 import { configureHomePreview, runHomePreview } from './home-preview'
 import { devFlag, devSetting } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
-import { AudioWindow } from './audio-window'
+import { AudioWindow, microphoneAccessStatus } from './audio-window'
 import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
 import { Connections } from './connections'
@@ -149,7 +149,7 @@ if (ownsInstance) app.whenReady().then(async () => {
       if (settings.voice !== previous.voice || JSON.stringify(settings.connection) !== JSON.stringify(previous.connection)) reconnect()
     },
     permissions: () => ({
-      microphone: hasVoiceUsageDescriptions() ? systemPreferences.getMediaAccessStatus('microphone') : 'unavailable: missing usage descriptions',
+      microphone: microphoneAccessStatus(),
       screen: hasScreenCaptureAccess() ? 'granted' : 'not granted',
       input: hasInputMonitoringAccess() ? 'granted' : 'not granted',
     }),
