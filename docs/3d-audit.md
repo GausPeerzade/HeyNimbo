@@ -327,6 +327,67 @@ readable labels. Remaining caveats:
   soil, so those tags point at what covers them;
 - DNA: copies can't twist, so the rungs stay parallel.
 
+## Real-model eval and showcase
+
+All of these are dev-only and can't run in a packaged app. They run from
+`apps/desktop` after `pnpm build`.
+
+- **Eval** (`NIMBO_DEBUG_3D_EVAL=1`): asks each model in
+  `NIMBO_DEBUG_3D_EVAL_MODELS` (`provider:model[:low|medium]`, comma
+  separated) every request in `scripts/eval-3d-subjects.txt`.
+  - It uses the real answer path, a blank 1440×900 screenshot and no
+    history.
+  - It reads saved keys from the normal profile, read-only, so quit
+    NimboGuide first.
+  - Answers render in hidden windows to `/tmp/nimbo-3d-eval/<label>/`, with
+    `summary.json` and `summary.md`.
+  - `NIMBO_DEBUG_3D_EVAL_REPLAY=<run dir>` re-renders a saved run with no keys.
+- **Showcase replay** (`NIMBO_DEBUG_3D_EVAL_SHOW=<run dir>`): replays a saved
+  run on the desktop of the cursor's display. It uses a throwaway profile, no
+  network or keys, and never takes focus.
+  - **Layout:** per subject, each model's answer gets an equal column, with
+    the request in a pill on top and the measured first-part time and part
+    count under each card.
+  - **What changes:** only the answer's first `@model` line, whose rect and
+    title (the model's display name) are overridden. Its `@part`, `@move`,
+    `@cut` and `@tag` lines and its sentences are kept byte for byte.
+  - **What's dropped:** 2D side cards, headings, steps, notes and pointers,
+    plus any second model, so the columns compare the 3D alone.
+  - **Pacing:** a model's first part appears at its measured first-part
+    time. Each later beat lasts as long as its sentence would be spoken, and
+    never starts before its text could have streamed in. Streaming is taken
+    as steady from the first `@part` line to the measured total.
+  - **Fitting:** a subject that would run past 40 s is shown uniformly
+    faster, keeping the models' order, and its pill says by how much.
+  - **After building:** finished models hold for 6 s, then clear.
+  - **Options:** `NIMBO_DEBUG_3D_EVAL_SHOW_ONLY=<number|slug|word>` shows one
+    subject, and `NIMBO_DEBUG_3D_EVAL_SHOW_SPEED` (0.25–8, default 1) scales
+    the pacing.
+- **Live showcase** (`NIMBO_DEBUG_3D_EVAL_SHOW_LIVE=1`): real requests, with
+  the same models, subjects and label variables as the eval.
+  - It uses the eval's normal read-only profile and lock, so quit NimboGuide
+    first.
+  - **Flow:** per subject, each model is asked in turn, and its answer draws
+    in its column as lines stream in. Like a text-only answer in talk.ts, each
+    beat draws on arrival with an 800 ms budget.
+  - **Pills:** one shows the request; one shows "<model> · n/N · first part
+    x.x s", updated live.
+  - **Sequencing:** the next model starts when the last has finished
+    drawing, and finished models hold for 6 s before the next subject.
+  - **Results:** answers, timings and usage are saved like an eval run, for
+    comparison.
+  - **Bounds:** 90 s per request; failures are recorded and the show goes
+    on.
+- **Interaction and look:** each column is its own click-through overlay
+  window, so models build in parallel or in turn. Cards can't be dragged or
+  closed during a show, and each column has its own pen.
+- **Hidden validation knobs:**
+  - `NIMBO_DEBUG_3D_EVAL_SHOW_CAPTURE=<dir>` renders either mode in hidden
+    windows and writes composited frames.
+  - `NIMBO_DEBUG_3D_EVAL_SHOW_MOCK=<run dir>` feeds the live mode a saved
+    run's answers at their recorded times, in a throwaway profile, with no
+    keys.
+
 ## Measurements
 
 These are frame gaps from the existing `NIMBO_DEBUG_DRAW_TRACE` trace, at

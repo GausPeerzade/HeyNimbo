@@ -17,12 +17,12 @@ import { streamAnswer, type Screenshot } from './voice/brain'
 export const EVAL_DISPLAY = { width: 1440, height: 900 }
 const SPACE: CaptureSpace = { frame: { x: 0, y: 0, ...EVAL_DISPLAY }, pixelWidth: EVAL_DISPLAY.width, pixelHeight: EVAL_DISPLAY.height }
 const POINTER = { x: EVAL_DISPLAY.width / 2, y: EVAL_DISPLAY.height / 2 }
-const OUTPUT = '/tmp/nimbo-3d-eval'
+export const EVAL_OUTPUT = '/tmp/nimbo-3d-eval'
 /** Requests and hidden renders at once, and the bound on each. Every step is
  *  bounded, so the overall cap only ever stops a run that is stuck. */
 export const EVAL_LIMITS = { requests: 2, renders: 4, requestMs: 90_000, preflightMs: 30_000, renderMs: 60_000, setupMs: 120_000, maxRunMs: 90 * 60_000 }
 /** Beat budgets as talk.ts declares them, sped up for rendering. */
-const WORDS_PER_SECOND = 2.6
+export const WORDS_PER_SECOND = 2.6
 const RENDER_PACE = 0.6
 
 export interface EvalModel { spec: string; slug: string; provider: ProviderId; model: string; effort?: 'low' | 'medium' }
@@ -128,6 +128,8 @@ export function answerBeats(text: string, onCommand?: (mark: Mark) => void): { b
 export async function evaluateAnswer(input: {
   connection: AnswerConnection; question: string; screenshot: Screenshot; timeoutMs: number
   stream?: typeof streamAnswer; now?: () => number
+  /** Each accepted command as its line ends, and each beat as its sentence ends, for drawing live. */
+  onMark?: (mark: Mark, elapsedMs: number) => void; onBeat?: (beat: Beat) => void
 }): Promise<{ text: string; beats: Beat[]; status: AnswerRecord['status']; error?: string; timings: AnswerRecord['timings']; usage?: EvalUsage; parse: ParseStats }> {
   const now = input.now ?? (() => performance.now()), start = now(), elapsed = (): number => Math.round(now() - start)
   const timings: AnswerRecord['timings'] = {}, dropped: string[] = [], beats: Beat[] = []
@@ -135,7 +137,9 @@ export async function evaluateAnswer(input: {
   const parser = new BeatParser({ width: SPACE.pixelWidth, height: SPACE.pixelHeight }, (mark) => {
     if (mark.kind === 'model') timings.firstModelMs ??= elapsed()
     if (mark.kind === 'part') timings.firstPartMs ??= elapsed()
+    input.onMark?.(mark, elapsed())
   }, (line) => dropped.push(line.slice(0, 200)))
+  const emit = (emitted: Beat[]): void => { beats.push(...emitted); if (input.onBeat) for (const beat of emitted) input.onBeat(beat) }
   const controller = new AbortController()
   const iterator = (input.stream ?? streamAnswer)({
     connection: input.connection, question: input.question, screenshot: input.screenshot, history: [], signal: controller.signal,
@@ -156,14 +160,50 @@ export async function evaluateAnswer(input: {
       if (next.done) break
       if (next.value && timings.firstTokenMs === undefined) timings.firstTokenMs = elapsed()
       text += next.value
-      beats.push(...parser.push(next.value))
+      emit(parser.push(next.value))
     }
   } catch (cause) {
     status = 'error'; error = cause instanceof Error ? cause.message : 'The request failed.'
   } finally { clearTimeout(timer) }
-  beats.push(...parser.flush())
+  emit(parser.flush())
   timings.totalMs = elapsed()
   return { text, beats, status, ...(error && { error }), timings, ...(usage && { usage }), parse: parseStats(beats, dropped) }
+}
+
+/** Checks each model's credentials and catalog once, recording it in the run. */
+export async function preflightModels(run: EvalRun, models: EvalModel[], connectionFor: (model: EvalModel) => AnswerConnection): Promise<Map<string, string>> {
+  const ready = new Map<string, string>()
+  for (const model of models) {
+    let preflight = 'ok'
+    try {
+      await Promise.race([connectionFor(model).credential(), sleep(EVAL_LIMITS.preflightMs).then(() => { throw new Error('The credential check timed out.') })])
+    } catch (error) { preflight = error instanceof Error ? error.message : 'The credential check failed.' }
+    ready.set(model.spec, preflight)
+    // Vision comes from the provider's catalog, which the check just loaded.
+    const { vision, effort } = connectionFor(model)
+    run.models.push({ spec: model.spec, slug: model.slug, provider: model.provider, model: model.model, effort: effort ?? 'provider default', vision, preflight })
+  }
+  return ready
+}
+
+/** One model and one request, recorded in the run whatever the outcome. */
+export async function askModel(input: {
+  run: EvalRun; model: EvalModel; subject: string; index: number; ready: Map<string, string>
+  connectionFor: (model: EvalModel) => AnswerConnection; screenshot: Screenshot
+  stream?: typeof streamAnswer; now?: () => number; timeoutMs?: number; startBefore?: number
+  onMark?: (mark: Mark, elapsedMs: number) => void; onBeat?: (beat: Beat) => void
+}): Promise<EvalResult> {
+  const { model } = input, base = { model: model.spec, subject: input.subject, subjectSlug: subjectSlug(input.subject, input.index) }
+  const preflight = input.ready.get(model.spec) ?? 'The model was not checked.'
+  let result: EvalResult
+  if (preflight !== 'ok') result = { record: { ...base, status: 'error', error: `Credential check: ${preflight}`, timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: model.slug }
+  else if (input.startBefore !== undefined && Date.now() > input.startBefore) result = { record: { ...base, status: 'skipped', error: 'Not started: the run reached its time cap.', timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: model.slug }
+  else {
+    const answer = await evaluateAnswer({ connection: input.connectionFor(model), question: input.subject, screenshot: input.screenshot, timeoutMs: input.timeoutMs ?? EVAL_LIMITS.requestMs, stream: input.stream, now: input.now, onMark: input.onMark, onBeat: input.onBeat })
+    result = { record: { ...base, status: answer.status, ...(answer.error && { error: answer.error }), timings: answer.timings, ...(answer.usage && { usage: answer.usage }), parse: answer.parse }, text: answer.text, beats: answer.beats, modelSlug: model.slug }
+  }
+  input.run.records.push(result.record)
+  return result
 }
 
 /** The answer phase: each model's credentials and catalog are checked once,
@@ -174,32 +214,13 @@ export async function answerPhase(input: {
   stream?: typeof streamAnswer; now?: () => number; timeoutMs?: number; startBefore?: number
   onResult: (result: EvalResult) => void
 }): Promise<EvalResult[]> {
-  const { run } = input
-  const ready = new Map<string, string>()
-  for (const model of input.models) {
-    let preflight = 'ok'
-    try {
-      await Promise.race([input.connectionFor(model).credential(), sleep(EVAL_LIMITS.preflightMs).then(() => { throw new Error('The credential check timed out.') })])
-    } catch (error) { preflight = error instanceof Error ? error.message : 'The credential check failed.' }
-    ready.set(model.spec, preflight)
-    // Vision comes from the provider's catalog, which the check just loaded.
-    const { vision, effort } = input.connectionFor(model)
-    run.models.push({ spec: model.spec, slug: model.slug, provider: model.provider, model: model.model, effort: effort ?? 'provider default', vision, preflight })
-  }
-  const tasks = run.subjects.flatMap((subject, index) => input.models.map((model) => ({ subject, slug: subjectSlug(subject, index), model })))
+  const ready = await preflightModels(input.run, input.models, input.connectionFor)
+  const tasks = input.run.subjects.flatMap((subject, index) => input.models.map((model) => ({ subject, index, model })))
   const results: EvalResult[] = []
   const lane = async (): Promise<void> => {
     for (let task = tasks.shift(); task; task = tasks.shift()) {
-      const base = { model: task.model.spec, subject: task.subject, subjectSlug: task.slug }
-      const preflight = ready.get(task.model.spec)!
-      let result: EvalResult
-      if (preflight !== 'ok') result = { record: { ...base, status: 'error', error: `Credential check: ${preflight}`, timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: task.model.slug }
-      else if (input.startBefore !== undefined && Date.now() > input.startBefore) result = { record: { ...base, status: 'skipped', error: 'Not started: the run reached its time cap.', timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: task.model.slug }
-      else {
-        const answer = await evaluateAnswer({ connection: input.connectionFor(task.model), question: task.subject, screenshot: input.screenshot, timeoutMs: input.timeoutMs ?? EVAL_LIMITS.requestMs, stream: input.stream, now: input.now })
-        result = { record: { ...base, status: answer.status, ...(answer.error && { error: answer.error }), timings: answer.timings, ...(answer.usage && { usage: answer.usage }), parse: answer.parse }, text: answer.text, beats: answer.beats, modelSlug: task.model.slug }
-      }
-      results.push(result); run.records.push(result.record)
+      const result = await askModel({ ...input, ...task, ready })
+      results.push(result)
       input.onResult(result)
     }
   }
@@ -207,7 +228,7 @@ export async function answerPhase(input: {
   return results
 }
 
-const seconds = (ms: number | undefined): string => ms === undefined ? '–' : (ms / 1000).toFixed(1)
+export const seconds = (ms: number | undefined): string => ms === undefined ? '–' : (ms / 1000).toFixed(1)
 const median = (values: number[]): number | undefined => {
   if (!values.length) return undefined
   const sorted = [...values].sort((a, b) => a - b), middle = sorted.length >> 1
@@ -264,13 +285,13 @@ export function readOnlySettings(store: Pick<SettingsStore, 'get'>): Pick<Settin
 }
 
 /** A neutral grey screen, encoded like a capture. */
-function blankScreenshot(): Screenshot {
+export function blankScreenshot(): Screenshot {
   const pixels = Buffer.alloc(EVAL_DISPLAY.width * EVAL_DISPLAY.height * 4)
   for (let i = 0; i < pixels.length; i += 4) { pixels[i] = 0x8e; pixels[i + 1] = 0x88; pixels[i + 2] = 0x7b; pixels[i + 3] = 0xff }
   return { jpeg: nativeImage.createFromBitmap(pixels, EVAL_DISPLAY).toJPEG(85), ...EVAL_DISPLAY, cursor: POINTER }
 }
 
-function subjectsFile(): string {
+export function subjectsFile(): string {
   return devSetting('NIMBO_DEBUG_3D_EVAL_SUBJECTS') ?? join(app.getAppPath(), 'scripts', 'eval-3d-subjects.txt')
 }
 
@@ -299,7 +320,7 @@ export async function runModelEval(): Promise<void> {
   // Hidden overlays stay offline; provider requests are made by this process.
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
   const label = slugify(devSetting('NIMBO_DEBUG_3D_EVAL_LABEL') ?? new Date().toISOString().replace(/[:.]/g, '-'), 60)
-  const directory = join(OUTPUT, label), replay = devSetting('NIMBO_DEBUG_3D_EVAL_REPLAY')
+  const directory = join(EVAL_OUTPUT, label), replay = devSetting('NIMBO_DEBUG_3D_EVAL_REPLAY')
   const secrets = new Set<string>(), writer = evalWriter(directory, secrets)
   const run: EvalRun = { label, mode: replay ? 'replay' : 'live', ...(replay && { source: replay }), state: 'running', startedAt: new Date().toISOString(), display: EVAL_DISPLAY, limits: EVAL_LIMITS, models: [], subjects: [], records: [], errors: [] }
   const log = (line: string): void => console.info(writer.redact(`[eval] ${line}`))
@@ -318,16 +339,22 @@ export async function runModelEval(): Promise<void> {
   }
 }
 
+/** The user's saved credentials, read through Connections from the normal
+ *  profile; settings are read-only, and every key seen is added to `secrets`. */
+export async function savedConnections(secrets: Set<string>, log: (line: string) => void): Promise<(model: EvalModel) => AnswerConnection> {
+  const connections = new Connections(readOnlySettings(new SettingsStore(join(app.getPath('userData'), 'settings.json'))), () => {})
+  await connections.load()
+  const saved = Object.entries(connections.snapshot().providers).filter(([, present]) => present).map(([provider]) => provider)
+  log(`profile ${app.getPath('userData')}; saved credentials for: ${saved.join(', ') || 'none'}`)
+  return (model) => trackCredential(connections.answerFor(model.provider, model.model, model.effort), secrets)
+}
+
 async function liveResults(run: EvalRun, writer: ReturnType<typeof evalWriter>, secrets: Set<string>, log: (line: string) => void): Promise<EvalResult[]> {
   const { models, errors } = parseEvalModels(devSetting('NIMBO_DEBUG_3D_EVAL_MODELS'))
   run.errors.push(...errors)
   run.subjects = parseSubjects(readFileSync(subjectsFile(), 'utf8'))
   if (!models.length || !run.subjects.length) throw new Error(run.subjects.length ? 'No models to evaluate.' : 'The subjects file has no requests.')
-  const connections = new Connections(readOnlySettings(new SettingsStore(join(app.getPath('userData'), 'settings.json'))), () => {})
-  await connections.load()
-  const saved = Object.entries(connections.snapshot().providers).filter(([, present]) => present).map(([provider]) => provider)
-  log(`profile ${app.getPath('userData')}; saved credentials for: ${saved.join(', ') || 'none'}`)
-  const connectionFor = (model: EvalModel): AnswerConnection => trackCredential(connections.answerFor(model.provider, model.model, model.effort), secrets)
+  const connectionFor = await savedConnections(secrets, log)
   const requests = models.length * run.subjects.length, cap = evalCapMs(requests, models.length)
   const startBefore = Date.now() + cap - Math.ceil(requests / EVAL_LIMITS.renders) * EVAL_LIMITS.renderMs - EVAL_LIMITS.setupMs - process.uptime() * 1000
   log(`${requests} requests: ${models.map((model) => model.spec).join(', ')} × ${run.subjects.length} subjects`)

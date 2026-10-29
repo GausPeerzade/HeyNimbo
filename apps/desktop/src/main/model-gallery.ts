@@ -67,11 +67,12 @@ export async function runModelGallery(): Promise<void> {
   app.quit()
 }
 
-/** The real overlay page in a window that is never shown, focused or given network. */
-export async function hiddenOverlay(names: Map<WebContents, string>, name: string, view: { width: number; height: number } = VIEW): Promise<BrowserWindow> {
+/** The real overlay page in a window that is never shown, focused or given
+ *  network; on a desktop grey, or transparent for compositing several. */
+export async function hiddenOverlay(names: Map<WebContents, string>, name: string, view: { width: number; height: number } = VIEW, backgroundColor = '#7b888e'): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     ...view, show: false, paintWhenInitiallyHidden: true, frame: false, focusable: false, skipTaskbar: true,
-    backgroundColor: '#7b888e', webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
+    transparent: backgroundColor === '#00000000', backgroundColor, webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   })
   names.set(window.webContents, name)
   await loadPage(window, 'overlay')

@@ -3,7 +3,7 @@ import { hasVoiceUsageDescriptions, hasInputMonitoringAccess, hasScreenCaptureAc
 import { AppShell } from './app-shell'
 import { NotchPeek } from './notch-peek'
 import { configureHomePreview, runHomePreview } from './home-preview'
-import { devFlag } from './dev'
+import { devFlag, devSetting } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
 import { AudioWindow } from './audio-window'
 import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
@@ -13,6 +13,7 @@ import { openSetupWindow } from './setup-window'
 import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { configureModelGallery, runModelGallery } from './model-gallery'
 import { configureModelEval, runModelEval } from './model-eval'
+import { configureModelShow, runModelShow } from './model-show'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { BuiltInEars } from './voice/builtin-ears'
@@ -100,11 +101,12 @@ configureHomePreview()
 configureDrawDemo()
 configureModelGallery()
 configureModelEval()
+configureModelShow()
 limitDrawDemoRuntime()
 const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
 if (!ownsInstance) {
-  // A live eval shares the normal profile, so the running app must be quit first.
-  if (devFlag('NIMBO_DEBUG_3D_EVAL')) console.error('[eval] Quit the running NimboGuide first; it holds this profile.')
+  // A live eval or live show shares the normal profile, so the running app must be quit first.
+  if (devFlag('NIMBO_DEBUG_3D_EVAL') || devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) console.error('[eval] Quit the running NimboGuide first; it holds this profile.')
   app.quit()
 }
 
@@ -112,6 +114,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   if (devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
   app.dock?.hide()
   if (devFlag('NIMBO_DEBUG_3D_GALLERY')) return runModelGallery()
+  if (devSetting('NIMBO_DEBUG_3D_EVAL_SHOW') || devFlag('NIMBO_DEBUG_3D_EVAL_SHOW_LIVE')) return runModelShow()
   if (devFlag('NIMBO_DEBUG_3D_EVAL')) return runModelEval()
   const notch = createNotchWindow()
   const overlays = new OverlayManager()
