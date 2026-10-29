@@ -27,6 +27,15 @@ export function brandPath(file: string): string {
   return app.isPackaged ? join(process.resourcesPath, 'brand', file) : join(__dirname, '../../build/brand', file)
 }
 
+/** Brings a window the user asked for to the front. A menu-bar app isn't
+ *  active, so macOS would otherwise leave it behind other apps or on
+ *  another Space. */
+function present(window: BrowserWindow): void {
+  window.show()
+  window.focus()
+  app.focus({ steal: true })
+}
+
 export class AppShell {
   readonly settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   readonly conversations = new ConversationController(new HistoryRepository(join(app.getPath('userData'), 'history.sqlite')), () => this.settings.get(), () => this.publish())
@@ -85,12 +94,12 @@ export class AppShell {
       this.home = window
       window.on('close', () => { if (!window.isFullScreen()) this.settings.set({ ...this.settings.get(), homeBounds: window.getNormalBounds() }) })
       window.on('closed', () => { this.home = undefined; this.updateDock() })
-      window.once('ready-to-show', () => { if (!this.preview) { window.show(); this.updateDock() } })
+      window.once('ready-to-show', () => { if (!this.preview) { present(window); this.updateDock() } })
       window.webContents.once('did-finish-load', () => { this.publish(); if (turnId) window.webContents.send(AppChannels.navigate, { turnId }) })
       void loadPage(window, 'home')
     } else {
       if (this.home.isMinimized()) this.home.restore()
-      if (!this.preview) { this.home.show(); this.home.focus() }; this.publish()
+      if (!this.preview) present(this.home); this.publish()
       if (turnId) this.home.webContents.send(AppChannels.navigate, { turnId })
     }
     this.updateDock()
@@ -101,13 +110,13 @@ export class AppShell {
       const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'NimboGuide Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
       this.preferences = window
       window.on('closed', () => { this.preferences = undefined; this.updateDock() })
-      window.once('ready-to-show', () => { if (!this.preview) { window.show(); this.updateDock() } })
+      window.once('ready-to-show', () => { if (!this.preview) { present(window); this.updateDock() } })
       window.webContents.once('did-finish-load', () => { this.publish(); if (category) window.webContents.send(AppChannels.navigate, { category }) })
       window.on('focus', () => this.publish())
       void loadPage(window, 'settings')
     } else {
       if (this.preferences.isMinimized()) this.preferences.restore()
-      if (!this.preview) { this.preferences.show(); this.preferences.focus() }; this.publish()
+      if (!this.preview) present(this.preferences); this.publish()
       if (category) this.preferences.webContents.send(AppChannels.navigate, { category })
     }
     this.updateDock()
