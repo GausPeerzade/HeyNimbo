@@ -151,7 +151,7 @@ it('retries failed run artifact deletion on purge after the run record is alread
   class FailingArtifacts extends MemoryArtifactStore {
     fail = true
     override async delete(ids: readonly string[]) {
-      if (this.fail) { this.fail = false; throw new Error('Injected EIO') }
+      if (this.fail) throw new Error('Injected EIO')
       return super.delete(ids)
     }
   }
@@ -163,6 +163,7 @@ it('retries failed run artifact deletion on purge after the run record is alread
   await expect(h.runtime.handle({ kind: 'delete', runId })).rejects.toThrow('Artifact cleanup is pending.')
   expect(h.store.getRun(runId)).toBeUndefined()
   expect(h.store.cleanupJobs()).toEqual([meta.id])
+  artifacts.fail = false
   await h.runtime.handle({ kind: 'purge' })
   expect(h.store.cleanupJobs()).toEqual([])
   expect(await artifacts.read(runId, meta.id)).toBeUndefined()
@@ -202,7 +203,7 @@ it('retains a cleanup job if deleting a cancelled late artifact save fails', asy
       return meta
     }
     override async delete(ids: readonly string[]) {
-      if (this.fail) { this.fail = false; throw new Error('Injected EIO') }
+      if (this.fail) throw new Error('Injected EIO')
       return super.delete(ids)
     }
   }
@@ -219,6 +220,7 @@ it('retains a cleanup job if deleting a cancelled late artifact save fails', asy
   await vi.waitFor(() => expect(artifactId).not.toBe(''))
   await vi.waitFor(() => expect(h.store.cleanupJobs()).toEqual([artifactId]))
   expect(h.store.events(runId, 0, 200).at(-1)?.payload).toEqual({ type: 'status', status: 'cancelled' })
+  artifacts.fail = false
   await h.runtime.handle({ kind: 'purge' })
   expect(await artifacts.read(runId, artifactId)).toBeUndefined()
 })

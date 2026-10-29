@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { chmod, lstat, mkdir, open, opendir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { AgentStore, ArtifactMeta, ArtifactStore } from './contracts'
 
 const clone = <T>(value: T): T => structuredClone(value)
@@ -141,38 +142,42 @@ export class FileArtifactStore implements ArtifactStore {
   private async directories(part: string, create = false): Promise<boolean> {
     return await directory(this.dir, create) && await directory(join(this.dir, part), create)
   }
-  /** Cold reconciliation; bounded batches avoid retaining all artifact hashes. */
+  /** Cold reconciliation with a disk-backed index and one metadata scan. */
   async sweepOrphans(referenced: (runId: string, artifactId: string) => boolean): Promise<void> {
     return this.exclusive(async () => {
       if (!await directory(this.dir, false)) return
-      const hasMeta = await this.directories('meta')
-      if (hasMeta) for await (const entry of await opendir(join(this.dir, 'meta'))) {
-        if (!entry.isFile() || !entry.name.endsWith('.json')) continue
-        let meta
-        try { meta = await this.meta(entry.name.slice(0, -5)) } catch { continue }
-        if (meta && !referenced(meta.runId, meta.id)) await rm(this.metaPath(meta.id), { force: true })
-      }
-      const collect = async (hashes: Set<string>) => {
-        if (hasMeta) for await (const entry of await opendir(join(this.dir, 'meta'))) {
+      // Avoid either a history-sized JS set or a reference rescan per blob page.
+      // This disposable index contains opaque IDs/hashes only, with a fixed cache.
+      const path = join(this.dir, `.gc-${randomUUID()}.tmp`)
+      let index: DatabaseSync | undefined
+      try {
+        await (await open(path, 'wx', 0o600)).close()
+        index = new DatabaseSync(path)
+        index.exec('PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA cache_size=-256; PRAGMA temp_store=FILE; CREATE TABLE artifacts(id TEXT PRIMARY KEY, hash TEXT NOT NULL, live INTEGER NOT NULL); CREATE INDEX live_hash ON artifacts(hash) WHERE live=1')
+        const insert = index.prepare('INSERT INTO artifacts VALUES(?,?,?)')
+        let unknown = false
+        if (await this.directories('meta')) for await (const entry of await opendir(join(this.dir, 'meta'))) {
           if (!entry.name.endsWith('.json')) continue
-          // Unknown/corrupt sidecars may own any blob: preserve rather than
-          // guess. Known deletion jobs remain retryable until repaired.
           let meta
-          try { meta = await this.meta(entry.name.slice(0, -5)) } catch { return }
-          if (meta) hashes.delete(meta.sha256)
+          try { meta = await this.meta(entry.name.slice(0, -5)) } catch { unknown = true; continue }
+          if (meta) insert.run(meta.id, meta.sha256, Number(referenced(meta.runId, meta.id)))
         }
-        for (const hash of hashes) await rm(this.blobPath(hash), { force: true })
-      }
-      for await (const prefix of await opendir(this.dir)) {
-        if (!prefix.isDirectory() || !/^[a-f0-9]{2}$/.test(prefix.name)) continue
-        if (!await this.directories(prefix.name)) continue
-        let hashes = new Set<string>()
-        for await (const entry of await opendir(join(this.dir, prefix.name))) {
-          if (!entry.isFile() || !HASH.test(entry.name) || !entry.name.startsWith(prefix.name)) continue
-          hashes.add(entry.name)
-          if (hashes.size === 200) { await collect(hashes); hashes = new Set() }
+        // A corrupt sidecar may own any blob. Leave all cleanup retryable.
+        if (unknown) return
+        const live = index.prepare('SELECT 1 FROM artifacts WHERE hash=? AND live=1 LIMIT 1')
+        for await (const prefix of await opendir(this.dir)) {
+          if (!prefix.isDirectory() || !/^[a-f0-9]{2}$/.test(prefix.name)) continue
+          if (!await this.directories(prefix.name)) continue
+          for await (const entry of await opendir(join(this.dir, prefix.name))) {
+            if (!entry.isFile() || !HASH.test(entry.name) || !entry.name.startsWith(prefix.name)) continue
+            if (!live.get(entry.name)) await rm(this.blobPath(entry.name), { force: true })
+          }
         }
-        if (hashes.size) await collect(hashes)
+        // Preserve sidecar recovery references until every blob unlink succeeds.
+        for (const row of index.prepare('SELECT id FROM artifacts WHERE live=0').iterate()) await rm(this.metaPath(row.id as string), { force: true })
+      } finally {
+        index?.close()
+        await rm(path, { force: true })
       }
     })
   }
@@ -240,8 +245,15 @@ export async function retryArtifactCleanup(store: AgentStore, artifacts: Artifac
   for (;;) {
     const jobs = store.cleanupJobs(after)
     if (!jobs.length) break
-    for (const id of jobs) {
-      try { await artifacts.delete([id]); store.completeCleanup(id) } catch { failed = true }
+    try {
+      await artifacts.delete(jobs)
+      for (const id of jobs) store.completeCleanup(id)
+    } catch {
+      // A failed batch may already have unlinked blobs. Retry only this page
+      // idempotently so one bad artifact cannot strand unrelated cleanup jobs.
+      for (const id of jobs) {
+        try { await artifacts.delete([id]); store.completeCleanup(id) } catch { failed = true }
+      }
     }
     after = jobs.at(-1)!
   }
