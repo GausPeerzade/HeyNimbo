@@ -132,14 +132,28 @@ in the unmodified installed dependencies. Transitive MIT notices are included;
 `json-schema` 0.4.0 offers AFL-2.1 OR BSD-3-Clause and is used under its
 BSD-3-Clause option.
 
-| Connection | Fast | Balanced (default) | Best |
-| --- | --- | --- | --- |
-| OpenAI key / ChatGPT | `gpt-6.1-terra`, low | `gpt-6.1-terra`, medium | `gpt-6.1-sol`, medium |
-| Anthropic | `claude-haiku-5-5`, low | `claude-sonnet-5-5`, low | `claude-opus-5-5`, medium |
-| Google Gemini | `gemini-3.5-flash-lite` | `gemini-3.8-flash` | `gemini-4-argon` |
-| DeepSeek | `deepseek-flash` | `deepseek-flash` | `deepseek-v4-pro` |
-| OpenRouter | `google/gemini-3.5-flash-lite` | `openai/gpt-6.1-terra` | `anthropic/claude-opus-5.5` |
-| Compatible / local | Choose an installed custom model | Choose an installed custom model | Choose an installed custom model |
+Settings → Connection has independent **Provider**, **Model** and **Thinking**
+controls. One answer model and thinking level apply to explanations, 2D and 3D.
+Thinking offers Low, Medium, High and Provider default for the known OpenAI and
+Anthropic models. Other models keep the provider default; unsupported options
+are not sent. Voice synthesis is still chosen automatically and is not a
+separate answer model.
+
+| Connection | Default for new settings | Other recommended models |
+| --- | --- | --- |
+| OpenAI key / ChatGPT | `gpt-6.1-terra`, low | `gpt-6.1-sol` |
+| Anthropic | `claude-sonnet-5-5`, low | `claude-haiku-5-5`, `claude-opus-5-5` |
+| Google Gemini | `gemini-3.8-flash` | `gemini-3.5-flash-lite`, `gemini-4-argon` |
+| DeepSeek | `deepseek-flash` | `deepseek-v4-pro` (text only) |
+| OpenRouter | `openai/gpt-6.1-terra` | `google/gemini-3.5-flash-lite`, `anthropic/claude-opus-5.5` |
+| Compatible / local | Choose an installed model | Discovered or custom model ID |
+
+Existing Fast/Balanced/Best settings migrate to their exact model and effective
+thinking level, not the new defaults. Custom IDs are retained without an
+assumed thinking level. The original settings file is left untouched at load,
+and a private `settings.json.before-model-settings` backup is created before
+the first settings write. Repeated loads/writes do not overwrite that backup.
+The migration never changes the selected provider or any credential.
 
 OpenAI effort is `reasoning.effort`; Anthropic effort is `output_config.effort`,
 not the obsolete manual thinking-budget parameter. Claude's adaptive thinking
@@ -162,9 +176,12 @@ Compatible connections use `/models`, or Ollama `/api/tags` plus `/api/show`
 capabilities. A missing compatible `/models` endpoint allows manual IDs, without
 claiming known vision capability. Unknown capabilities default to **text-only**:
 no capture, no image input, no screen-coordinate drawing. Text answers and history
-still work. Presets are recommended, not claims of live model quality. All models
-are currently labeled **Experimental**, because no real-provider evaluations were
-performed; the UI also supports a Tested label for evaluated catalog entries.
+still work. Recommendations are not guarantees of model quality. The local
+15-request blank-screen evaluations measured Terra, Sonnet and Haiku; the UI's
+latency notes identify the measured thinking level and first-3D-part metric.
+They are not speech-start guarantees. Other providers, SIWC and higher thinking
+levels have not been validated by those evaluations. Catalog entries keep their
+existing Experimental/Tested metadata.
 
 Custom base URLs are validated at the settings/IPC boundary: HTTPS only, except
 HTTP on exactly `127.0.0.1` or `localhost`; no embedded credentials, query or
@@ -224,21 +241,18 @@ restored exactly after each check; no mutation driver was added to the repositor
 Latest full gates pass: **343 desktop tests
 across 49 suites, 20 Rust tests, typecheck and build**.
 
-Hidden, isolated Home/Settings/setup preview captures are in
-`/tmp/nimbo-auth-validation/` (light/dark, ChatGPT/OpenAI/Anthropic/local Connection,
-Your AI/Model/Saved connections/Advanced sections, narrow layout, replacement-key
-entry and first-run screens). Your AI names the current answer model/provider,
-shows read-only automatic voice status and one line per capability. Change moves
-keyboard focus to the provider/model controls. The single Model picker keeps
-Fast, Balanced and Best before discovered models. Saved connections lists every
-provider, its key status/saved date or ChatGPT identity, the current-provider
-marker and row actions. ChatGPT has one signed-in state with Sign out and Manage
-usage; registration identifiers and duplicate Continue/Add actions are not shown.
-Advanced retains custom model/endpoint and account switching. Every section has
-at most one primary action. There is no separate voice-key UI. Preview blocks all network
-and never constructs a credential, capture, audio or gesture pipeline; sample
-account data is synthetic. Diagnostics report no renderer errors or horizontal
-Connection overflow. No visible app run or real screen capture was performed.
+Hidden, isolated Home/Settings/setup captures for the redesign are in
+`/tmp/nimbo-settings-validation/`: every category in light/dark and narrow
+windows, plus provider/model/advanced/key-editor states. Settings shares one
+sidebar and inset row layout. Connection has no duplicate Your AI summary:
+provider, model and thinking live in one aligned group. Saved connections lists
+every provider with its status/date and a compact Manage disclosure for connected
+accounts. Unconnected providers offer setup; selecting one opens key entry inline.
+Advanced retains custom IDs, account switching and (for compatible providers)
+endpoint selection. Automatic voice has a read-only summary and the explicit
+speech permission action when needed; there is no separate voice key.
+Preview blocks all network and uses only synthetic data and never-shown windows,
+not desktop captures. These captures do not establish real-provider behavior.
 
 Bundle impact: SDKs remain external main-process dependencies; no SDK is shipped
 in renderer bundles. Before changes, main output occupied 124 KiB on disk. The

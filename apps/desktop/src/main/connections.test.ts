@@ -36,12 +36,12 @@ it('routes the correct provider key during discovery, validates custom models, a
   expect(settings.get().connection?.provider).toBe('anthropic')
   expect((await connections.request({ kind: 'saveKey', provider: 'google', key: 'synthetic-invalid' })).ok).toBe(false)
   expect(mocks.secrets.has('google-key')).toBe(false)
-  const config = connections.config; config.models.anthropic = { preset: 'custom', customModel: 'not-in-catalog' }
+  const config = connections.config; config.models.anthropic = { model: 'not-in-catalog' }
   await expect(connections.validateSettings(config)).rejects.toThrow('not available')
   expect(await connections.answer().credential()).toBe('synthetic-anthropic')
 })
 it('allows a local no-key compatible endpoint but validates its model list before sending answers', async () => {
-  const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'http://127.0.0.1:1234/v1'; config.models.compatible = { preset: 'custom', customModel: 'local-text' }
+  const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'http://127.0.0.1:1234/v1'; config.models.compatible = { model: 'local-text' }
   settings.set({ ...settings.get(), connection: config })
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: [{ id: 'local-text' }] })))
   const connections = new Connections(settings, vi.fn()); await connections.load(); await connections.validateSettings(config)
@@ -63,7 +63,7 @@ it.each(['chatgpt', 'anthropic'] as const)('saving an OpenAI key never changes a
 
 it.each(['https://b.example.invalid/v1', 'https://a.example.invalid/other/v1'])('binds the encrypted compatible key to its normalized endpoint, never sending A credentials to %s', async endpoint => {
   const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'https://a.example.invalid/v1/'
-  config.models.compatible = { preset: 'custom', customModel: 'model-a' }
+  config.models.compatible = { model: 'model-a' }
   settings.set({ ...settings.get(), connection: config })
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     const isA = String(url) === 'https://a.example.invalid/v1/models'
@@ -81,7 +81,7 @@ it.each(['https://b.example.invalid/v1', 'https://a.example.invalid/other/v1'])(
   expect(reloaded.snapshot().compatibleKeyPresent).toBe(false)
   expect((await reloaded.request({ kind: 'details' })).keyHints?.compatible).toBeUndefined()
   expect((await reloaded.request({ kind: 'models', provider: 'compatible' })).ok).toBe(true)
-  const selected = reloaded.config; selected.models.compatible = { preset: 'custom', customModel: 'model-b' }
+  const selected = reloaded.config; selected.models.compatible = { model: 'model-b' }
   const validated = await reloaded.validateSettings(selected)
   settings.set({ ...settings.get(), connection: validated })
   expect(await reloaded.answer().credential()).toBe('')
@@ -109,7 +109,7 @@ it('requires an explicitly entered key for a new compatible endpoint, including 
 it('ignores legacy compatible keys without an endpoint binding', async () => {
   mocks.secrets.set('compatible-key', 'synthetic-unbound')
   const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'https://b.example.invalid/v1'
-  config.models.compatible = { preset: 'custom', customModel: 'model-b' }; settings.set({ ...settings.get(), connection: config })
+  config.models.compatible = { model: 'model-b' }; settings.set({ ...settings.get(), connection: config })
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_url, init) => {
     expect(new Headers(init?.headers).has('authorization')).toBe(false)
     return Response.json({ data: [{ id: 'model-b' }] })
@@ -120,7 +120,7 @@ it('ignores legacy compatible keys without an endpoint binding', async () => {
 
 it.each([false, true])('repairs an endpoint with a disjoint catalog when the old endpoint is unreachable: %s', async unreachable => {
   const config = defaultConnectionSettings(); config.provider = 'compatible'; config.baseURL = 'https://a.example.invalid/v1'
-  config.models.compatible = { preset: 'custom', customModel: 'model-a' }; settings.set({ ...settings.get(), connection: config })
+  config.models.compatible = { model: 'model-a' }; settings.set({ ...settings.get(), connection: config })
   const transport = vi.fn<typeof fetch>(async url => {
     if (String(url).startsWith('https://a.example.invalid/')) {
       if (unreachable) throw new Error('Old endpoint unreachable')
@@ -131,14 +131,14 @@ it.each([false, true])('repairs an endpoint with a disjoint catalog when the old
   const connections = new Connections(settings, vi.fn()); await connections.load()
   const candidate = connections.config; candidate.baseURL = 'https://b.example.invalid/v1'
   const next = await connections.validateSettings(candidate)
-  expect(next?.models.compatible).toEqual({ preset: 'custom', customModel: '' })
-  expect(candidate.models.compatible.customModel).toBe('model-a')
+  expect(next?.models.compatible).toEqual({ model: '' })
+  expect(candidate.models.compatible.model).toBe('model-a')
   expect(transport).not.toHaveBeenCalled()
   settings.set({ ...settings.get(), connection: next })
   expect(connections.answerReady).toBe(false)
   expect((await connections.request({ kind: 'models', provider: 'compatible' })).ok).toBe(true)
   expect(connections.snapshot().models.map(model => model.id)).toEqual(['model-b'])
-  const selected = connections.config; selected.models.compatible = { preset: 'custom', customModel: 'model-b' }
+  const selected = connections.config; selected.models.compatible = { model: 'model-b' }
   settings.set({ ...settings.get(), connection: await connections.validateSettings(selected) })
   expect(connections.answerReady).toBe(true)
   expect(await connections.answer().credential()).toBe('')
@@ -171,7 +171,7 @@ it.each(['x', '1234', 'private-value-abcd'])('never reveals a complete credentia
   expect(hint?.suffix).not.toBe(value)
 })
 it.each(['chatgpt', 'openai', 'anthropic', 'google', 'deepseek', 'openrouter', 'compatible'] as const)('Use for answers selects %s without changing any saved model choice or the shared OpenAI key', async provider => {
-  const config = defaultConnectionSettings(); config.models.anthropic = { preset: 'best', customModel: 'remembered-claude' }; config.models.compatible = { preset: 'custom', customModel: 'local-model' }
+  const config = defaultConnectionSettings(); config.models.anthropic = { model: 'claude-opus-5-5', effort: 'high' }; config.models.compatible = { model: 'local-model' }
   settings.set({ ...settings.get(), connection: config }); mocks.secrets.set('openai-key', 'private-openai-abcd')
   const changed = vi.fn(), connections = new Connections(settings, changed); await connections.load()
   expect((await connections.request({ kind: 'useForAnswers', provider })).ok).toBe(true)
@@ -190,6 +190,20 @@ it.each(['openai', 'anthropic', 'google', 'deepseek', 'openrouter', 'compatible'
   expect((await connections.request({ kind: 'details' })).keyHints?.[provider]).toBeUndefined()
   expect(provider === 'compatible' ? connections.snapshot().compatibleKeyPresent : connections.snapshot().providers[provider]).toBe(false)
   expect(mocks.secrets.has(`${provider}-key`)).toBe(false)
+})
+it.each(['signIn', 'selectAccount'] as const)('keeps ChatGPT %s management separate from the explicit first-run billing selection', async kind => {
+  const config = defaultConnectionSettings(); config.provider = 'anthropic'; settings.set({ ...settings.get(), connection: config })
+  mocks.secrets.set('chatgpt-auth', JSON.stringify({ hostId: 'urn:uuid:synthetic-host', active: 'account', profiles: [{ id: 'account', clientId: 'synthetic-client', identity: { subject: 'subject', name: 'Alex', email: 'alex@example.invalid' }, tokens: { access: 'synthetic-access', refresh: 'synthetic-refresh', id: 'synthetic-id', expires: Date.now() + 3600000, scopes: ['chatgpt.tokens.use.direct'] } }] }))
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ models: [{ slug: 'gpt-6.1-terra', visibility: 'list' }] })))
+  const connections = new Connections(settings, vi.fn()); await connections.load()
+  vi.spyOn(connections.auth, 'signIn').mockResolvedValue(undefined); vi.spyOn(connections.auth, 'select').mockResolvedValue(undefined)
+  const request = { kind, accountId: 'account' }
+  expect((await connections.request(request)).ok).toBe(true)
+  expect(connections.config.provider).toBe('anthropic')
+  expect(connections.config.models).toEqual(config.models)
+  expect((await connections.request(request, { selectSavedProvider: true })).ok).toBe(true)
+  expect(connections.config.provider).toBe('chatgpt')
+  expect(connections.config.models).toEqual(config.models)
 })
 it('publishes local availability and requests permission only for the explicit connection action', async () => {
   mocks.speech.mockReturnValue({ available: false, authorization: 'notDetermined', reason: 'Allow speech recognition.' })

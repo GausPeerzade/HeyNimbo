@@ -5,12 +5,12 @@ import { createGoogle } from '@ai-sdk/google'
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import type { ProviderId } from '../shared/providers'
+import type { Effort, ProviderId } from '../shared/providers'
 import { noRedirectFetch } from './provider-settings'
 import type { Exchange, Screenshot } from './voice/brain'
 
 export interface AnswerConnection {
-  provider: ProviderId; model: string; effort?: 'low' | 'medium'; vision: boolean; baseURL?: string
+  provider: ProviderId; model: string; effort?: Effort; vision: boolean; baseURL?: string
   credential(): Promise<string>
 }
 export interface AnswerOptions {

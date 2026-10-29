@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, SettingsStore, parseSettings } from './settings'
+import { PROVIDERS } from '../shared/providers'
 
 it('rejects malformed known values, drops unknown keys and fills missing defaults', () => {
   expect(() => parseSettings({ saveHistory: 'false', voice: 'cedar' })).toThrow()
@@ -23,6 +24,24 @@ it('falls back on bad JSON and atomically replaces a private file with no tempor
     expect(JSON.parse(readFileSync(path, 'utf8')).voice).toBe('cedar')
     const copy = store.get(); copy.voice = 'coral'
     expect(store.get().voice).toBe('cedar')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+it('migrates preset settings in memory and preserves a private, unchanged backup before the first write', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nimbo-settings-migration-')), path = join(dir, 'settings.json')
+  const original = JSON.stringify({ ...DEFAULT_SETTINGS, connection: { ...DEFAULT_SETTINGS.connection, provider: 'anthropic', models: Object.fromEntries(PROVIDERS.map(provider => [provider, { preset: 'balanced', customModel: '' }])) } })
+  try {
+    writeFileSync(path, original)
+    const store = new SettingsStore(path)
+    expect(store.get().connection?.models.openai).toEqual({ model: 'gpt-6.1-terra', effort: 'medium' })
+    expect(store.get().connection?.provider).toBe('anthropic')
+    expect(readFileSync(path, 'utf8')).toBe(original)
+    expect(readdirSync(dir)).toEqual(['settings.json'])
+    store.set({ ...store.get(), muted: true })
+    const backup = `${path}.before-model-settings`
+    expect(readFileSync(backup, 'utf8')).toBe(original); expect(statSync(backup).mode & 0o777).toBe(0o600)
+    const reloaded = new SettingsStore(path); reloaded.set({ ...reloaded.get(), muted: false })
+    expect(readFileSync(backup, 'utf8')).toBe(original)
+    expect(reloaded.get().connection?.models).toEqual(store.get().connection?.models)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 it('does not publish new settings or leave a partial file after a failed atomic replacement', () => {

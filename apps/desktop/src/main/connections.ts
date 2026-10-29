@@ -1,5 +1,5 @@
 import { shell } from 'electron'
-import { PROVIDERS, PRESETS, defaultConnectionSettings, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type KeyProvider, type KeyHints, type ModelInfo, type ProviderId } from '../shared/providers'
+import { PROVIDERS, RECOMMENDED_MODELS, defaultConnectionSettings, recommendedModel, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type Effort, type KeyProvider, type KeyHints, type ModelInfo, type ProviderId } from '../shared/providers'
 import { ChatGPTAuth } from './chatgpt-auth'
 import { loadSecret, removeSecret, saveSecret, secretSavedAt } from './secrets'
 import { validateBaseURL } from './provider-settings'
@@ -39,9 +39,9 @@ export class Connections {
   snapshot(): ConnectionSnapshot {
     const config = this.config, selected = selectedModel(config), voice = this.voiceEngine
     const catalog = this.catalogs.get(this.catalogKey(config.provider))
-    const models = catalog ?? [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()]
+    const models = catalog ?? RECOMMENDED_MODELS[config.provider].map(entry => ({ id: entry.model, name: entry.name, vision: entry.vision, tested: false }))
     return {
-      providers: Object.fromEntries(PROVIDERS.map(p => [p, p === 'chatgpt' ? Boolean(this.auth.active?.tokens?.scopes.includes('chatgpt.tokens.use.direct')) : p === 'compatible' ? Boolean(config.models.compatible.customModel) : this.keys.has(p)])) as Record<ProviderId, boolean>,
+      providers: Object.fromEntries(PROVIDERS.map(p => [p, p === 'chatgpt' ? Boolean(this.auth.active?.tokens?.scopes.includes('chatgpt.tokens.use.direct')) : p === 'compatible' ? Boolean(config.models.compatible.model) : this.keys.has(p)])) as Record<ProviderId, boolean>,
       accounts: this.auth.profiles.map(p => ({ id: p.id, name: p.identity?.name ?? 'Finish sign-in', email: p.identity?.email ?? '', connected: Boolean(p.tokens), sharing: Boolean(p.tokens?.scopes.includes('chatgpt.tokens.use.direct')) })), activeAccount: this.auth.active?.id,
       compatibleKeyPresent: Boolean(this.compatibleKey?.baseURL === config.baseURL),
       models, answerModel: selected.model, answerVision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision,
@@ -76,13 +76,13 @@ export class Connections {
   async validateSettings(candidate: ConnectionSettings | undefined): Promise<ConnectionSettings | undefined> {
     if (!candidate) return
     const config = structuredClone(candidate)
-    if (config.baseURL !== this.config.baseURL) config.models.compatible = { preset: 'custom', customModel: '' }
+    if (config.baseURL !== this.config.baseURL) config.models.compatible = { model: '' }
     const choice = config.models[config.provider]
-    if (choice.preset !== 'custom' || !choice.customModel) return config
+    if (!choice.model || recommendedModel(config.provider, choice.model)) return config
     if (config.provider !== 'compatible' && !this.snapshot().providers[config.provider]) return config
     try {
       const models = await this.discover(config.provider, undefined, config)
-      if (models.length && !models.some(m => m.id === choice.customModel)) throw new Error('That model is not available for this connection. Refresh the model list or choose another model.')
+      if (models.length && !models.some(m => m.id === choice.model)) throw new Error('That model is not available for this connection. Refresh the model list or choose another model.')
     } catch (error) { throw new Error(publicConnectionError(error)) }
     return config
   }
@@ -92,14 +92,13 @@ export class Connections {
   }
   /** An explicit provider and model on the saved credentials, for development
    *  evaluation. Settings supply only the compatible endpoint and are never
-   *  written. Without an effort, a preset using this model with one effort supplies it. */
-  answerFor(provider: ProviderId, model: string, effort?: 'low' | 'medium'): AnswerConnection {
+   *  written. Without an effort, a recommended model uses its default thinking level. */
+  answerFor(provider: ProviderId, model: string, effort?: Effort): AnswerConnection {
     const config = { ...structuredClone(this.config), provider }
-    const presets = Object.values(PRESETS[provider]).filter(p => p.model === model)
-    const efforts = new Set(presets.map(p => p.effort))
-    return this.connection(config, { model, effort: effort ?? (efforts.size === 1 ? presets[0]!.effort : undefined), vision: presets.some(p => p.vision) })
+    const recommended = recommendedModel(provider, model)
+    return this.connection(config, { model, effort: effort ?? recommended?.effort, vision: recommended?.vision ?? false })
   }
-  private connection(config: ConnectionSettings, selected: { model: string; effort?: 'low' | 'medium'; vision: boolean }): AnswerConnection {
+  private connection(config: ConnectionSettings, selected: { model: string; effort?: Effort; vision: boolean }): AnswerConnection {
     const catalog = this.catalogs.get(this.catalogKey(config.provider, config))
     return {
       provider: config.provider, ...selected, vision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision, baseURL: config.baseURL,
@@ -141,11 +140,11 @@ export class Connections {
         case 'signIn':
           await this.auth.signIn(request.accountId, request.newAccount)
           if (this.auth.active?.tokens?.scopes.includes('chatgpt.tokens.use.direct')) {
-            this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } })
-            await this.discover('chatgpt'); message = 'Using ChatGPT plan. Voice is selected automatically.'
+            if (options.selectSavedProvider) this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } })
+            await this.discover('chatgpt'); message = this.config.provider === 'chatgpt' ? 'Using ChatGPT plan. Voice is selected automatically.' : 'ChatGPT connected. Choose it as your provider to use plan answers.'
           } else message = 'Signed in, but ChatGPT plan usage is disabled. Enable it with Continue with ChatGPT, or use an API key. An eligible Plus or Pro plan is required.'
           break
-        case 'selectAccount': await this.auth.select(request.accountId); this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } }); if (this.auth.active?.tokens) await this.discover('chatgpt'); break
+        case 'selectAccount': await this.auth.select(request.accountId); if (options.selectSavedProvider) this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } }); if (this.auth.active?.tokens) await this.discover('chatgpt'); break
         case 'signOut': message = await this.auth.signOut(); break
         case 'allowSpeechRecognition': await allowSpeechRecognition(); message = this.voiceEngine.engine === 'builtin' ? 'Built-in speech recognition is ready.' : 'Speech recognition is not available. See the voice summary.'; break
         case 'settings': this.openSettings(); message = 'Choose a connection in Settings.'; break

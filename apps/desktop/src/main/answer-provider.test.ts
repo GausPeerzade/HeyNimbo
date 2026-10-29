@@ -19,19 +19,21 @@ function openaiEvents(terminal: 'response.completed' | 'response.incomplete' = '
     { type: terminal, response: { id: 'resp_mock', status: terminal === 'response.completed' ? 'completed' : 'incomplete', incomplete_details: terminal === 'response.incomplete' ? { reason: 'max_output_tokens' } : null, usage: { input_tokens: 5, output_tokens: 4 } } },
   ]
 }
-it.each(['openai', 'chatgpt'] as const)('normalizes %s Responses SSE with image/history and the exact plan-compatible body', async provider => {
+it.each((['openai', 'chatgpt'] as const).flatMap(provider => ([undefined, 'low', 'medium', 'high'] as const).map(effort => ({ provider, effort }))))('normalizes $provider Responses SSE with thinking $effort, image/history and the exact plan-compatible body', async ({ provider, effort }) => {
   const transport = vi.fn<typeof fetch>(async () => response(openaiEvents()))
-  expect(await collect(options(provider), transport)).toBe('@circle 20 30 10\nHere.')
+  const input = options(provider); input.connection.effort = effort
+  expect(await collect(input, transport)).toBe('@circle 20 30 10\nHere.')
   const [url, init] = transport.mock.calls[0]!, body = JSON.parse(String(init?.body))
   expect(String(url)).toBe('https://api.openai.com/v1/responses')
   expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${key}`)
-  expect(body).toMatchObject({ model: 'gpt-6.1-terra', reasoning: { effort: 'low' }, store: false, stream: true })
+  expect(body).toMatchObject({ model: 'gpt-6.1-terra', store: false, stream: true })
+  expect(body.reasoning?.effort).toBe(effort)
   expect(body.input[0]).toMatchObject({ role: 'developer', content: 'Draw carefully.' })
   expect(body.input.at(-1).content).toContainEqual({ type: 'input_image', image_url: `data:image/jpeg;base64,${Buffer.from('fake-pixels').toString('base64')}` })
   expect(JSON.stringify(body.input)).toContain('Earlier answer')
   for (const field of ['max_output_tokens', 'temperature', 'previous_response_id', 'metadata', 'prompt', 'truncation']) expect(body).not.toHaveProperty(field)
 })
-it('normalizes Anthropic text deltas once and sends base64 screenshots plus system cache control', async () => {
+it.each([undefined, 'low', 'medium', 'high'] as const)('normalizes Anthropic deltas with thinking %s, screenshots and system cache control', async effort => {
   const transport = vi.fn<typeof fetch>(async () => response([
     { type: 'message_start', message: { id: 'msg_mock', type: 'message', role: 'assistant', content: [], model: 'claude-sonnet-5-5', stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
@@ -40,12 +42,13 @@ it('normalizes Anthropic text deltas once and sends base64 screenshots plus syst
     { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 4 } },
     { type: 'message_stop' },
   ], true))
-  expect(await collect(options('anthropic'), transport)).toBe('A Claude answer.')
+  const input = options('anthropic'); input.connection.effort = effort
+  expect(await collect(input, transport)).toBe('A Claude answer.')
   const [url, init] = transport.mock.calls[0]!, body = JSON.parse(String(init?.body)), headers = new Headers(init?.headers)
   expect(String(url)).toBe('https://api.anthropic.com/v1/messages')
   expect(headers.get('x-api-key')).toBe(key); expect(headers.get('anthropic-version')).toBe('2023-06-01')
   expect(body.system).toEqual([{ type: 'text', text: 'Draw carefully.', cache_control: { type: 'ephemeral' } }])
-  expect(body.output_config).toMatchObject({ effort: 'low' })
+  expect(body.output_config?.effort).toBe(effort)
   expect(body.messages.at(-1).content).toContainEqual({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: Buffer.from('fake-pixels').toString('base64') } })
 })
 it('normalizes OpenAI-compatible chat streaming and keeps text-only prompts free of images and drawing permissions', async () => {

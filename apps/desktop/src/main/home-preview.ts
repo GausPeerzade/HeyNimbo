@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { app, BrowserWindow, nativeTheme, session } from 'electron'
-import { defaultConnectionSettings, PRESETS, selectedModel, PROVIDERS, type ConnectionSnapshot } from '../shared/providers'
+import { defaultConnectionSettings, RECOMMENDED_MODELS, selectedModel, PROVIDERS, type ConnectionSnapshot } from '../shared/providers'
 import { AppChannels } from '../shared/app'
 import { Channels } from '../shared/ipc'
 import { AppShell } from './app-shell'
@@ -13,7 +13,7 @@ export function configureHomePreview(): void {
   if (!devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return
   cleanup = isolateDevProfile('home-preview')
   // Long enough for every screen in both themes; the profile goes with the exit.
-  setTimeout(() => { cleanup?.(); app.exit(1) }, 60000).unref()
+  setTimeout(() => { cleanup?.(); app.exit(1) }, 90000).unref()
 }
 
 /** Only app-owned, never-shown windows are captured; no capture/audio/credential path runs. */
@@ -22,10 +22,10 @@ export async function runHomePreview(): Promise<void> {
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
   const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, connectionRequest: async request => request.kind === 'details' ? { ok: true, message: '', keyHints: { openai: { suffix: 'a1b2', savedAt: 1793232000000 }, anthropic: { suffix: 'c3d4', savedAt: 1793232000000 }, compatible: { suffix: 'e5f6', savedAt: 1793232000000 } } } : { ok: false, message: 'Preview only.' }, connectionSnapshot: (): ConnectionSnapshot => {
     const config = shell.settings.get().connection ?? defaultConnectionSettings(), model = selectedModel(config)
-    return { providers: Object.fromEntries(PROVIDERS.map(p => [p, ['chatgpt', 'anthropic', 'compatible'].includes(p) || (p === 'openai' && config.provider !== 'compatible')])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', compatibleKeyPresent: true, models: [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()], answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'Built into your Mac' : 'OpenAI' }
+    return { providers: Object.fromEntries(PROVIDERS.map(p => [p, ['chatgpt', 'anthropic', 'compatible'].includes(p) || (p === 'openai' && config.provider !== 'compatible')])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', compatibleKeyPresent: true, models: RECOMMENDED_MODELS[config.provider].map(entry => ({ id: entry.model, name: entry.name, vision: entry.vision, tested: false })), answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'Built into your Mac' : 'OpenAI' }
   }, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
   shell.keyPresent = true
-  const output = '/tmp/nimbo-auth-validation'
+  const output = '/tmp/nimbo-settings-validation'
   mkdirSync(output, { recursive: true })
   const pause = () => new Promise(resolve => setTimeout(resolve, 350))
   const diagnostics: Record<string, unknown> = {}
@@ -89,7 +89,10 @@ export async function runHomePreview(): Promise<void> {
     shell.setStatus(undefined)
     for (const category of ['General', 'Voice', 'History & privacy', 'Connection', 'About']) {
       settings.webContents.send(AppChannels.navigate, { category }); await pause()
+      await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = 0")
       await capture(settings, `settings-${category.split(' ')[0]!.toLowerCase()}-${theme}`)
+      settings.setSize(680, 520); await pause(); await capture(settings, `settings-${category.split(' ')[0]!.toLowerCase()}-narrow-${theme}`)
+      settings.setSize(760, 610); await pause()
     }
     home.setSize(720, 520); await pause(); await capture(home, `home-narrow-${theme}`)
     for (const draft of ['wrapped', 'overflow'] as const) {
@@ -112,6 +115,17 @@ export async function runHomePreview(): Promise<void> {
       await settings.webContents.executeJavaScript("document.activeElement?.blur(); document.querySelector('main').scrollTop = 0")
       await pause(); await capture(settings, `connection-${provider}-${theme}`)
       if (provider === 'anthropic') {
+        await settings.webContents.executeJavaScript("document.getElementById('manage-openai').open = true; document.getElementById('replace-key-openai').focus()")
+        shell.publish(true); await pause()
+        const retained = await settings.webContents.executeJavaScript("({ open: document.getElementById('manage-openai').open, focus: document.activeElement?.id })") as { open: boolean; focus: string }
+        diagnostics[`manage-retained-${theme}`] = retained
+        if (!retained.open || retained.focus !== 'replace-key-openai') throw new Error('Connection snapshot lost Manage state or focus.')
+        await settings.webContents.executeJavaScript("document.getElementById('replace-key-openai').click(); document.getElementById('connection-key-openai').value = 'synthetic-unsaved-draft'")
+        shell.publish(true); await pause()
+        const draft = await settings.webContents.executeJavaScript("document.getElementById('connection-key-openai')?.value === 'synthetic-unsaved-draft'") as boolean
+        diagnostics[`key-draft-retained-${theme}`] = draft
+        if (!draft) throw new Error('Connection snapshot lost the unsaved key draft.')
+        await settings.webContents.executeJavaScript("document.querySelector('.connection-key-editor').querySelectorAll('button')[1].click(); document.getElementById('manage-openai').open = false")
         for (const target of ['saved-chatgpt', 'saved-google', 'saved-compatible']) {
           await settings.webContents.executeJavaScript(`document.getElementById('${target === 'saved-chatgpt' ? 'saved-connections' : target}').scrollIntoView()`)
           await pause(); await capture(settings, `connection-${target}-${theme}`)
@@ -128,7 +142,7 @@ export async function runHomePreview(): Promise<void> {
     }
     {
       const config = shell.settings.get().connection ?? defaultConnectionSettings()
-      shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider: 'compatible', models: { ...config.models, compatible: { preset: 'custom', customModel: 'local-text' } } } })
+      shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider: 'compatible', models: { ...config.models, compatible: { model: 'local-text' } } } })
       shell.publish(true); settings.webContents.send(AppChannels.navigate, { category: 'Connection' }); await pause()
       await settings.webContents.executeJavaScript("document.activeElement?.blur(); document.querySelector('main').scrollTop = 0")
       await pause(); await capture(settings, `connection-local-${theme}`)

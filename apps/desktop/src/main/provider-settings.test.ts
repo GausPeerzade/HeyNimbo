@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { defaultConnectionSettings, PRESETS, selectedModel } from '../shared/providers'
-import { noRedirectFetch, parseConnectionRequest, parseConnectionSettings, validateBaseURL } from './provider-settings'
+import { defaultConnectionSettings, PROVIDERS, RECOMMENDED_MODELS, modelEfforts, selectedModel } from '../shared/providers'
+import { migrateModelChoice, noRedirectFetch, parseConnectionRequest, parseConnectionSettings, validateBaseURL } from './provider-settings'
 import { parseSettings, DEFAULT_SETTINGS } from './settings'
 afterEach(() => vi.unstubAllGlobals())
 it('allows HTTPS and exact HTTP loopback names only, without embedded credentials or query data', () => {
@@ -12,14 +12,36 @@ it('forbids redirect following even if an SDK requests it', async () => {
   await noRedirectFetch('https://example.invalid/models', { redirect: 'follow', headers: { Authorization: 'synthetic-only' } })
   expect(transport).toHaveBeenCalledWith('https://example.invalid/models', expect.objectContaining({ redirect: 'error' }))
 })
-it('maps verified speed presets and effort independently for each answer provider', () => {
+it('keeps model and thinking independent and exposes levels only for supported models', () => {
   const config = defaultConnectionSettings()
-  expect(selectedModel(config)).toEqual({ model: 'gpt-6.1-terra', effort: 'medium', vision: true })
-  expect(PRESETS.openai.fast).toMatchObject({ model: 'gpt-6.1-terra', effort: 'low' }); expect(PRESETS.chatgpt.best).toMatchObject({ model: 'gpt-6.1-sol', effort: 'medium' })
-  expect(PRESETS.anthropic.fast).toMatchObject({ model: 'claude-haiku-5-5', effort: 'low' }); expect(PRESETS.anthropic.balanced).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' }); expect(PRESETS.anthropic.best.model).toBe('claude-opus-5-5')
-  expect(PRESETS.google.balanced.model).toBe('gemini-3.8-flash'); expect(PRESETS.deepseek.balanced).toMatchObject({ model: 'deepseek-flash', vision: true }); expect(PRESETS.deepseek.best.vision).toBe(false)
-  config.models.openai = { preset: 'custom', customModel: 'custom/model' }
+  expect(selectedModel(config)).toEqual({ model: 'gpt-6.1-terra', effort: 'low', vision: true })
+  for (const provider of PROVIDERS) {
+    config.provider = provider
+    for (const model of RECOMMENDED_MODELS[provider]) {
+      config.models[provider] = { model: model.model, effort: 'high' }
+      expect(selectedModel(config)).toEqual({ model: model.model, vision: model.vision, ...(modelEfforts(provider, model.model).length ? { effort: 'high' } : {}) })
+    }
+  }
+  config.provider = 'openai'; config.models.openai = { model: 'custom/model', effort: 'high' }
   expect(selectedModel(config)).toEqual({ model: 'custom/model', vision: false })
+  expect(() => parseConnectionSettings(config)).toThrow('thinking')
+})
+it('migrates all old presets and custom IDs without overwriting explicit choices', () => {
+  const oldModels = Object.fromEntries(PROVIDERS.map(provider => [provider, { preset: 'balanced', customModel: '' }]))
+  for (const provider of PROVIDERS) {
+    for (const preset of ['fast', 'balanced', 'best'] as const) {
+      const choice = migrateModelChoice(provider, { preset, customModel: '' })
+      const saved = { ...defaultConnectionSettings(), models: { ...oldModels, [provider]: { preset, customModel: '' } } }
+      expect(parseConnectionSettings(saved, true).models[provider]).toEqual(choice)
+    }
+    expect(migrateModelChoice(provider, { preset: 'custom', customModel: 'custom/model' })).toEqual({ model: 'custom/model' })
+  }
+  expect(migrateModelChoice('openai', { preset: 'balanced', customModel: '' })).toEqual({ model: 'gpt-6.1-terra', effort: 'medium' })
+  expect(migrateModelChoice('anthropic', { preset: 'best', customModel: '' })).toEqual({ model: 'claude-opus-5-5', effort: 'medium' })
+  const current = defaultConnectionSettings(); current.models.openai = { model: 'gpt-6.1-sol', effort: 'high' }
+  expect(parseSettings({ connection: current }).connection).toEqual(current)
+  expect(parseConnectionSettings({ ...current, models: {} }, true).models).toEqual(defaultConnectionSettings().models)
+  expect(() => parseConnectionSettings({ ...current, models: oldModels })).toThrow()
 })
 it('validates provider/model/endpoint settings and refuses secret fields in settings or IPC requests', () => {
   const config = defaultConnectionSettings()
@@ -33,8 +55,8 @@ it('validates provider/model/endpoint settings and refuses secret fields in sett
 
 it('allows a compatible endpoint to remain unselected while models are discovered', () => {
   const config = defaultConnectionSettings(); config.provider = 'compatible'
-  config.models.compatible = { preset: 'custom', customModel: '' }
-  expect(parseConnectionSettings(config).models.compatible.customModel).toBe('')
+  config.models.compatible = { model: '' }
+  expect(parseConnectionSettings(config).models.compatible.model).toBe('')
   expect(selectedModel(config).model).toBe('')
 })
 

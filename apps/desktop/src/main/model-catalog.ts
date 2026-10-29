@@ -1,4 +1,4 @@
-import { PRESETS, type KeyProvider, type ModelInfo, type ProviderId } from '../shared/providers'
+import { recommendedModel, type KeyProvider, type ModelInfo, type ProviderId } from '../shared/providers'
 import { noRedirectFetch } from './provider-settings'
 
 export const API_BASES: Record<KeyProvider, string> = { openai: 'https://api.openai.com/v1', anthropic: 'https://api.anthropic.com/v1', google: 'https://generativelanguage.googleapis.com/v1beta', deepseek: 'https://api.deepseek.com', openrouter: 'https://openrouter.ai/api/v1', compatible: '' }
@@ -7,7 +7,7 @@ export function providerHeaders(provider: ProviderId, key: string): Record<strin
   if (provider === 'google') return { 'x-goog-api-key': key }
   return key ? { Authorization: `Bearer ${key}` } : {}
 }
-function knownVision(provider: ProviderId, id: string): boolean { return Object.values(PRESETS[provider]).some(p => p.model === id && p.vision) }
+function knownVision(provider: ProviderId, id: string): boolean { return recommendedModel(provider, id)?.vision ?? false }
 export function catalogModels(provider: ProviderId, body: Record<string, unknown>): ModelInfo[] {
   const rows = (provider === 'chatgpt' || provider === 'google' ? body.models : body.data)
   if (!Array.isArray(rows)) throw new Error('The provider returned an invalid model catalog.')

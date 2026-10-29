@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AppSettings, AppSnapshot } from '../shared/app'
-import { defaultConnectionSettings, PROVIDERS, selectedModel, type ProviderId } from '../shared/providers'
+import { defaultConnectionSettings, PROVIDERS, RECOMMENDED_MODELS, selectedModel, type ProviderId } from '../shared/providers'
 import { DEFAULT_SETTINGS } from '../main/settings'
 import { renderConnections } from './connections'
 
@@ -35,115 +35,98 @@ afterEach(() => vi.unstubAllGlobals())
 function nodes(node: TestNode): TestNode[] { return [node, ...node.children.flatMap(nodes)] }
 function text(node: TestNode): string { return nodes(node).map(child => child.textContent).join(' ') }
 function byId(id: string): TestNode { return nodes(fields).find(node => node.id === id)! }
+function click(node: TestNode, label: string): void { node.querySelectorAll('button').find(button => button.textContent === label)!.onclick!() }
 function snapshot(provider: ProviderId = 'compatible'): AppSnapshot {
   const config = defaultConnectionSettings(); config.provider = provider
-  if (provider === 'compatible') config.models.compatible = { preset: 'custom', customModel: 'model-a' }
+  if (provider === 'compatible') config.models.compatible = { model: 'model-a' }
   const model = selectedModel(config)
-  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, false])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI' } }
+  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, p === provider])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI' } }
 }
-it.each(PROVIDERS)('keeps %s connections ordered, with Your AI, one Model picker, all saved providers and collapsed Advanced', provider => {
+it.each(PROVIDERS)('offers one provider/model/thinking decision group for %s without duplicate summaries', provider => {
   renderConnections(fields as unknown as HTMLElement, snapshot(provider), vi.fn())
-  expect(fields.children.slice(0, 5).map(node => node.id)).toEqual(['your-ai', 'connection-answer', 'connection-model-section', 'saved-connections', 'connection-advanced'])
+  const answer = byId('connection-answer')
+  expect(answer.querySelectorAll('select').map(node => node.id)).toEqual(['connection-provider', 'connection-model-picker', 'connection-thinking'])
+  expect(byId('your-ai')).toBeUndefined()
   expect(PROVIDERS.every(p => byId(`saved-${p}`))).toBe(true)
-  expect(byId('connection-model-section').querySelectorAll('select')).toHaveLength(1)
   expect(byId('connection-advanced')).toMatchObject({ tag: 'details', open: false })
-  expect(byId('connection-voice')).toBeUndefined()
   expect(byId('voice-key')).toBeUndefined()
-  for (const section of fields.children) expect(section.querySelectorAll('button').filter(button => button.className === 'primary').length).toBeLessThanOrEqual(1)
-  const groups = byId('connection-model-picker').children.filter(node => node.tag === 'optgroup')
-  expect(groups.map(group => group.label)).toEqual(provider === 'compatible' ? ['Available models'] : ['Recommended', 'Available models'])
-  if (provider !== 'compatible') expect(groups[0]!.children.map(option => option.value)).toEqual(['preset:fast', 'preset:balanced', 'preset:best'])
-  expect(text(fields)).not.toMatch(/safeStorage|ears and mouth|coordinate drawing/)
-  expect(text(byId('your-ai'))).toContain('Reads answers aloud · Yes')
-  expect(text(byId('your-ai'))).toContain(provider === 'compatible' ? 'Sees your screen · No' : 'Sees your screen · Yes')
-  expect(text(byId(`saved-${provider}`))).toContain('Current answers')
+  const recommended = byId('connection-model-picker').children.find(node => node.label === 'Recommended')
+  expect(recommended?.children.map(option => option.value) ?? []).toEqual(RECOMMENDED_MODELS[provider].map(model => model.model))
+  expect(byId('connection-thinking').disabled).toBe(!['chatgpt', 'openai', 'anthropic'].includes(provider))
+  expect(mocks.request).not.toHaveBeenCalled()
 })
-it('uses the same Model picker for recommended presets and discovered model IDs', () => {
+it('changes model and thinking independently, clears unsupported effort, and preserves other providers', () => {
+  const state = snapshot('anthropic'), update = vi.fn(async (_patch: Partial<AppSettings>) => {})
+  renderConnections(fields as unknown as HTMLElement, state, update)
+  const picker = byId('connection-model-picker'), thinking = byId('connection-thinking')
+  thinking.value = 'high'; thinking.onchange!()
+  expect(update.mock.calls.at(-1)?.[0].connection?.models.anthropic).toEqual({ model: 'claude-sonnet-5-5', effort: 'high' })
+  picker.value = 'claude-opus-5-5'; picker.onchange!()
+  expect(update.mock.calls.at(-1)?.[0].connection?.models.anthropic).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
+  picker.value = 'discovered-model'; picker.onchange!()
+  expect(update.mock.calls.at(-1)?.[0].connection?.models).toEqual({ ...state.settings.connection!.models, anthropic: { model: 'discovered-model' } })
+  thinking.value = ''; thinking.onchange!()
+  expect(update.mock.calls.at(-1)?.[0].connection?.models.anthropic).toEqual({ model: 'claude-sonnet-5-5' })
+})
+it('preserves an explicitly selected Provider default when the model changes', () => {
+  const state = snapshot('openai'); state.settings.connection!.models.openai = { model: 'gpt-6.1-terra' }
   const update = vi.fn(async (_patch: Partial<AppSettings>) => {})
-  renderConnections(fields as unknown as HTMLElement, snapshot('anthropic'), update)
-  const picker = byId('connection-model-picker')
-  picker.value = 'preset:fast'; picker.onchange!()
-  expect(update.mock.calls.at(-1)?.[0].connection?.models.anthropic.preset).toBe('fast')
-  picker.value = 'model:discovered-model'; picker.onchange!()
-  expect(update.mock.calls.at(-1)?.[0].connection?.models.anthropic).toEqual({ preset: 'custom', customModel: 'discovered-model' })
+  renderConnections(fields as unknown as HTMLElement, state, update)
+  const picker = byId('connection-model-picker'); picker.value = 'gpt-6.1-sol'; picker.onchange!()
+  expect(update.mock.calls[0]?.[0].connection?.models.openai).toEqual({ model: 'gpt-6.1-sol' })
+})
+it('selects a provider without changing its model and opens setup inline if not connected', async () => {
+  const state = snapshot('anthropic')
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  const provider = byId('connection-provider'); provider.value = 'google'; provider.onchange!()
+  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'useForAnswers', provider: 'google' } })
+  await Promise.resolve(); fields.replaceChildren(); state.settings.connection!.provider = 'google'
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  const input = byId('connection-key-google')
+  expect(nodes(byId('connection-answer'))).toContain(input)
+  expect(input.focus).not.toHaveBeenCalled()
+  expect(byId('connection-thinking').disabled).toBe(true)
 })
 it.each([['Save endpoint', 'https://b.example.invalid/v1'], ['Ollama', 'http://127.0.0.1:11434/v1'], ['LM Studio', 'http://127.0.0.1:1234/v1']])('clears the endpoint-bound model through %s', (action, endpoint) => {
   const update = vi.fn(async (_patch: Partial<AppSettings>) => {})
   renderConnections(fields as unknown as HTMLElement, snapshot(), update)
-  byId('connection-endpoint').value = endpoint!
-  expect(nodes(byId('connection-advanced'))).toContain(byId('connection-endpoint'))
-  nodes(fields).find(node => node.tag === 'button' && node.textContent === action)!.onclick!()
-  expect(update.mock.calls[0]?.[0].connection).toMatchObject({ baseURL: endpoint, models: { compatible: { preset: 'custom', customModel: '' } } })
+  byId('connection-endpoint').value = endpoint!; click(byId('connection-advanced'), action!)
+  expect(update.mock.calls[0]?.[0].connection).toMatchObject({ baseURL: endpoint, models: { compatible: { model: '' } } })
 })
-it('adds or replaces the single OpenAI provider key without changing the answer provider', async () => {
-  const update = vi.fn()
-  renderConnections(fields as unknown as HTMLElement, snapshot('anthropic'), update)
+it('manages a saved key without changing billing, clears its input, and requests confirmed removal', async () => {
+  const state = snapshot('anthropic'), update = vi.fn(); state.connection!.providers.openai = true
+  renderConnections(fields as unknown as HTMLElement, state, update, { openai: { suffix: 'abcd', savedAt: 0 } })
+  expect(text(byId('saved-openai'))).toContain('Key saved · ends in ••••abcd · Saved')
+  expect(text(byId('saved-anthropic'))).toContain('Current answers')
   byId('replace-key-openai').onclick!()
   const input = byId('connection-key-openai'); input.value = 'synthetic-openai'
   expect(input.focus).toHaveBeenCalled()
-  nodes(byId('saved-openai')).find(node => node.tag === 'button' && node.textContent === 'Test & save key')!.onclick!()
+  click(byId('saved-openai'), 'Test & save key')
   expect(input.value).toBe('')
   expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'saveKey', provider: 'openai', key: 'synthetic-openai' } })
-  expect(update).not.toHaveBeenCalled()
-  await Promise.resolve()
+  expect(update).not.toHaveBeenCalled(); await Promise.resolve()
+  click(byId('saved-openai'), 'Remove')
+  expect(mocks.request).toHaveBeenLastCalledWith({ kind: 'connection', request: { kind: 'removeKey', provider: 'openai' } })
+  await Promise.resolve(); click(byId('saved-openai'), 'Use')
+  expect(mocks.request).toHaveBeenLastCalledWith({ kind: 'connection', request: { kind: 'useForAnswers', provider: 'openai' } })
 })
-it.each([0, 1793232000000])('shows saved hints and date %s for every provider, and sends Use for answers without a model change', savedAt => {
-  const state = snapshot('anthropic'); state.connection!.providers.openai = true; state.connection!.providers.anthropic = true
-  const before = JSON.stringify(state)
-  renderConnections(fields as unknown as HTMLElement, state, vi.fn(), { openai: { suffix: 'abcd', savedAt }, anthropic: { suffix: 'wxyz', savedAt } })
-  expect(text(byId('saved-openai'))).toContain(`Key saved · ends in ••••abcd · Saved ${new Date(savedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`)
-  expect(text(byId('saved-anthropic'))).toContain('Key saved · ends in ••••wxyz · Saved')
-  expect(text(byId('saved-google'))).toContain('Not set')
-  expect(text(byId('saved-compatible'))).toContain('127.0.0.1:11434 · Not set')
-  expect(text(byId('your-ai'))).toContain('Answers: Claude Sonnet 5.5 · Anthropic')
-  expect(text(byId('your-ai'))).toContain('Voice: OpenAI')
-  nodes(byId('your-ai')).find(node => node.tag === 'button' && node.textContent === 'Change')!.onclick!()
-  expect(byId('connection-provider').focus).toHaveBeenCalled()
-  nodes(byId('saved-openai')).find(node => node.tag === 'button' && node.textContent === 'Use for answers')!.onclick!()
-  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'useForAnswers', provider: 'openai' } })
-  expect(JSON.stringify(state)).toBe(before)
-})
-it('shows one clear signed-in ChatGPT state without duplicate sign-in or registration labels', () => {
+it('shows a single signed-in ChatGPT state and no redundant sign-in action', () => {
   const state = snapshot('chatgpt'); state.connection!.activeAccount = 'preview-account'; state.connection!.accounts = [{ id: 'preview-account', name: 'Alex', email: 'alex@example.invalid', connected: true, sharing: true }]
   renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  const row = byId('saved-chatgpt')
-  expect(text(row)).toContain('Signed in as Alex · alex@example.invalid')
-  expect(row.querySelectorAll('button').map(node => node.textContent)).toEqual(['Use for answers', 'Sign out', 'Manage usage'])
-  expect(text(fields)).not.toMatch(/Continue with ChatGPT|Add ChatGPT account|Registration|preview-/)
+  expect(text(byId('saved-chatgpt'))).toContain('Signed in as Alex · alex@example.invalid')
+  expect(byId('saved-chatgpt').querySelectorAll('button').map(node => node.textContent)).toEqual(['Sign out', 'Manage usage'])
+  expect(text(fields)).not.toMatch(/Continue with ChatGPT|Registration|preview-/)
 })
-it('makes voice automatic and read-only, directing setup to the one OpenAI provider row', () => {
-  const state = snapshot(); state.connection!.voice = 'unavailable'
-  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  expect(text(byId('your-ai'))).toContain('Voice: not available. Add an OpenAI key, or use built-in Mac speech.')
-  expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
-  expect(fields.querySelectorAll('input').some(node => node.id.includes('voice'))).toBe(false)
-})
-it('requests removal from the row, then relies on main-process confirmation', () => {
-  const state = snapshot(); state.connection!.providers.anthropic = true
-  renderConnections(fields as unknown as HTMLElement, state, vi.fn(), { anthropic: { suffix: 'abcd' } })
-  nodes(byId('saved-anthropic')).find(node => node.tag === 'button' && node.textContent === 'Remove')!.onclick!()
-  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'removeKey', provider: 'anthropic' } })
-})
-it('shows one user-click speech permission action in Your AI, with no separate voice settings', async () => {
+it('keeps voice automatic with an explicit permission action only when needed', async () => {
   const state = snapshot('anthropic'); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Allow speech recognition.', needsSpeechPermission: true }
   renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  expect(mocks.request).not.toHaveBeenCalled()
-  const actions = byId('your-ai').querySelectorAll('button').filter(node => node.textContent === 'Allow speech recognition')
-  expect(actions).toHaveLength(1)
-  expect(fields.querySelectorAll('input').some(node => node.id.includes('voice'))).toBe(false)
-  actions[0]!.onclick!()
-  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'allowSpeechRecognition' } })
-  await Promise.resolve()
-})
-it.each(['OpenAI', 'Built into your Mac'] as const)('shows Voice: %s without configuration actions', voice => {
-  const state = snapshot(); state.connection!.voice = voice
-  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  expect(text(byId('your-ai'))).toContain(`Voice: ${voice}`)
-  expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
-})
-it('shows the unavailable reason without a permission action when usage strings are missing', () => {
-  const state = snapshot(); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Missing usage descriptions.' }
-  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
-  expect(text(byId('your-ai'))).toContain('Missing usage descriptions.')
-  expect(byId('your-ai').querySelectorAll('button').map(node => node.textContent)).toEqual(['Change'])
+  expect(mocks.request).not.toHaveBeenCalled(); expect(text(byId('connection-voice'))).toContain('Allow speech recognition.')
+  click(byId('connection-voice'), 'Allow speech recognition')
+  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'allowSpeechRecognition' } }); await Promise.resolve()
+  for (const voice of ['OpenAI', 'Built into your Mac', 'unavailable'] as const) {
+    fields.replaceChildren(); state.connection.voice = voice; state.connection.needsSpeechPermission = false; state.connection.voiceReason = 'Missing usage descriptions.'
+    renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+    expect(text(byId('connection-voice'))).toContain(voice === 'unavailable' ? 'Missing usage descriptions.' : `Voice: ${voice}`)
+    expect(byId('connection-voice').querySelectorAll('button')).toHaveLength(0)
+  }
 })

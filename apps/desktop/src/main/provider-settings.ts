@@ -1,4 +1,4 @@
-import { PROVIDERS, defaultConnectionSettings, type ConnectionRequest, type ConnectionSettings, type KeyProvider, type ModelChoice, type ProviderId } from '../shared/providers'
+import { PROVIDERS, modelEfforts, defaultConnectionSettings, type ConnectionRequest, type ConnectionSettings, type Effort, type KeyProvider, type ModelChoice, type ProviderId } from '../shared/providers'
 
 export function validateBaseURL(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048) throw new Error('Invalid endpoint URL.')
@@ -14,7 +14,32 @@ function object(value: unknown): Record<string, unknown> {
 function shape(value: Record<string, unknown>, keys: string[]): void {
   if (Object.keys(value).some(key => !keys.includes(key))) throw new Error('Unknown connection field.')
 }
-export function parseConnectionSettings(value: unknown): ConnectionSettings {
+/** The speed presets each provider stored before thinking became its own choice; read only to migrate saved settings. */
+const LEGACY_PRESETS: Record<ProviderId, Record<'fast' | 'balanced' | 'best', ModelChoice>> = {
+  chatgpt: { fast: { model: 'gpt-6.1-terra', effort: 'low' }, balanced: { model: 'gpt-6.1-terra', effort: 'medium' }, best: { model: 'gpt-6.1-sol', effort: 'medium' } },
+  openai: { fast: { model: 'gpt-6.1-terra', effort: 'low' }, balanced: { model: 'gpt-6.1-terra', effort: 'medium' }, best: { model: 'gpt-6.1-sol', effort: 'medium' } },
+  anthropic: { fast: { model: 'claude-haiku-5-5', effort: 'low' }, balanced: { model: 'claude-sonnet-5-5', effort: 'low' }, best: { model: 'claude-opus-5-5', effort: 'medium' } },
+  google: { fast: { model: 'gemini-3.5-flash-lite' }, balanced: { model: 'gemini-3.8-flash' }, best: { model: 'gemini-4-argon' } },
+  deepseek: { fast: { model: 'deepseek-flash' }, balanced: { model: 'deepseek-flash' }, best: { model: 'deepseek-v4-pro' } },
+  // The OpenRouter preset named an effort, but its SDK options never carried one.
+  openrouter: { fast: { model: 'google/gemini-3.5-flash-lite' }, balanced: { model: 'openai/gpt-6.1-terra' }, best: { model: 'anthropic/claude-opus-5.5' } },
+  compatible: { fast: { model: '' }, balanced: { model: '' }, best: { model: '' } },
+}
+function modelChoice(provider: ProviderId, model: unknown, effort: unknown): ModelChoice {
+  if (typeof model !== 'string' || model.length > 200 || (model !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(model))) throw new Error('Invalid model choice.')
+  if (!model && provider !== 'compatible') throw new Error('Choose a model.')
+  if (effort !== undefined && !modelEfforts(provider, model).includes(effort as Effort)) throw new Error('Invalid thinking level.')
+  return effort === undefined ? { model } : { model, effort: effort as Effort }
+}
+/** Saved `{ preset, customModel }` becomes the preset's model and thinking level; a custom model keeps its ID and sends no thinking level. */
+export function migrateModelChoice(provider: ProviderId, value: Record<string, unknown>): ModelChoice {
+  shape(value, ['preset', 'customModel'])
+  if (value.preset === 'custom') return modelChoice(provider, value.customModel, undefined)
+  if (value.preset !== 'fast' && value.preset !== 'balanced' && value.preset !== 'best') throw new Error('Invalid model choice.')
+  return structuredClone(LEGACY_PRESETS[provider][value.preset])
+}
+/** `saved` accepts the older preset shape and missing providers, which keep their defaults. */
+export function parseConnectionSettings(value: unknown, saved = false): ConnectionSettings {
   const input = object(value); shape(input, ['provider', 'models', 'baseURL'])
   if (!PROVIDERS.includes(input.provider as ProviderId)) throw new Error('Invalid answer provider.')
   const models = object(input.models); shape(models, [...PROVIDERS])
@@ -22,10 +47,11 @@ export function parseConnectionSettings(value: unknown): ConnectionSettings {
   result.provider = input.provider as ProviderId
   result.baseURL = validateBaseURL(input.baseURL)
   for (const provider of PROVIDERS) {
-    const choice = object(models[provider]); shape(choice, ['preset', 'customModel'])
-    if (typeof choice.preset !== 'string' || !['fast', 'balanced', 'best', 'custom'].includes(choice.preset) || typeof choice.customModel !== 'string' || choice.customModel.length > 200 || (choice.customModel !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(choice.customModel))) throw new Error('Invalid model choice.')
-    if (choice.preset === 'custom' && !choice.customModel && provider !== 'compatible') throw new Error('Enter a custom model ID.')
-    result.models[provider] = choice as unknown as ModelChoice
+    if (saved && models[provider] === undefined) continue
+    const choice = object(models[provider])
+    if (saved && 'preset' in choice) { result.models[provider] = migrateModelChoice(provider, choice); continue }
+    shape(choice, ['model', 'effort'])
+    result.models[provider] = modelChoice(provider, choice.model, choice.effort)
   }
   return result
 }

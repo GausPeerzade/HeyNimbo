@@ -12,11 +12,16 @@ export function button(text: string, action: () => void, className = ''): HTMLBu
   const node = element('button', className, text); node.type = 'button'; node.onclick = action; return node
 }
 export const isSnapshot = (value: unknown): value is AppSnapshot => Boolean(value && typeof value === 'object' && 'conversations' in value)
-// Lucide: panel-left, plus and arrow-up (notices in the root).
+// Lucide icons (notices in the root).
 const paths = {
   sidebar: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   send: '<path d="m5 12 7-7 7 7M12 19V5"/>',
+  general: '<path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/>',
+  voice: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>',
+  history: '<path d="M3 12a9 9 0 1 0 2.5-6.2L3 8m0-5v5h5m4-1v5l3 2"/>',
+  connection: '<path d="m10 13 4-4m-5 7-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m0 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
+  about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>',
 }
 export function icon(name: keyof typeof paths): SVGSVGElement {
   const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg')

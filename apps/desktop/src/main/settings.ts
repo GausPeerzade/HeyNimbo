@@ -28,7 +28,7 @@ export function parseSettings(value: unknown, complete = false): AppSettings {
     if (![0, 7, 30, 90, 'forever'].includes(input.retention as number)) throw new Error('Invalid history retention.')
     result.retention = input.retention as AppSettings['retention']
   }
-  if (input.connection !== undefined) result.connection = parseConnectionSettings(input.connection)
+  if (input.connection !== undefined) result.connection = parseConnectionSettings(input.connection, !complete)
   if (input.homeBounds !== undefined) {
     const b = input.homeBounds as Record<string, unknown> | null
     if (!b || typeof b !== 'object' || Array.isArray(b) || (complete && Object.keys(b).some(key => !['x', 'y', 'width', 'height'].includes(key))) || !['x', 'y', 'width', 'height'].every(key => typeof b[key] === 'number' && Number.isFinite(b[key])) || Number(b.width) < 720 || Number(b.height) < 520) throw new Error('Invalid Home bounds.')
@@ -39,15 +39,25 @@ export function parseSettings(value: unknown, complete = false): AppSettings {
 
 export class SettingsStore {
   private value: AppSettings
+  private migrationBackup?: string
   constructor(private readonly path: string) {
-    try { this.value = parseSettings(JSON.parse(readFileSync(path, 'utf8'))) }
-    catch { this.value = { ...DEFAULT_SETTINGS, connection: defaultConnectionSettings() } }
+    try {
+      const original = readFileSync(path, 'utf8'), saved: unknown = JSON.parse(original)
+      this.value = parseSettings(saved)
+      const connection = (saved as { connection?: { models?: Record<string, object> } }).connection
+      if (Object.values(connection?.models ?? {}).some(choice => 'preset' in choice)) this.migrationBackup = original
+    } catch { this.value = { ...DEFAULT_SETTINGS, connection: defaultConnectionSettings() } }
   }
   get(): AppSettings { return structuredClone(this.value) }
   set(value: unknown): AppSettings {
     const next = parseSettings(value, true)
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 })
     const temp = `${this.path}.tmp`
+    if (this.migrationBackup !== undefined) {
+      try { writeFileSync(`${this.path}.before-model-settings`, this.migrationBackup, { flag: 'wx', mode: 0o600 }) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+      this.migrationBackup = undefined
+    }
     try {
       const fd = openSync(temp, 'w', 0o600)
       try { chmodSync(temp, 0o600); writeFileSync(fd, JSON.stringify(next)); fsyncSync(fd) }
