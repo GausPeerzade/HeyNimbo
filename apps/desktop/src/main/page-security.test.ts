@@ -25,7 +25,10 @@ it.each(['home', 'settings', 'notch', 'setup'] as const)('authenticates the exac
   expect(isPageSender(event, window, page)).toBe(true)
   expect(isPageSender({ ...event, sender: {} } as IpcMainEvent, window, page)).toBe(false)
   expect(isPageSender({ ...event, senderFrame: { url: frame.url } } as IpcMainEvent, window, page)).toBe(false)
-  for (const url of ['https://untrusted.invalid', 'file:///tmp/home.html', `${pageURL(page)}?spoof=1`]) {
+  // A skip link only adds an anchor; the same document must stay trusted.
+  frame.url = `${pageURL(page)}#content`
+  expect(isPageSender(event, window, page)).toBe(true)
+  for (const url of ['https://untrusted.invalid', 'file:///tmp/home.html', `${pageURL(page)}?spoof=1`, `${pageURL(page)}?spoof=1#content`]) {
     frame.url = url
     expect(isPageSender(event, window, page)).toBe(false)
   }
