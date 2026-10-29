@@ -2,11 +2,19 @@ import { app, screen } from 'electron'
 import type { Mark } from '../shared/beats'
 import { devFlag } from './dev'
 import type { OverlayManager } from './windows'
+import { pumpDemo } from './pump-demo'
+import { isolateDevProfile } from './dev-profile'
+
+let cleanupProfile: (() => void) | undefined
+
+export function configureDrawDemo(): void {
+  if (devFlag('NIMBO_DEBUG_DRAW_DEMO')) cleanupProfile = isolateDevProfile('draw-demo')
+}
 
 /** A last-resort process deadline, installed before waiting for app readiness. */
 export function limitDrawDemoRuntime(): void {
   if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return
-  setTimeout(() => app.exit(0), Math.max(0, 40_000 - process.uptime() * 1000))
+  setTimeout(() => { cleanupProfile?.(); app.exit(0) }, Math.max(0, 40_000 - process.uptime() * 1000))
 }
 
 /** Silent teaching beats; main returns before starting audio, gestures,
@@ -49,7 +57,14 @@ export function scheduleDrawDemo(overlays: OverlayManager): boolean {
     overlays.clear()
     console.info('[draw-demo] start: water cycle')
     let delay = 0
+    // Keep the complete 2D fixture, at a brisk pace, before the mechanism.
     for (const beat of beats) {
+      const durationMs = beat.durationMs * 0.4
+      setTimeout(() => overlays.drawBeat(beat.marks, durationMs, space), delay)
+      delay += durationMs
+    }
+    setTimeout(() => { overlays.clear(); console.info('[draw-demo] start: bicycle pump') }, delay)
+    for (const beat of pumpDemo(bounds.width, bounds.height)) {
       setTimeout(() => overlays.drawBeat(beat.marks, beat.durationMs, space), delay)
       delay += beat.durationMs
     }

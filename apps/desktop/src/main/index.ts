@@ -10,7 +10,7 @@ import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, schedul
 import { startGestures } from './gestures'
 import { loadOpenAIKey } from './secrets'
 import { openSetupWindow } from './setup-window'
-import { limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
+import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { TalkSession } from './voice/talk'
@@ -91,6 +91,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
 
 let monitor: GestureMonitor | undefined
 configureHomePreview()
+configureDrawDemo()
 limitDrawDemoRuntime()
 const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()

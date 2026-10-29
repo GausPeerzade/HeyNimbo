@@ -3,20 +3,22 @@ import { afterEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
-  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(),
+  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(),
+  mkdtemp: vi.fn(() => '/tmp/nimbo-draw-demo-fixture'), removeProfile: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
 }))
 
 vi.mock('electron', () => ({
-  app: { getLoginItemSettings: () => ({ wasOpenedAtLogin: false }), requestSingleInstanceLock: mocks.lock, isPackaged: false, whenReady: () => Promise.resolve(), on: vi.fn(), dock: { hide: vi.fn() }, quit: mocks.quit, exit: mocks.exit },
+  app: { setPath: mocks.paths, getLoginItemSettings: () => ({ wasOpenedAtLogin: false }), requestSingleInstanceLock: mocks.lock, isPackaged: false, whenReady: () => Promise.resolve(), on: vi.fn(), dock: { hide: vi.fn() }, quit: mocks.quit, exit: mocks.exit },
   screen: {
     on: vi.fn(),
     getCursorScreenPoint: () => ({ x: 500, y: 400 }),
     getDisplayNearestPoint: () => ({ bounds: { x: 0, y: 0, width: 1440, height: 900 } }),
   },
 }))
+vi.mock('node:fs', async (load) => ({ ...await load<typeof import('node:fs')>(), mkdtempSync: mocks.mkdtemp, rmSync: mocks.removeProfile }))
 vi.mock('./home-preview', () => ({ configureHomePreview: vi.fn(), runHomePreview: mocks.preview }))
-vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
+vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
@@ -43,10 +45,13 @@ it('boots the real demo branch without constructing audio, starting talk or acce
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   vi.spyOn(console, 'info').mockImplementation(() => {})
   await import('./index')
-  await vi.advanceTimersByTimeAsync(34100)
-  expect(mocks.overlays.drawBeat).toHaveBeenCalledTimes(11)
+  await vi.advanceTimersByTimeAsync(38600)
+  expect(mocks.mkdtemp).toHaveBeenCalledWith('/tmp/nimbo-draw-demo-')
+  expect(mocks.paths.mock.calls).toEqual([['userData', '/tmp/nimbo-draw-demo-fixture'], ['sessionData', '/tmp/nimbo-draw-demo-fixture']])
+  expect(mocks.paths.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
+  expect(mocks.overlays.drawBeat).toHaveBeenCalledTimes(19)
   expect(mocks.overlays.onStrokeStarted).toBeUndefined()
-  for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup]) {
+  for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell]) {
     expect(dependency).not.toHaveBeenCalled()
   }
   expect(mocks.quit).toHaveBeenCalledOnce()

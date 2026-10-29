@@ -15,10 +15,12 @@
   "dependencies": {
     "@nimboguide/native": "workspace:*",
     "perfect-freehand": "^1.2.3",
+    "three": "^0.186.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
     "electron": "^45.1.0",
     "electron-builder": "^26.18.0",

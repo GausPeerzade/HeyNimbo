@@ -75,3 +75,12 @@ it('keeps a minimum-size card readable and on display through 2× parse → geom
   expect(row.writing.shortened).toBe(false)
   expect(row.words[0] + row.writing.lines[0]!.width).toBeLessThanOrEqual(bounds.width - CARD_PADDING)
 })
+
+it('scales only model-card screen bounds, never model-space dimensions, positions or motion', () => {
+  const image = { width: 2880, height: 1800 }
+  const lines = ['@model pump 2700 1600 600 500 "Pump"', '@part pump rod cylinder r=0.1 h=2 at=1,2,3', '@move pump rod slide amount=1', '@tag pump rod "Rod" right', '@cut pump view']
+  const marks = lines.map((line) => parseMark(line, image)!)
+  const mapped = toOverlaySpace(marks, { frame: left.bounds, pixelWidth: 2880, pixelHeight: 1800 }, left.bounds)
+  expect(mapped[0]).toMatchObject({ kind: 'model', x: 1120, y: 650, w: 320, h: 250 })
+  expect(mapped.slice(1)).toEqual(marks.slice(1))
+})

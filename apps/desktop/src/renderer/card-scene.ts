@@ -40,7 +40,7 @@ export class CardScene {
   readonly cards = new Map<string, CardState>()
   readonly objects = new Set<SceneObject>()
 
-  open(mark: Extract<Mark, { kind: 'card' }>): CardState | undefined {
+  open(mark: Extract<Mark, { kind: 'card' | 'model' }>): CardState | undefined {
     if (this.cards.size >= 3 || this.cards.has(mark.id)) return undefined
     const card: CardState = { ...mark, offset: [0, 0], cursor: CARD_HEADER + CARD_PADDING, steps: 0, omittedSteps: 0, closed: false }
     this.cards.set(card.id, card)
@@ -109,9 +109,10 @@ export function objectPoint(object: SceneObject | undefined, point: Point): Poin
 }
 
 export function markCenter(mark: Mark): Point | undefined {
-  if (mark.kind === 'clear' || mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') return undefined
+  if (['part', 'move', 'cut', 'tag'].includes(mark.kind) || mark.kind === 'clear' || mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') return undefined
   if (mark.kind === 'line' || mark.kind === 'arrow') return [(mark.x1 + mark.x2) / 2, (mark.y1 + mark.y2) / 2]
   if (mark.kind === 'curve') return [mark.points.reduce((sum, p) => sum + p[0], 0) / mark.points.length, mark.points.reduce((sum, p) => sum + p[1], 0) / mark.points.length]
-  if (mark.kind === 'box' || mark.kind === 'highlight' || mark.kind === 'card') return [mark.x + mark.w / 2, mark.y + mark.h / 2]
+  if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') return undefined
+  if (mark.kind === 'box' || mark.kind === 'highlight' || mark.kind === 'card' || mark.kind === 'model') return [mark.x + mark.w / 2, mark.y + mark.h / 2]
   return [mark.x, mark.y]
 }
