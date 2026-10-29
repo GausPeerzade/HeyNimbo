@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
-  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(),
+  quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(), evaluation: vi.fn(),
   policy: vi.fn(), menu: vi.fn(), dockHide: vi.fn(),
   mkdtemp: vi.fn(() => '/tmp/nimbo-draw-demo-fixture'), removeProfile: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
 vi.mock('node:fs', async (load) => ({ ...await load<typeof import('node:fs')>(), mkdtempSync: mocks.mkdtemp, rmSync: mocks.removeProfile }))
 vi.mock('./home-preview', () => ({ configureHomePreview: vi.fn(), runHomePreview: mocks.preview }))
 vi.mock('./model-gallery', async (load) => ({ ...await load<typeof import('./model-gallery')>(), runModelGallery: mocks.gallery }))
+vi.mock('./model-eval', async (load) => ({ ...await load<typeof import('./model-eval')>(), runModelEval: mocks.evaluation }))
 vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
@@ -103,6 +104,28 @@ it('runs the hidden 3D gallery in its own profile, launched background-only, wit
   expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
   for (const before of [mocks.policy, mocks.paths]) expect(before.mock.invocationCallOrder.at(-1)!).toBeLessThan(mocks.lock.mock.invocationCallOrder[0]!)
   for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
+})
+it('runs the 3D eval on the normal profile, behind the instance lock, with no overlay, capture, gesture, audio or voice pipeline', async () => {
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1')
+  vi.spyOn(process, 'uptime').mockReturnValue(0)
+  await import('./index')
+  await vi.waitFor(() => expect(mocks.evaluation).toHaveBeenCalledOnce())
+  // Saved keys live in the normal profile, so it is not swapped for a throwaway one.
+  expect(mocks.mkdtemp).not.toHaveBeenCalled(); expect(mocks.paths).not.toHaveBeenCalled()
+  expect(mocks.lock).toHaveBeenCalledOnce()
+  expect(mocks.policy).toHaveBeenCalledWith('prohibited'); expect(mocks.menu).toHaveBeenCalledWith(null)
+  for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup, mocks.shell, mocks.overlays.sync]) expect(dependency).not.toHaveBeenCalled()
+})
+it('cannot start the 3D eval in a packaged app', async () => {
+  vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_3D_EVAL', '1')
+  const electron = await import('electron')
+  Object.defineProperty(electron.app, 'isPackaged', { value: true, configurable: true })
+  try {
+    mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
+    await import('./index')
+    await vi.waitFor(() => expect(mocks.shell).toHaveBeenCalled())
+    expect(mocks.evaluation).not.toHaveBeenCalled(); expect(mocks.policy).not.toHaveBeenCalled()
+  } finally { Object.defineProperty(electron.app, 'isPackaged', { value: false, configurable: true }) }
 })
 it('routes Home preview before creating any capture, gesture, audio or credential pipeline', async () => {
   vi.resetModules(); vi.clearAllMocks(); vi.stubEnv('NIMBO_DEBUG_HOME_PREVIEW', '1')

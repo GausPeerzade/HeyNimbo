@@ -13,7 +13,7 @@ export class Connections {
   private compatibleKey?: { baseURL: string; key: string }
   private catalogs = new Map<string, ModelInfo[]>()
   private mutating = false
-  constructor(private readonly settings: SettingsStore, private readonly changed: () => void, private readonly openSettings: () => void = () => {}) {}
+  constructor(private readonly settings: Pick<SettingsStore, 'get' | 'set'>, private readonly changed: () => void, private readonly openSettings: () => void = () => {}) {}
   async load(): Promise<void> {
     for (const provider of PROVIDERS) if (provider !== 'chatgpt') {
       const key = await loadSecret(`${provider}-key`)
@@ -73,7 +73,19 @@ export class Connections {
     return config
   }
   answer(): AnswerConnection {
-    const config = structuredClone(this.config), selected = selectedModel(config)
+    const config = structuredClone(this.config)
+    return this.connection(config, selectedModel(config))
+  }
+  /** An explicit provider and model on the saved credentials, for development
+   *  evaluation. Settings supply only the compatible endpoint and are never
+   *  written. Without an effort, a preset using this model with one effort supplies it. */
+  answerFor(provider: ProviderId, model: string, effort?: 'low' | 'medium'): AnswerConnection {
+    const config = { ...structuredClone(this.config), provider }
+    const presets = Object.values(PRESETS[provider]).filter(p => p.model === model)
+    const efforts = new Set(presets.map(p => p.effort))
+    return this.connection(config, { model, effort: effort ?? (efforts.size === 1 ? presets[0]!.effort : undefined), vision: presets.some(p => p.vision) })
+  }
+  private connection(config: ConnectionSettings, selected: { model: string; effort?: 'low' | 'medium'; vision: boolean }): AnswerConnection {
     const catalog = this.catalogs.get(this.catalogKey(config.provider, config))
     return {
       provider: config.provider, ...selected, vision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision, baseURL: config.baseURL,

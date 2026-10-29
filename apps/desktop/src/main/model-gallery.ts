@@ -17,7 +17,7 @@ const DEADLINE_MS = 58_000
 /** Hidden windows rendering at once, and speech pace: a full set fits under the deadline. */
 const CONCURRENCY = 6
 const PACE = 0.6
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 interface GalleryReport {
   activeAtReady: boolean
@@ -67,27 +67,28 @@ export async function runModelGallery(): Promise<void> {
   app.quit()
 }
 
-async function hiddenOverlay(names: Map<WebContents, string>, name: string): Promise<BrowserWindow> {
+/** The real overlay page in a window that is never shown, focused or given network. */
+export async function hiddenOverlay(names: Map<WebContents, string>, name: string, view: { width: number; height: number } = VIEW): Promise<BrowserWindow> {
   const window = new BrowserWindow({
-    ...VIEW, show: false, paintWhenInitiallyHidden: true, frame: false, focusable: false, skipTaskbar: true,
+    ...view, show: false, paintWhenInitiallyHidden: true, frame: false, focusable: false, skipTaskbar: true,
     backgroundColor: '#7b888e', webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   })
   names.set(window.webContents, name)
   await loadPage(window, 'overlay')
-  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) send(window.webContents, { kind: 'debug', frameTrace: true })
+  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) sendOverlay(window.webContents, { kind: 'debug', frameTrace: true })
   return window
 }
 
-function send(contents: WebContents, command: OverlayCommand): void {
+export function sendOverlay(contents: WebContents, command: OverlayCommand): void {
   if (!contents.isDestroyed()) contents.send(Channels.overlay, command)
 }
 
-async function save(contents: WebContents, file: string, rect = CAPTURE): Promise<void> {
+export async function saveCapture(contents: WebContents, file: string, rect = CAPTURE): Promise<void> {
   writeFileSync(file, (await contents.capturePage(rect)).toPNG())
 }
 
 /** Trusted pointer input through DevTools: sendInputEvent needs a focused window. */
-async function drag(contents: WebContents, from: [number, number], by: [number, number]): Promise<void> {
+export async function drag(contents: WebContents, from: [number, number], by: [number, number]): Promise<void> {
   if (!contents.debugger.isAttached()) contents.debugger.attach('1.3')
   const mouse = (type: string, x: number, y: number): Promise<unknown> =>
     contents.debugger.sendCommand('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 })
@@ -108,7 +109,7 @@ async function runFixture(fixture: ModelFixture, directory: string, names: Map<W
   const streamed = devSetting('NIMBO_DEBUG_3D_GALLERY_PREPARE') !== '0'
   const prepare = (index: number): void => {
     const marks = beats[index]?.marks.filter((mark) => mark.kind === 'model' || mark.kind === 'part') ?? []
-    if (streamed && marks.length) send(contents, { kind: 'prepare', marks, epoch: 1 })
+    if (streamed && marks.length) sendOverlay(contents, { kind: 'prepare', marks, epoch: 1 })
   }
   // The real overlay loads at app start, long before an answer: let its warm stage finish first.
   await sleep(1200)
@@ -117,18 +118,18 @@ async function runFixture(fixture: ModelFixture, directory: string, names: Map<W
   for (const [index, beat] of beats.entries()) {
     prepare(index + 1)
     const durationMs = Math.round(beat.durationMs * PACE)
-    send(contents, { kind: 'beat', marks: beat.marks, durationMs, from: { x: 1100, y: 720 }, epoch: 1 })
+    sendOverlay(contents, { kind: 'beat', marks: beat.marks, durationMs, from: { x: 1100, y: 720 }, epoch: 1 })
     await sleep(durationMs)
-    if (fixture.stages.includes(index + 1)) await save(contents, join(directory, `${fixture.name}-${index + 1}-build.png`))
+    if (fixture.stages.includes(index + 1)) await saveCapture(contents, join(directory, `${fixture.name}-${index + 1}-build.png`))
   }
   await sleep(1400)
-  await save(contents, join(directory, `${fixture.name}-final-a.png`))
-  if (fixture.name === 'pump') await save(contents, join(directory, 'pump-final-cards.png'), { x: 0, y: 0, ...VIEW })
+  await saveCapture(contents, join(directory, `${fixture.name}-final-a.png`))
+  if (fixture.name === 'pump') await saveCapture(contents, join(directory, 'pump-final-cards.png'), { x: 0, y: 0, ...VIEW })
   await drag(contents, [MODEL_CARD.x + MODEL_CARD.w / 2, MODEL_CARD.y + MODEL_CARD.h / 2 + 40], [-110, 36])
   await sleep(450)
-  await save(contents, join(directory, `${fixture.name}-final-b.png`))
+  await saveCapture(contents, join(directory, `${fixture.name}-final-b.png`))
   // A swaying model never goes idle, so end the trace explicitly to get its report.
-  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) { send(contents, { kind: 'debug', frameTrace: false }); await sleep(400) }
+  if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) { sendOverlay(contents, { kind: 'debug', frameTrace: false }); await sleep(400) }
   window.destroy()
 }
 
@@ -143,9 +144,9 @@ async function runRobustness(directory: string, report: GalleryReport): Promise<
   const cycle = fixtureBeats('@model cycle 40 40 640 600 "Cycle"\n@part cycle block box round=0.1 mat=brass\nA block.', VIEW)[0]!
   const cycles = 20, canvasesPerCycle: number[] = []
   for (let i = 0; i < cycles; i++) {
-    send(contents, { kind: 'beat', marks: cycle.marks, durationMs: 300, epoch: i })
+    sendOverlay(contents, { kind: 'beat', marks: cycle.marks, durationMs: 300, epoch: i })
     await sleep(320)
-    send(contents, { kind: 'clear' })
+    sendOverlay(contents, { kind: 'clear' })
     // DevTools evaluation is not ordered with IPC, so give the clear time to land first.
     await sleep(200)
     canvasesPerCycle.push(await canvases())
@@ -153,7 +154,7 @@ async function runRobustness(directory: string, report: GalleryReport): Promise<
   await sleep(300)
   const canvasesAfterCycles = await canvases()
   const pump = fixtureBeats(MODEL_FIXTURES[0]!.script(MODEL_CARD, SIDE_CARD), VIEW)
-  for (const beat of pump.slice(0, 2)) send(contents, { kind: 'beat', marks: beat.marks, durationMs: beat.durationMs, epoch: 99 })
+  for (const beat of pump.slice(0, 2)) sendOverlay(contents, { kind: 'beat', marks: beat.marks, durationMs: beat.durationMs, epoch: 99 })
   // Drag while the first parts grow, then close while later ones are still queued.
   await sleep(pump[0]!.durationMs + 600)
   await drag(contents, [MODEL_CARD.x + 120, MODEL_CARD.y + 14], [-20, 40])
@@ -164,7 +165,7 @@ async function runRobustness(directory: string, report: GalleryReport): Promise<
   await contents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...close, button: 'left', buttons: 0, clickCount: 1 })
   await sleep(1200)
   const canvasesAfterClose = await canvases()
-  await save(contents, join(directory, 'robustness-after-close.png'), { x: 0, y: 0, ...VIEW })
+  await saveCapture(contents, join(directory, 'robustness-after-close.png'), { x: 0, y: 0, ...VIEW })
   report.robustness = { cycles, canvasesPerCycle, canvasesAfterCycles, canvasesAfterClose, warnings }
   window.destroy()
 }

@@ -12,6 +12,7 @@ import { Connections } from './connections'
 import { openSetupWindow } from './setup-window'
 import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { configureModelGallery, runModelGallery } from './model-gallery'
+import { configureModelEval, runModelEval } from './model-eval'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { TalkSession } from './voice/talk'
@@ -95,14 +96,20 @@ let monitor: GestureMonitor | undefined
 configureHomePreview()
 configureDrawDemo()
 configureModelGallery()
+configureModelEval()
 limitDrawDemoRuntime()
 const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
-if (!ownsInstance) app.quit()
+if (!ownsInstance) {
+  // A live eval shares the normal profile, so the running app must be quit first.
+  if (devFlag('NIMBO_DEBUG_3D_EVAL')) console.error('[eval] Quit the running NimboGuide first; it holds this profile.')
+  app.quit()
+}
 
 if (ownsInstance) app.whenReady().then(async () => {
   if (devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
   app.dock?.hide()
   if (devFlag('NIMBO_DEBUG_3D_GALLERY')) return runModelGallery()
+  if (devFlag('NIMBO_DEBUG_3D_EVAL')) return runModelEval()
   const notch = createNotchWindow()
   const overlays = new OverlayManager()
   overlays.sync()

@@ -157,8 +157,9 @@ export class BeatParser {
   private atLineStart = true
   private markLine: string | undefined
 
-  /** `onCommand` sees each accepted command as its line ends, before its sentence does. */
-  constructor(private readonly image: ImageSize, private readonly onCommand?: (mark: Mark) => void) {}
+  /** `onCommand` sees each accepted command as its line ends, before its sentence does;
+   *  `onDrop` sees each command line that was not accepted. */
+  constructor(private readonly image: ImageSize, private readonly onCommand?: (mark: Mark) => void, private readonly onDrop?: (line: string) => void) {}
 
   push(delta: string): Beat[] {
     const beats: Beat[] = []
@@ -201,6 +202,7 @@ export class BeatParser {
   private endMarkLine(): void {
     const mark = parseMark(this.markLine ?? '', this.image)
     const modelCommand = mark && ['model', 'part', 'move', 'cut', 'tag'].includes(mark.kind)
+    let accepted = false
     if (mark && (modelCommand ? this.modelCommandCount < MODEL_LIMITS.commands : this.commandCount < 20)) {
       let valid = true
       if (mark.kind === 'card' || mark.kind === 'model') {
@@ -213,8 +215,9 @@ export class BeatParser {
         valid = steps !== undefined && !this.models.models.has(mark.id) && (mark.kind !== 'step' || steps < 8)
         if (valid && mark.kind === 'step') this.cards.set(mark.id, steps! + 1)
       } else if (mark.kind === 'clear') { this.cards.clear(); this.models.clear() }
-      if (valid) { this.pendingMarks.push(mark); if (modelCommand) this.modelCommandCount++; else this.commandCount++; this.onCommand?.(mark) }
+      if (valid) { this.pendingMarks.push(mark); if (modelCommand) this.modelCommandCount++; else this.commandCount++; accepted = true; this.onCommand?.(mark) }
     }
+    if (!accepted) this.onDrop?.(this.markLine ?? '')
     this.markLine = undefined
   }
 

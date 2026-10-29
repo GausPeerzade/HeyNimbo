@@ -1,4 +1,4 @@
-import { streamText, type LanguageModel, type SystemModelMessage, type ModelMessage } from 'ai'
+import { streamText, type LanguageModel, type LanguageModelUsage, type SystemModelMessage, type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogle } from '@ai-sdk/google'
@@ -13,7 +13,11 @@ export interface AnswerConnection {
   provider: ProviderId; model: string; effort?: 'low' | 'medium'; vision: boolean; baseURL?: string
   credential(): Promise<string>
 }
-export interface AnswerOptions { connection: AnswerConnection; instructions: string; question: string; screenshot?: Screenshot; history: readonly Exchange[]; signal: AbortSignal }
+export interface AnswerOptions {
+  connection: AnswerConnection; instructions: string; question: string; screenshot?: Screenshot; history: readonly Exchange[]; signal: AbortSignal
+  /** Token counts as the provider reports them, once the answer finishes. */
+  onUsage?: (usage: LanguageModelUsage) => void
+}
 export function answerInstructions(options: AnswerOptions): SystemModelMessage {
   return { role: 'system', content: options.instructions + (options.connection.vision && options.screenshot ? '' : '\nNo screenshot is available. Answer from text only. Do not refer to unseen screen contents or emit any @ drawing commands.'), providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }
 }
@@ -61,6 +65,7 @@ export async function* streamProviderAnswer(options: AnswerOptions, transport = 
       else if (part.type === 'error') throw part.error
       else if (part.type === 'abort') throw new Error('The answer was interrupted.')
       else if (part.type === 'finish') {
+        options.onUsage?.(part.totalUsage)
         if (part.finishReason !== 'stop') throw new Error('The answer stream ended without a completed response.')
         completed = true
       }

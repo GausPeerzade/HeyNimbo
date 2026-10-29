@@ -1,0 +1,16 @@
+# One request per line, phrased as a user would ask. Lines starting with # are skipped.
+Show me a 3D model of a lighthouse and explain how it works.
+How does the human heart pump blood? Show me in 3D.
+Can you build a 3D model of Saturn with its rings?
+Show me how a wind turbine makes electricity, in 3D.
+What's inside a medieval castle? Show me a 3D model.
+How does an espresso machine work? Build it in 3D.
+Show me a 3D jellyfish and explain how it swims.
+Make a 3D model of a skateboard and tell me what its parts do.
+Show me the structure of DNA in 3D.
+How does a sailboat sail into the wind? Show me a 3D model.
+Show me how a microscope works with a 3D model.
+Build a 3D tree and explain how it moves water up from the roots.
+What's inside a camera? Show me in 3D.
+How does a hot air balloon fly? Show me a 3D model.
+Show me a 3D model of a submarine and explain how it dives and surfaces.

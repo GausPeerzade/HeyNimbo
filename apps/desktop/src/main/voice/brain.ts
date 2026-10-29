@@ -1,4 +1,4 @@
-import { streamProviderAnswer, type AnswerConnection } from '../answer-provider'
+import { streamProviderAnswer, type AnswerConnection, type AnswerOptions } from '../answer-provider'
 
 export const BRAIN_MODEL = 'gpt-6.1-terra'
 export const INSTRUCTIONS = `You are NimboGuide, a friendly helper who lives on the user's computer.
@@ -70,6 +70,7 @@ export async function* streamAnswer(options: {
   screenshot?: Screenshot
   history: readonly Exchange[]
   signal: AbortSignal
+  onUsage?: AnswerOptions['onUsage']
 }): AsyncGenerator<string> {
   const connection = options.connection ?? { provider: 'openai' as const, model: BRAIN_MODEL, effort: 'medium' as const, vision: true, credential: async () => options.key ?? '' }
   yield* streamProviderAnswer({ ...options, connection, instructions: INSTRUCTIONS })
