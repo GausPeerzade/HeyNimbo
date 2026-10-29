@@ -27,11 +27,19 @@ export interface OverlayRing {
 
 export type OverlayCommand =
   | { kind: 'ring'; ring: OverlayRing }
-  /** Draw marks (overlay CSS pixels), paced across `durationMs` of speech.
-   *  `from` is where a pointing buddy starts, usually the cursor. */
+  /** Front-load marks (overlay CSS pixels) within the declared speech budget.
+   *  `from` seeds the single pen buddy, usually at the cursor. */
   | { kind: 'beat'; marks: Mark[]; durationMs: number; from?: OverlayRing }
-  | { kind: 'fade' }
-  | { kind: 'clear' }
+  /** Another display now owns the single buddy; retain this display's ink. */
+  | { kind: 'park' }
+  | { kind: 'fade'; from?: OverlayRing }
+  | { kind: 'clear'; from?: OverlayRing }
+  /** Sent only by an unpackaged main process. */
+  | { kind: 'debug'; frameTrace: boolean }
+
+export type OverlayEvent =
+  | { kind: 'strokeStarted'; durationMs: number }
+  | { kind: 'frameTrace'; deltas: number[] }
 
 export type SaveKeyResult = { ok: true } | { ok: false; reason: string }
 
@@ -63,6 +71,7 @@ export type VoiceEvent =
 export const Channels = {
   notchStatus: 'nimbo:notch-status',
   overlay: 'nimbo:overlay',
+  overlayEvent: 'nimbo:overlay-event',
   saveOpenAIKey: 'nimbo:save-openai-key',
   voiceCommand: 'nimbo:voice-command',
   voiceEvent: 'nimbo:voice-event',

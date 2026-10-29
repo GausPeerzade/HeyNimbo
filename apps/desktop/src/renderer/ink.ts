@@ -1,6 +1,5 @@
-// Hand-drawn stroke paths for the overlay. Each shape becomes one or more pen
-// strokes (lists of points) that the overlay reveals over time and outlines
-// with perfect-freehand for a tapered, pressure-like line.
+// Stable stroke geometry for screen ink. The full outline is built once;
+// the renderer reveals it along the very same measured centerline.
 
 import { getStroke, type StrokeOptions } from 'perfect-freehand'
 import type { Mark } from '../shared/beats'
@@ -29,9 +28,11 @@ function random(seed: number): () => number {
 function bowed(from: Point, to: Point, rand: () => number): Point[] {
   const [dx, dy] = [to[0] - from[0], to[1] - from[1]]
   const length = Math.hypot(dx, dy) || 1
-  const bow = (rand() - 0.5) * Math.min(14, length * 0.06)
+  const bow = (rand() - 0.5) * Math.min(2, length * 0.03)
   const steps = Math.max(8, Math.round(length / 12))
   return Array.from({ length: steps + 1 }, (_, i): Point => {
+    if (i === 0) return from
+    if (i === steps) return to
     const t = i / steps
     const offset = Math.sin(Math.PI * t) * bow
     return [from[0] + dx * t - (dy / length) * offset, from[1] + dy * t + (dx / length) * offset]
@@ -81,8 +82,7 @@ export function strokesFor(mark: Mark): Stroke[] {
       const rand = random(mark.x1 * 3 + mark.y2)
       return [
         { points: bowed([mark.x1, mark.y1], tip, rand), style: 'pen' },
-        { points: bowed(head(1), tip, rand), style: 'pen' },
-        { points: bowed(tip, head(-1), rand), style: 'pen' },
+        { points: [...bowed(head(1), tip, rand), ...bowed(tip, head(-1), rand).slice(1)], style: 'pen' },
       ]
     }
     case 'highlight': {
@@ -96,32 +96,60 @@ export function strokesFor(mark: Mark): Stroke[] {
   }
 }
 
-const PEN: StrokeOptions = {
-  size: 6,
-  thinning: 0.6,
-  smoothing: 0.5,
-  streamline: 0.45,
-  simulatePressure: true,
-  start: { taper: 14 },
-  end: { taper: 22 },
+export interface MeasuredPath {
+  points: Point[]
+  distances: number[]
+  length: number
 }
 
-/** The SVG path for the first `progress` (0..1) of a stroke. */
-export function outline(stroke: Stroke, progress: number): string {
-  const count = Math.max(2, Math.ceil(stroke.points.length * Math.min(1, progress)))
-  const options: StrokeOptions =
-    stroke.style === 'pen'
-      ? PEN
-      : { size: stroke.size ?? 24, thinning: 0, smoothing: 0.5, streamline: 0.3, simulatePressure: false, last: progress >= 1 }
-  const polygon = getStroke(stroke.points.slice(0, count), { ...options, last: progress >= 1 })
-  if (polygon.length < 2) return ''
-  return `M${polygon.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}Z`
+export interface StrokeGeometry extends MeasuredPath {
+  centerline: string
+  outline: string
+  width: number
+  style: Stroke['style']
 }
 
-/** Path length, used to pace drawing like a pen moving at a steady speed. */
-export function lengthOf(stroke: Stroke): number {
-  return stroke.points.reduce((sum, point, i) => {
-    const previous = stroke.points[i - 1]
-    return previous ? sum + Math.hypot(point[0] - previous[0], point[1] - previous[1]) : sum
-  }, 0)
+export function measurePath(points: Point[]): MeasuredPath {
+  const distances = [0]
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1]!
+    const point = points[i]!
+    distances.push(distances[i - 1]! + Math.hypot(point[0] - previous[0], point[1] - previous[1]))
+  }
+  return { points, distances, length: distances.at(-1) ?? 0 }
+}
+
+/** One arc-length lookup drives both the mask and the pen tip. */
+export function samplePath(path: MeasuredPath, progress: number): { point: Point; angle: number } {
+  const distance = Math.max(0, Math.min(1, progress)) * path.length
+  let low = 1
+  let high = path.distances.length - 1
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (path.distances[middle]! < distance) low = middle + 1
+    else high = middle
+  }
+  const from = path.points[low - 1] ?? path.points[0] ?? [0, 0]
+  const to = path.points[low] ?? from
+  const span = (path.distances[low] ?? 0) - (path.distances[low - 1] ?? 0)
+  const t = span > 0 ? (distance - path.distances[low - 1]!) / span : 0
+  return {
+    point: [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t],
+    angle: Math.atan2(to[1] - from[1], to[0] - from[0]) * 180 / Math.PI + 90,
+  }
+}
+
+export function geometryFor(stroke: Stroke): StrokeGeometry {
+  const width = stroke.style === 'pen' ? 3.5 : stroke.size ?? 24
+  const options: StrokeOptions = {
+    size: width, thinning: 0, smoothing: 0, streamline: 0,
+    simulatePressure: false, last: true,
+  }
+  const polygon = getStroke(stroke.points, options)
+  const coordinates = (points: number[][]): string => points.map(([x, y]) => `${x} ${y}`).join('L')
+  return {
+    ...measurePath(stroke.points), width, style: stroke.style,
+    centerline: `M${coordinates(stroke.points)}`,
+    outline: polygon.length > 1 ? `M${coordinates(polygon)}Z` : '',
+  }
 }

@@ -82,6 +82,7 @@ function queueMic(task: () => Promise<void>): void {
 
 const speaker = new AudioContext({ sampleRate: RATE })
 const playing = new Set<AudioBufferSourceNode>()
+const scribbling = new Set<AudioBufferSourceNode>()
 let playhead = 0
 let started = false
 let ending = false
@@ -126,7 +127,8 @@ function play(line: number, pcm: Uint8Array): void {
 
 /** A quiet pencil-on-paper sound: band-passed noise with uneven pressure. */
 function scribble(durationMs: number): void {
-  const seconds = Math.min(4, Math.max(0.2, durationMs / 1000))
+  const seconds = Math.max(0, durationMs / 1000)
+  if (!seconds) return
   const noise = speaker.createBuffer(1, Math.ceil(RATE * seconds), RATE)
   const samples = noise.getChannelData(0)
   for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1
@@ -144,6 +146,8 @@ function scribble(durationMs: number): void {
   }
   pressure.gain.linearRampToValueAtTime(0, start + seconds)
   source.connect(band).connect(pressure).connect(speaker.destination)
+  scribbling.add(source)
+  source.onended = () => scribbling.delete(source)
   source.start(start)
   source.stop(start + seconds)
 }
@@ -168,6 +172,8 @@ function handle(command: VoiceCommand): void {
       }
       return
     case 'playCancel':
+      scribbling.forEach((source) => source.stop())
+      scribbling.clear()
       playing.forEach((source) => {
         source.onended = null
         source.stop()

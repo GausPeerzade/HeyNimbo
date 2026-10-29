@@ -6,6 +6,7 @@ import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, schedul
 import { startGestures } from './gestures'
 import { loadOpenAIKey } from './secrets'
 import { openSetupWindow } from './setup-window'
+import { limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { TalkSession } from './voice/talk'
@@ -59,13 +60,11 @@ function createGesturePresenter(
 }
 
 /** Builds the voice pipeline once a key is available. */
-function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager): TalkSession {
+function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow): TalkSession {
   void ensureMicrophoneAccess()
   const ears = new Ears(key)
   const mouth = new Mouth(key)
-  let session: TalkSession | undefined
-  const audio = new AudioWindow((event) => session?.onAudioEvent(event))
-  session = new TalkSession({
+  const session = new TalkSession({
     key,
     ears,
     mouth,
@@ -73,12 +72,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
     capture: captureCursorDisplay,
     onStatus: (label) => sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()),
     drawing: {
-      draw: (marks, durationMs, space) => {
-        overlays.drawBeat(marks, durationMs, space)
-        if (marks.some((mark) => mark.kind !== 'point' && mark.kind !== 'clear')) {
-          audio.send({ kind: 'scribble', durationMs: Math.min(durationMs, 2_500) })
-        }
-      },
+      draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
       fadeSoon: () => overlays.fadeSoon(),
     },
   })
@@ -88,6 +82,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
 }
 
 let monitor: GestureMonitor | undefined
+limitDrawDemoRuntime()
 
 app.whenReady().then(async () => {
   app.dock?.hide()
@@ -101,9 +96,12 @@ app.whenReady().then(async () => {
   screen.on('display-added', resync)
   screen.on('display-removed', resync)
   screen.on('display-metrics-changed', resync)
+  if (scheduleDrawDemo(overlays)) return
   scheduleExclusionSelfTest((point) => overlays.ring(point))
 
   let talk: TalkSession | undefined
+  const audio = new AudioWindow((event) => talk?.onAudioEvent(event))
+  overlays.onStrokeStarted = (durationMs) => audio.send({ kind: 'scribble', durationMs })
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {
     monitor = started.monitor
@@ -114,8 +112,8 @@ app.whenReady().then(async () => {
   else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 
   const key = await loadOpenAIKey()
-  if (key) talk = startTalking(key, notch, overlays)
-  else openSetupWindow((saved) => (talk = startTalking(saved, notch, overlays)))
+  if (key) talk = startTalking(key, notch, overlays, audio)
+  else openSetupWindow((saved) => (talk = startTalking(saved, notch, overlays, audio)))
 })
 
 // A menu-bar style app keeps running with no focused window.

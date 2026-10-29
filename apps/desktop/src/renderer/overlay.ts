@@ -1,25 +1,48 @@
 import type { Mark } from '../shared/beats'
+import { FrameTrace } from './frame-trace'
 import type { OverlayCommand, OverlayRing } from '../shared/ipc'
-import { lengthOf, outline, strokesFor, type Stroke } from './ink'
+import { geometryFor, samplePath, strokesFor, type Point, type StrokeGeometry } from './ink'
+import { sampleFlight, scheduleBeat, strokeDuration, flightDuration, type Gesture } from './drawing-timeline'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const stage = document.getElementById('stage') as unknown as SVGSVGElement
-const ringLayer = layer('rings')
-const inkLayer = layer('ink')
-const buddyLayer = layer('buddy')
+const scene = layer('scene')
+const ringLayer = layer('rings', scene)
+const washLayer = layer('wash', scene)
+const inkLayer = layer('ink', scene)
+const wordsLayer = layer('words', scene)
+const buddyLayer = layer('buddy-layer')
+const INK = '#2f6bff'
+const HIGHLIGHT = '#ffd84d'
+const FADE_MS = 240
 
-/** Pen speed in CSS pixels per second; strokes take 0.3-1.4 s each. */
-const PEN_SPEED = 1100
-/** Drawing finishes within this share of its sentence, leaving room to look. */
-const SHARE_OF_SENTENCE = 0.85
+interface Action extends Gesture {
+  color: string
+  begin: (durationMs: number) => (progress: number) => void
+}
 
-let buddyAt: OverlayRing | undefined
-let generation = 0
+interface Animation {
+  start: number
+  durationMs: number
+  begin: (durationMs: number) => (progress: number) => void
+  frame?: (progress: number) => void
+}
 
-function layer(name: string): SVGGElement {
+let buddyAt: Point | undefined
+let plannedTip: Point | undefined
+let plannedEnd = 0
+let nextId = 0
+let framePending = false
+let fadeStarted: number | undefined
+let buddyFadeStarted: number | undefined
+let returning = false
+const animations: Animation[] = []
+const trace = new FrameTrace()
+
+function layer(name: string, parent: SVGElement = stage): SVGGElement {
   const group = document.createElementNS(SVG_NS, 'g')
   group.setAttribute('class', name)
-  stage.append(group)
+  parent.append(group)
   return group
 }
 
@@ -29,121 +52,240 @@ function element<K extends keyof SVGElementTagNameMap>(name: K, attributes: Reco
   return node
 }
 
-const easeInOut = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
-
-/** Runs `frame(progress)` from 0 to 1 over `seconds`, after `delay` seconds,
- *  unless the overlay is cleared first. */
-function animate(seconds: number, delay: number, frame: (progress: number) => void): void {
-  const owner = generation
-  const start = performance.now() + delay * 1000
-  const tick = (now: number): void => {
-    if (owner !== generation) return
-    const progress = Math.min(1, Math.max(0, (now - start) / (seconds * 1000)))
-    if (now >= start) frame(progress)
-    if (progress < 1) requestAnimationFrame(tick)
-  }
+/** One monotonic clock owns every flight, reveal, label and scene fade. */
+function wake(): void {
+  if (framePending) return
+  framePending = true
   requestAnimationFrame(tick)
 }
 
-function drawStroke(stroke: Stroke, seconds: number, delay: number): void {
-  const path = element('path', { class: stroke.style, d: '' })
-  inkLayer.append(path)
-  animate(seconds, delay, (progress) => path.setAttribute('d', outline(stroke, easeInOut(progress))))
+function tick(now: number): void {
+  framePending = false
+  while (animations.length) {
+    const animation = animations[0]!
+    if (now < animation.start) break
+    animation.frame ??= animation.begin(Math.max(0, animation.start + animation.durationMs - now))
+    const progress = animation.durationMs > 0 ? Math.min(1, (now - animation.start) / animation.durationMs) : 1
+    animation.frame(progress)
+    if (progress < 1) break
+    animations.shift()
+  }
+  if (fadeStarted !== undefined) {
+    const progress = Math.min(1, (now - fadeStarted) / FADE_MS)
+    scene.setAttribute('opacity', String(1 - progress))
+    if (progress === 1) {
+      clearScene()
+      fadeStarted = undefined
+    }
+  }
+  if (buddyFadeStarted !== undefined) {
+    const progress = Math.min(1, (now - buddyFadeStarted) / 180)
+    buddyLayer.setAttribute('opacity', String(1 - progress))
+    if (progress === 1) buddyFadeStarted = undefined
+  }
+  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined) wake()
 }
 
-function handwrite(mark: Extract<Mark, { kind: 'text' }>, seconds: number, delay: number): void {
-  const id = `reveal-${generation}-${inkLayer.childElementCount}`
-  const clip = element('clipPath', { id })
-  const reveal = element('rect', { x: mark.x - 4, y: mark.y - 40, width: 0, height: 60 })
-  clip.append(reveal)
-  const text = element('text', { x: mark.x, y: mark.y, class: 'note', 'clip-path': `url(#${id})` })
+function strokeAction(geometry: StrokeGeometry, group: number): Action {
+  const color = geometry.style === 'marker' ? HIGHLIGHT : INK
+  const padding = geometry.width + 8
+  const left = Math.min(...geometry.points.map(([x]) => x)) - padding
+  const top = Math.min(...geometry.points.map(([, y]) => y)) - padding
+  const right = Math.max(...geometry.points.map(([x]) => x)) + padding
+  const bottom = Math.max(...geometry.points.map(([, y]) => y)) + padding
+  return {
+    group, from: geometry.points[0]!, to: geometry.points.at(-1)!,
+    seconds: strokeDuration(geometry.length), color,
+    begin: (durationMs) => {
+      const id = `ink-reveal-${nextId++}`
+      const mask = element('mask', { id, maskUnits: 'userSpaceOnUse', x: left, y: top, width: right - left, height: bottom - top })
+      const reveal = element('path', {
+        d: geometry.centerline, pathLength: 1, fill: 'none', stroke: 'white',
+        'stroke-width': geometry.width * 2 + 4, 'stroke-linejoin': 'round',
+        'stroke-dasharray': '1 1', 'stroke-dashoffset': 1,
+      })
+      mask.append(reveal)
+      const path = element('path', { class: geometry.style, d: geometry.outline, mask: `url(#${id})`, opacity: 0 })
+      const target = geometry.style === 'marker' ? washLayer : inkLayer
+      target.append(mask, path)
+      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs })
+      // Progressive reveal/pen presence adapted from Jason Kneen's MIT overlay;
+      // both use our final centerline, correcting the upstream tip mismatch.
+      return (progress) => {
+        path.setAttribute('opacity', progress > 0 ? '1' : '0')
+        reveal.setAttribute('stroke-dashoffset', String(1 - progress))
+        reveal.setAttribute('stroke-linecap', progress === 1 ? 'round' : 'butt')
+        const tip = samplePath(geometry, progress)
+        moveBuddy(tip.point, tip.angle, color)
+      }
+    },
+  }
+}
+
+function textAction(mark: Extract<Mark, { kind: 'text' }>, group: number): Action {
+  const text = element('text', { x: mark.x, y: mark.y, class: 'note' })
   text.textContent = mark.text
-  inkLayer.append(clip, text)
-  const width = text.getComputedTextLength() + 12
-  animate(seconds, delay, (progress) => reveal.setAttribute('width', String(width * progress)))
+  wordsLayer.append(text)
+  const width = text.getComputedTextLength() + 8
+  text.remove()
+  return {
+    group, from: [mark.x, mark.y - 6], to: [mark.x + width, mark.y - 6],
+    seconds: Math.min(1.4, 0.4 + 0.015 * mark.text.length), color: INK,
+    begin: (durationMs) => {
+      const id = `text-reveal-${nextId++}`
+      const clip = element('clipPath', { id })
+      const reveal = element('rect', { x: mark.x - 4, y: mark.y - 40, width: 0, height: 60 })
+      clip.append(reveal)
+      text.setAttribute('clip-path', `url(#${id})`)
+      wordsLayer.append(clip, text)
+      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs })
+      return (progress) => {
+        reveal.setAttribute('width', String(width * progress))
+        moveBuddy([mark.x + width * progress, mark.y - 6], 90, INK)
+      }
+    },
+  }
 }
 
 function buddy(): SVGGElement {
   const existing = buddyLayer.querySelector<SVGGElement>('g.buddy')
   if (existing) return existing
   const group = element('g', { class: 'buddy' })
-  group.append(element('path', { class: 'buddy-body', d: 'M0 0 L18 7 L9 10 L6 19 Z' }))
+  group.append(element('path', { class: 'buddy-body', d: 'M0 0 L-7.5 13 L7.5 13 Z' }))
   buddyLayer.append(group)
   return group
 }
 
-function point(mark: Extract<Mark, { kind: 'point' }>, from: OverlayRing | undefined, delay: number): void {
-  const start = buddyAt ?? from ?? { x: mark.x, y: mark.y }
-  buddyAt = { x: mark.x, y: mark.y }
+function moveBuddy(point: Point, angle: number, color: string, scale = 1, glow = 8): void {
+  buddyFadeStarted = undefined
+  buddyAt = point
   const body = buddy()
-  buddyLayer.querySelector('.label')?.remove()
-  // Fly along an arc that bulges upward, like a thrown paper plane.
-  const control = { x: (start.x + mark.x) / 2, y: Math.min(start.y, mark.y) - 80 }
-  animate(0.65, delay, (progress) => {
-    const t = easeInOut(progress)
-    const x = (1 - t) ** 2 * start.x + 2 * (1 - t) * t * control.x + t * t * mark.x
-    const y = (1 - t) ** 2 * start.y + 2 * (1 - t) * t * control.y + t * t * mark.y
-    body.setAttribute('transform', `translate(${x} ${y})`)
-    if (progress === 1 && mark.label) showLabel(mark.x, mark.y, mark.label)
-  })
+  body.setAttribute('transform', `translate(${point[0]} ${point[1]}) rotate(${angle}) scale(${scale})`)
+  body.style.color = color
+  body.style.setProperty('--glow', `${glow}px`)
+  buddyLayer.setAttribute('opacity', '1')
 }
 
-function showLabel(x: number, y: number, label: string): void {
-  const group = element('g', { class: 'label', transform: `translate(${x + 22} ${y + 18})` })
-  const text = element('text', { x: 10, y: 19 })
+function flight(from: Point, to: Point, color: string): (progress: number) => void {
+  return (progress) => {
+    const pose = sampleFlight(from, to, progress)
+    moveBuddy(pose.point, pose.angle, color, pose.scale, pose.glow)
+  }
+}
+
+function showLabel(x: number, y: number, label: string): SVGGElement {
+  const group = element('g', { class: 'label', opacity: 0 })
+  const text = element('text', { x: 7, y: 17 })
   text.textContent = label
-  const background = element('rect', { rx: 10, height: 28, width: 0 })
+  const background = element('rect', { rx: 5, height: 24, width: 0 })
   group.append(background, text)
-  buddyLayer.append(group)
-  background.setAttribute('width', String(text.getComputedTextLength() + 20))
+  wordsLayer.append(group)
+  const measured = text.getComputedTextLength()
+  const width = Math.min(innerWidth - 16, measured + 14)
+  background.setAttribute('width', String(width))
+  if (width < measured + 14) {
+    text.setAttribute('textLength', String(width - 14))
+    text.setAttribute('lengthAdjust', 'spacingAndGlyphs')
+  }
+  // Jason Kneen's MIT right-edge flip/clamp, using measured SVG text instead
+  // of a character estimate; also flip above at the bottom edge.
+  const left = x + 12 + width > innerWidth - 8 ? x - width - 12 : x + 12
+  const top = y + 12 + 24 > innerHeight - 8 ? y - 24 - 12 : y + 12
+  group.setAttribute('transform', `translate(${Math.max(8, Math.min(innerWidth - width - 8, left))} ${Math.max(8, Math.min(innerHeight - 32, top))})`)
+  return group
 }
 
-/** Schedules every mark in order, compressed to fit inside the sentence. */
+/** Composite parts stay together, with travel included in the speech budget. */
 function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefined): void {
-  const steps: Array<{ seconds: number; run: (seconds: number, delay: number) => void }> = []
-  for (const mark of marks) {
-    if (mark.kind === 'clear') steps.push({ seconds: 0, run: () => inkLayer.replaceChildren() })
-    else if (mark.kind === 'point') steps.push({ seconds: 0.65, run: (_s, delay) => point(mark, from, delay) })
-    else if (mark.kind === 'text')
-      steps.push({ seconds: Math.min(1.6, Math.max(0.5, mark.text.length * 0.05)), run: (s, d) => handwrite(mark, s, d) })
-    else
-      for (const stroke of strokesFor(mark)) {
-        const seconds = Math.min(1.4, Math.max(0.3, lengthOf(stroke) / PEN_SPEED + 0.15))
-        steps.push({ seconds, run: (s, d) => drawStroke(stroke, s, d) })
-      }
+  fadeStarted = undefined
+  scene.setAttribute('opacity', '1')
+  if (returning) animations.length = 0
+  returning = false
+  const origin: Point = animations.length && plannedTip ? plannedTip : buddyAt ?? [from?.x ?? 20, from?.y ?? 20]
+  const actions: Action[] = []
+  for (const [group, mark] of marks.entries()) {
+    if (mark.kind === 'clear') {
+      const at = actions.at(-1)?.to ?? origin
+      actions.push({ group, from: at, to: at, seconds: 0, color: INK, begin: () => () => clearScene() })
+    } else if (mark.kind === 'point') {
+      actions.push({
+        group, from: [mark.x, mark.y], to: [mark.x, mark.y], seconds: 0.14, color: INK,
+        begin: () => {
+          const label = mark.label ? showLabel(mark.x, mark.y, mark.label) : undefined
+          return (progress) => {
+            moveBuddy([mark.x, mark.y], -35, INK)
+            label?.setAttribute('opacity', String(progress))
+          }
+        },
+      })
+    } else if (mark.kind === 'text') actions.push(textAction(mark, group))
+    else for (const stroke of strokesFor(mark)) actions.push(strokeAction(geometryFor(stroke), group))
   }
-  const total = steps.reduce((sum, step) => sum + step.seconds, 0)
-  const scale = total > 0 ? Math.min(1, (SHARE_OF_SENTENCE * durationMs) / 1000 / total) : 1
-  let delay = 0
-  for (const step of steps) {
-    step.run(step.seconds * scale, delay)
-    delay += step.seconds * scale
+  const start = Math.max(performance.now(), animations.length ? plannedEnd : 0)
+  const timeline = scheduleBeat(actions, origin, durationMs)
+  for (const [index, entry] of timeline.entries()) {
+    if (entry.kind === 'gesture') {
+      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: actions[entry.index]!.begin })
+    } else {
+      const next = timeline[index + 1]
+      const color = next?.kind === 'gesture' ? actions[next.index]!.color : INK
+      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: () => flight(entry.from, entry.to, color) })
+    }
   }
+  const last = timeline.at(-1)
+  plannedEnd = start + (last ? last.startMs + last.durationMs : 0)
+  plannedTip = actions.at(-1)?.to ?? origin
+  trace.activeUntil(plannedEnd)
+  wake()
 }
 
-function clearAll(): void {
-  generation++
-  buddyAt = undefined
-  stage.classList.remove('fading')
-  for (const group of [ringLayer, inkLayer, buddyLayer]) group.replaceChildren()
+function clearScene(): void {
+  for (const group of [ringLayer, washLayer, inkLayer, wordsLayer]) group.replaceChildren()
+}
+
+function returnToCursor(from: OverlayRing | undefined): void {
+  returning = true
+  animations.length = 0
+  plannedTip = undefined
+  plannedEnd = 0
+  if (!buddyAt) return
+  if (!from) {
+    buddyFadeStarted = performance.now()
+    wake()
+    return
+  }
+  const home: Point = [Math.max(16, Math.min(innerWidth - 16, from.x + 35)), Math.max(16, Math.min(innerHeight - 16, from.y + 25))]
+  const origin = buddyAt
+  animations.push({ start: performance.now(), durationMs: flightDuration(origin, home) * 1000, begin: () => flight(origin, home, INK) })
+  wake()
 }
 
 function apply(command: OverlayCommand): void {
   switch (command.kind) {
+    case 'debug':
+      trace.enabled = command.frameTrace
+      return
     case 'clear':
-      return clearAll()
+      fadeStarted = undefined
+      scene.setAttribute('opacity', '1')
+      clearScene()
+      return returnToCursor(command.from)
+    case 'park':
+      animations.length = 0
+      buddyFadeStarted = undefined
+      buddyLayer.setAttribute('opacity', '0')
+      buddyAt = undefined
+      return
     case 'ring': {
       ringLayer.replaceChildren(element('circle', { class: 'ring', cx: command.ring.x, cy: command.ring.y, r: 28 }))
       return
     }
     case 'beat':
-      stage.classList.remove('fading')
       return drawBeat(command.marks, command.durationMs, command.from)
-    case 'fade': {
-      stage.classList.add('fading')
-      const owner = generation
-      setTimeout(() => owner === generation && clearAll(), 700)
-    }
+    case 'fade':
+      fadeStarted = performance.now()
+      returnToCursor(command.from)
+      wake()
   }
 }
 

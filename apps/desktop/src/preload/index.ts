@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { Channels, type NotchStatus, type OverlayCommand } from '../shared/ipc'
+import { Channels, type NotchStatus, type OverlayCommand, type OverlayEvent } from '../shared/ipc'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload)
@@ -10,6 +10,7 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 const api = {
   onNotchStatus: (listener: (status: NotchStatus) => void) => subscribe(Channels.notchStatus, listener),
   onOverlayCommand: (listener: (command: OverlayCommand) => void) => subscribe(Channels.overlay, listener),
+  sendOverlayEvent: (event: OverlayEvent) => ipcRenderer.send(Channels.overlayEvent, event),
 }
 
 export type NimboApi = typeof api

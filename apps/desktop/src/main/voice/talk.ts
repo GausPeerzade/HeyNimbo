@@ -8,7 +8,8 @@ import type { Mouth } from './mouth'
 
 const HISTORY_LIMIT = 6
 const MIC_STOP_TIMEOUT_MS = 1_500
-/** Speaking pace used to spread a sentence's drawing across its audio. */
+/** Declared beat budget while sentence PCM is still streaming. Drawing uses
+ *  natural durations unless it would overrun this speech estimate. */
 const WORDS_PER_SECOND = 2.6
 
 export interface TalkDeps {

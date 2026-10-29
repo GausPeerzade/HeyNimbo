@@ -1,7 +1,7 @@
 import { join } from 'node:path'
-import { BrowserWindow, screen, type Display, type WebPreferences } from 'electron'
+import { BrowserWindow, ipcMain, screen, type Display, type WebPreferences } from 'electron'
 import type { Mark } from '../shared/beats'
-import { Channels, type NotchStatus, type OverlayCommand } from '../shared/ipc'
+import { Channels, type NotchStatus, type OverlayCommand, type OverlayEvent } from '../shared/ipc'
 import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { devFlag, devSetting } from './dev'
 
@@ -23,11 +23,27 @@ export function secureWebPreferences(preload: Preload = 'index'): WebPreferences
   }
 }
 
-export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice'): void {
+export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice'): Promise<void> {
   // Only an unpackaged build may load pages from the dev server.
   const devServer = devSetting('ELECTRON_RENDERER_URL')
-  if (devServer) void window.loadURL(`${devServer}/${page}.html`)
-  else void window.loadFile(join(__dirname, `../renderer/${page}.html`))
+  return devServer ? window.loadURL(`${devServer}/${page}.html`) : window.loadFile(join(__dirname, `../renderer/${page}.html`))
+}
+
+/** A passive surface must load successfully and paint before becoming visible.
+ *  A failed page stays hidden, on an explicitly transparent native backing. */
+function showPassivePage(window: BrowserWindow, page: 'notch' | 'overlay'): void {
+  let failed = false
+  window.webContents.on('did-fail-load', () => {
+    failed = true
+    if (!window.isDestroyed()) window.hide()
+  })
+  const painted = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()))
+  void Promise.all([loadPage(window, page), painted]).then(() => {
+    if (!failed && !window.isDestroyed()) window.showInactive()
+  }).catch((error: unknown) => {
+    if (!window.isDestroyed()) window.hide()
+    console.warn(`[window] ${page} failed to load: ${error instanceof Error ? error.message : String(error)}`)
+  })
 }
 
 /** Floats above fullscreen apps and every Space and asks the OS to hide it from
@@ -57,6 +73,7 @@ export function createNotchWindow(): BrowserWindow {
     type: process.platform === 'darwin' ? 'panel' : undefined,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     hasShadow: false,
     resizable: false,
     movable: false,
@@ -70,8 +87,7 @@ export function createNotchWindow(): BrowserWindow {
   positionNotch(window)
   floatAboveEverything(window)
   window.webContents.on('did-finish-load', () => window.webContents.send(Channels.notchStatus, notchStatus))
-  loadPage(window, 'notch')
-  window.once('ready-to-show', () => window.showInactive())
+  showPassivePage(window, 'notch')
   return window
 }
 
@@ -86,6 +102,7 @@ function createOverlayWindow(display: Display): BrowserWindow {
     type: process.platform === 'darwin' ? 'panel' : undefined,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     hasShadow: false,
     resizable: false,
     movable: false,
@@ -93,12 +110,11 @@ function createOverlayWindow(display: Display): BrowserWindow {
     skipTaskbar: true,
     enableLargerThanScreen: true,
     show: false,
-    webPreferences: secureWebPreferences(),
+    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   })
   window.setIgnoreMouseEvents(true)
   floatAboveEverything(window)
-  loadPage(window, 'overlay')
-  window.once('ready-to-show', () => window.showInactive())
+  showPassivePage(window, 'overlay')
   return window
 }
 
@@ -108,6 +124,27 @@ export class OverlayManager {
   /** The ring being shown, replayed if its display's page (re)loads. */
   private shown: { displayId: number; command: OverlayCommand } | undefined
   private fadeTimer: NodeJS.Timeout | undefined
+  private buddyDisplayId: number | undefined
+
+  onStrokeStarted?: (durationMs: number) => void
+
+  constructor() {
+    ipcMain.on(Channels.overlayEvent, (event, payload: OverlayEvent) => {
+      if (![...this.windows.values()].some((window) => window.webContents === event.sender)) return
+      if (payload.kind === 'strokeStarted') this.onStrokeStarted?.(payload.durationMs)
+      else if (payload.kind === 'frameTrace' && devFlag('NIMBO_DEBUG_DRAW_TRACE')) {
+        const sorted = [...payload.deltas].sort((a, b) => a - b)
+        const percentile = (p: number): number => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)] ?? 0
+        console.info(`[draw-trace] ${JSON.stringify({
+          frames: sorted.length,
+          activeMs: payload.deltas.reduce((sum, gap) => sum + gap, 0),
+          p50: percentile(0.5), p95: percentile(0.95), max: sorted.at(-1) ?? 0,
+          longestStall: sorted.filter((gap) => gap > 100).at(-1) ?? 0,
+          deltas: payload.deltas,
+        })}`)
+      }
+    })
+  }
 
   /** Reconciles windows with the current displays; call on any display change. */
   sync(): void {
@@ -127,6 +164,7 @@ export class OverlayManager {
       }
       const window = createOverlayWindow(display)
       window.webContents.on('did-finish-load', () => {
+        if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) this.send(display.id, { kind: 'debug', frameTrace: true })
         if (this.shown?.displayId === display.id) this.send(display.id, this.shown.command)
       })
       this.windows.set(display.id, window)
@@ -150,6 +188,8 @@ export class OverlayManager {
     const display = displayFor(space, screen.getAllDisplays())
     if (!display) return
     clearTimeout(this.fadeTimer)
+    if (this.buddyDisplayId !== undefined && this.buddyDisplayId !== display.id) this.send(this.buddyDisplayId, { kind: 'park' })
+    this.buddyDisplayId = display.id
     const cursor = screen.getCursorScreenPoint()
     this.send(display.id, {
       kind: 'beat',
@@ -163,14 +203,20 @@ export class OverlayManager {
   fadeSoon(delayMs = 6_000): void {
     clearTimeout(this.fadeTimer)
     this.fadeTimer = setTimeout(() => {
-      for (const id of this.windows.keys()) this.send(id, { kind: 'fade' })
+      for (const id of this.windows.keys()) this.send(id, { kind: 'fade', from: this.cursorOnDisplay(id) })
     }, delayMs)
   }
 
   clear(): void {
     clearTimeout(this.fadeTimer)
     this.shown = undefined
-    for (const id of this.windows.keys()) this.send(id, { kind: 'clear' })
+    for (const id of this.windows.keys()) this.send(id, { kind: 'clear', from: this.cursorOnDisplay(id) })
+  }
+
+  private cursorOnDisplay(id: number): { x: number; y: number } | undefined {
+    const cursor = screen.getCursorScreenPoint()
+    const display = screen.getDisplayNearestPoint(cursor)
+    return display.id === id ? { x: cursor.x - display.bounds.x, y: cursor.y - display.bounds.y } : undefined
   }
 
   private send(displayId: number, command: OverlayCommand): void {
