@@ -6,7 +6,7 @@ import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AgentChannels, DEFAULT_BUDGET, type AgentApi, type AgentPush, type HostCommand } from '../shared/agent-protocol'
 import type { AppSettings } from '../shared/app'
-const electron = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn(), showOpenDialog: vi.fn(), showMessageBox: vi.fn(async (_home: unknown, _options: { detail: string }) => ({ response: 0 })), register: vi.fn(() => true), unregister: vi.fn(), expose: vi.fn(), invoke: vi.fn(async () => ({ ok: true })), rendererOn: vi.fn(), rendererRemove: vi.fn() }))
+const electron = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn(), showOpenDialog: vi.fn(), showMessageBox: vi.fn(async (_home: unknown, _options: { detail: string; signal?: AbortSignal }) => ({ response: 0 })), register: vi.fn(() => true), unregister: vi.fn(), expose: vi.fn(), invoke: vi.fn(async () => ({ ok: true })), rendererOn: vi.fn(), rendererRemove: vi.fn() }))
 vi.mock('electron', () => ({ app: { isPackaged: true }, ipcMain: { handle: electron.handle, removeHandler: electron.removeHandler }, dialog: { showOpenDialog: electron.showOpenDialog, showMessageBox: electron.showMessageBox }, globalShortcut: { register: electron.register, unregister: electron.unregister }, contextBridge: { exposeInMainWorld: electron.expose }, ipcRenderer: { invoke: electron.invoke, on: electron.rendererOn, removeListener: electron.rendererRemove } }))
 const secretStore = vi.hoisted(() => ({ load: vi.fn(async () => 'brave-secret') }))
 vi.mock('./secrets', () => ({ loadSecret: secretStore.load }))
@@ -46,7 +46,7 @@ it('rechecks selected credentials in main and refuses unconfigured Brave and rev
   provider = 'anthropic'; finish('revoked-secret')
   await pending
 })
-afterEach(async () => { for (const cleanup of cleanups.splice(0)) cleanup(); for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.useRealTimers(); for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }) })
 function setup(overrides: Partial<AppSettings> = {}, minimalModel = false) {
   const frame = { url: pageURL('home') }
   const contents = { mainFrame: frame, getURL: () => frame.url, send: vi.fn() }
@@ -61,7 +61,39 @@ function setup(overrides: Partial<AppSettings> = {}, minimalModel = false) {
   const handler = electron.handle.mock.calls.find(call => call[0] === AgentChannels.request)![1] as (event: IpcMainInvokeEvent, request: unknown) => Promise<unknown>
   return { ipc, event, frame, commands, handler, supervisor, contents, settings }
 }
+it('admits only one native confirmation across three live runs and both confirmation kinds', async () => {
+  const { ipc, handler, event, commands } = setup()
+  const runs = ['one', 'two', 'three'].map(id => ({ id, goal: 'Read then research', mode: 'local' as const, mixed: false, status: 'running' as const, persistence: 'temporary' as const, created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }))
+  ipc.push({ kind: 'events', runs, events: [{ runId: 'two', seq: 1, id: 'e1', at: 0, payload: { type: 'approval.requested', approvalId: 'a', callId: 'c', tool: 'save_artifact', preview: 'Save', digest: 'digest' } }] })
+  let release!: (value: { response: number }) => void
+  electron.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const pending = handler(event, { kind: 'allowMix', runId: 'one' })
+  await expect(handler(event, { kind: 'approve', runId: 'two', approvalId: 'a', decision: 'approved' })).rejects.toThrow('Finish the open confirmation first.')
+  await expect(handler(event, { kind: 'allowMix', runId: 'three' })).rejects.toThrow('Finish the open confirmation first.')
+  await expect(handler(event, { kind: 'approve', runId: 'unknown', approvalId: 'unknown', decision: 'approved' })).rejects.toThrow('Finish the open confirmation first.')
+  await expect(handler(event, { kind: 'allowMix', runId: 'unknown' })).rejects.toThrow('Finish the open confirmation first.')
+  expect(electron.showMessageBox).toHaveBeenCalledOnce()
+  release({ response: 1 }); await pending
+  expect(commands).toEqual([{ kind: 'allowMix', runId: 'one' }])
+})
+it.each(['approve', 'allowMix'] as const)('blocks twenty %s retries for two seconds after native Cancel without opening another dialog', async kind => {
+  vi.useFakeTimers()
+  const { ipc, handler, event, commands } = setup()
+  ipc.push({ kind: 'events', runs: [{ id: 'run', goal: 'Read', mode: 'local', mixed: false, status: 'running', persistence: 'temporary', created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }], events: [{ runId: 'run', seq: 1, id: 'e1', at: 0, payload: { type: 'approval.requested', approvalId: 'a', callId: 'c', tool: 'save_artifact', preview: 'Save', digest: 'digest' } }] })
+  const request = kind === 'approve' ? { kind, runId: 'run', approvalId: 'a', decision: 'approved' } : { kind, runId: 'run' }
+  await expect(handler(event, request)).rejects.toThrow('Nothing approved.')
+  await vi.advanceTimersByTimeAsync(1999)
+  for (let i = 0; i < 20; i++) await expect(handler(event, request)).rejects.toThrow('Nothing approved.')
+  expect(electron.showMessageBox).toHaveBeenCalledOnce()
+  expect(commands).toEqual([])
+  await vi.advanceTimersByTimeAsync(1)
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, request)
+  expect(electron.showMessageBox).toHaveBeenCalledTimes(2)
+  expect(commands).toEqual([request])
+})
 it('requires main-owned approval of the retained host preview before forwarding an approved decision', async () => {
+  vi.useFakeTimers()
   const { ipc, handler, event, commands } = setup()
   const request = { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' }
   await expect(handler(event, request)).rejects.toThrow('Approval expired.')
@@ -75,6 +107,7 @@ it('requires main-owned approval of the retained host preview before forwarding 
   expect(detail).toContain('Origin: https://safe.invalid\n')
   expect(detail).toContain('host_digest')
   expect(detail).toContain('\\u{202e}\\u{2066}\\u{200e}\\u{2028}\\u{a}\\u{1}\\u{85}')
+  await vi.advanceTimersByTimeAsync(2000)
   electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
   await handler(event, request)
   expect(commands).toEqual([request])
@@ -107,7 +140,7 @@ it.each(['changed', 'decided', 'terminal', 'cancel', 'stop', 'crash', 'settings'
   const request = { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' }
   const pending = handler(event, request)
   expect(commands).toEqual([]) // A programmatic Home request is only a trigger.
-  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+  await expect(handler(event, request)).rejects.toThrow('Finish the open confirmation first.')
   expect(electron.showMessageBox).toHaveBeenCalledOnce()
   if (invalidation === 'changed') ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', seq: 2, id: 'e2', at: 0, payload: { ...payload, preview: 'Different operation', digest: 'new_digest' } }] })
   if (invalidation === 'decided') await handler(event, { ...request, decision: 'denied' })
@@ -118,11 +151,13 @@ it.each(['changed', 'decided', 'terminal', 'cancel', 'stop', 'crash', 'settings'
   if (invalidation === 'settings') ipc.revokeAuthority()
   if (invalidation === 'navigate') frame.url = 'https://navigated.invalid'
   if (invalidation === 'dispose') ipc.dispose()
+  if (invalidation !== 'navigate') expect(electron.showMessageBox.mock.calls[0]![1].signal?.aborted).toBe(true)
   release({ response: 1 })
   await expect(pending).rejects.toThrow('Approval expired.')
   expect(commands.filter(command => command.kind === 'approve' && command.decision === 'approved')).toEqual([])
 })
 it('requires a native mixing confirmation for a known live run and makes the confirmed decision single-use', async () => {
+  vi.useFakeTimers()
   const { ipc, handler, event, commands } = setup()
   const request = { kind: 'allowMix', runId: 'run' }
   await expect(handler(event, request)).rejects.toThrow('Approval expired.')
@@ -130,10 +165,50 @@ it('requires a native mixing confirmation for a known live run and makes the con
   await expect(handler(event, request)).rejects.toThrow('Nothing approved.')
   expect(commands).toEqual([])
   expect(electron.showMessageBox.mock.calls[0]?.[1].detail).toContain('Local content may be sent to the web.')
+  await vi.advanceTimersByTimeAsync(2000)
   electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
   await handler(event, request)
   expect(commands).toEqual([request])
   await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+})
+it.each(['stopAll', 'revoke', 'crash', 'shortcut'] as const)('aborts the obsolete dialog on %s but retains its global slot until native settlement and never forwards late approval', async action => {
+  const { ipc, handler, event, commands } = setup()
+  const run = { id: 'run', goal: 'Read', mode: 'local' as const, mixed: false, status: 'running' as const, persistence: 'temporary' as const, created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }
+  ipc.push({ kind: 'events', runs: [run], events: [] })
+  let release!: (value: { response: number }) => void
+  // Electron is the external boundary; deliberately ignore abort to exercise
+  // platforms where dismissing the native surface is not immediate/reliable.
+  electron.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const pending = expect(handler(event, { kind: 'allowMix', runId: 'run' })).rejects.toThrow('Approval expired.')
+  const signal = electron.showMessageBox.mock.calls[0]![1].signal
+  expect(signal?.aborted).toBe(false)
+  if (action === 'stopAll') await handler(event, { kind: 'stopAll' })
+  if (action === 'revoke') ipc.revokeAuthority()
+  if (action === 'crash') ipc.push({ kind: 'host', state: 'crashed' })
+  if (action === 'shortcut') (electron.register.mock.calls[0] as unknown as [string, () => void])[1]()
+  expect(signal?.aborted).toBe(true)
+  for (let epoch = 0; epoch < 4; epoch++) {
+    ipc.push({ kind: 'events', runs: [{ ...run, id: `new-${epoch}` }], events: [] })
+    await expect(handler(event, { kind: 'allowMix', runId: `new-${epoch}` })).rejects.toThrow('Finish the open confirmation first.')
+    await handler(event, { kind: 'stopAll' })
+  }
+  expect(electron.showMessageBox).toHaveBeenCalledOnce()
+  release({ response: 1 }); await pending
+  expect(commands).toEqual([])
+})
+it('releases the global slot when an abort-supporting native dialog rejects and allows a fresh generation to confirm', async () => {
+  const { ipc, handler, event, commands } = setup()
+  const run = { id: 'run', goal: 'Read', mode: 'local' as const, mixed: false, status: 'running' as const, persistence: 'temporary' as const, created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }
+  ipc.push({ kind: 'events', runs: [run], events: [] })
+  electron.showMessageBox.mockImplementationOnce((_home, options) => new Promise((_resolve, reject) => { options.signal!.addEventListener('abort', () => reject(new Error('PRIVATE_NATIVE_ABORT'))) }))
+  const pending = handler(event, { kind: 'allowMix', runId: 'run' })
+  await handler(event, { kind: 'stopAll' })
+  await expect(pending).rejects.toThrow('Approval expired.')
+  ipc.push({ kind: 'events', runs: [{ ...run, id: 'fresh' }], events: [] })
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, { kind: 'allowMix', runId: 'fresh' })
+  expect(commands).toEqual([{ kind: 'allowMix', runId: 'fresh' }])
+  expect(electron.showMessageBox).toHaveBeenCalledTimes(2)
 })
 it('hides native confirmation failures instead of exposing platform diagnostics to Home', async () => {
   const { ipc, handler, event, commands } = setup()

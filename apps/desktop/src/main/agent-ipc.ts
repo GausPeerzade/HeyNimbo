@@ -42,27 +42,40 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
   let authority = 0
   const approvals = new Map<string, Extract<AgentEvent['payload'], { type: 'approval.requested' }>>()
   const runs = new Map<string, RunSummary>()
-  const dialogs = new Set<string>()
+  let confirmation: { runId: string; controller: AbortController } | undefined
+  const cancelled = new Map<string, number>()
   const sequences = new Map<string, number>()
-  const revokeAuthority = (): void => { authority++; approvals.clear(); runs.clear(); sequences.clear() }
+  const obsolete = (runId: string): void => { if (confirmation?.runId === runId) confirmation.controller.abort() }
+  const revokeAuthority = (): void => { authority++; approvals.clear(); runs.clear(); sequences.clear(); confirmation?.controller.abort() }
   const safe = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, char => `\\u{${char.codePointAt(0)!.toString(16)}}`)
-  const confirm = async (event: Electron.IpcMainInvokeEvent, runId: string, message: string, detail: string, current: () => boolean): Promise<void> => {
+  const confirm = async (event: Electron.IpcMainInvokeEvent, runId: string, kind: 'approve' | 'allowMix', message: string, detail: string, current: () => boolean): Promise<void> => {
     const home = deps.home(), generation = authority
-    if (!home || dialogs.has(runId)) throw new Error('Approval expired.')
-    dialogs.add(runId)
+    if (confirmation) throw new Error('Finish the open confirmation first.')
+    if (!home) throw new Error('Approval expired.')
+    const key = `${kind}:${runId}`
+    if ((cancelled.get(key) ?? 0) > Date.now()) throw new Error('Nothing approved.')
+    const controller = new AbortController()
+    confirmation = { runId, controller }
     try {
       let result: Electron.MessageBoxReturnValue
-      try { result = await dialog.showMessageBox(home, { type: 'warning', message, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0 }) }
-      catch { throw new Error('Could not confirm this action.') }
-      if (disposed || authority !== generation || deps.home() !== home || !isPageSender(event, home, 'home') || !current()) throw new Error('Approval expired.')
-      if (result.response !== 1) throw new Error('Nothing approved.')
-    } finally { dialogs.delete(runId) }
+      // Electron 45 supports abort for parented macOS sheets. Keep the global
+      // slot until settlement even if a platform ignores/delays native dismissal.
+      try { result = await dialog.showMessageBox(home, { type: 'warning', message, detail, buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0, signal: controller.signal }) }
+      catch { throw new Error(controller.signal.aborted ? 'Approval expired.' : 'Could not confirm this action.') }
+      if (disposed || controller.signal.aborted || authority !== generation || deps.home() !== home || !isPageSender(event, home, 'home') || !current()) throw new Error('Approval expired.')
+      if (result.response !== 1) {
+        cancelled.delete(key); cancelled.set(key, Date.now() + 2000)
+        while (cancelled.size > 256) cancelled.delete(cancelled.keys().next().value!)
+        throw new Error('Nothing approved.')
+      }
+    } finally { confirmation = undefined }
   }
   const shortcutRegistered = globalShortcut.register(AGENT_STOP_SHORTCUT, () => { revokeAuthority(); void deps.supervisor.stopAll().catch(() => {}) })
   ipcMain.handle(AgentChannels.request, async (event, value: unknown) => {
     if (disposed || !isPageSender(event, deps.home(), 'home')) throw new Error('Not allowed.')
     let request: AgentRequest
     try { request = parseAgentRequest(value) } catch { throw new Error('Invalid agent request.') }
+    if (confirmation && (request.kind === 'allowMix' || (request.kind === 'approve' && request.decision === 'approved'))) throw new Error('Finish the open confirmation first.')
     if (request.kind === 'approve') {
       const pending = approvals.get(request.runId)
       if (!pending || pending.approvalId !== request.approvalId) throw new Error('Approval expired.')
@@ -72,22 +85,23 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
           try { origins.add(new URL(match[0]).origin) } catch { /* A malformed preview cannot invent an origin. */ }
         }
         const detail = [...origins].map(origin => `Origin: ${safe(origin)}\n`).join('') + `Tool: ${safe(pending.tool)}\nPreview: ${safe(pending.preview)}\nDigest: ${safe(pending.digest)}`
-        await confirm(event, request.runId, 'Approve this agent action?', detail, () => approvals.get(request.runId) === pending)
+        await confirm(event, request.runId, 'approve', 'Approve this agent action?', detail, () => approvals.get(request.runId) === pending)
       }
+      if (request.decision === 'denied') obsolete(request.runId)
       approvals.delete(request.runId)
       return deps.supervisor.request(request)
     }
     if (request.kind === 'allowMix') {
       const run = runs.get(request.runId)
       if (!run || isTerminal(run.status) || run.mixed) throw new Error('Approval expired.')
-      await confirm(event, request.runId, 'Allow web and files for this task?', `Task: ${safe(run.goal)}\nThis permits web requests and granted files in the same task. Local content may be sent to the web.`, () => {
+      await confirm(event, request.runId, 'allowMix', 'Allow web and files for this task?', `Task: ${safe(run.goal)}\nThis permits web requests and granted files in the same task. Local content may be sent to the web.`, () => {
         const current = runs.get(request.runId)
         return Boolean(current && !isTerminal(current.status) && !current.mixed)
       })
       runs.set(run.id, { ...run, mixed: true })
       return deps.supervisor.request(request)
     }
-    if (request.kind === 'cancel' || request.kind === 'delete' || request.kind === 'continue') { approvals.delete(request.runId); runs.delete(request.runId) }
+    if (request.kind === 'cancel' || request.kind === 'delete' || request.kind === 'continue') { obsolete(request.runId); approvals.delete(request.runId); runs.delete(request.runId) }
     if (request.kind === 'pickFolder') {
       if (grants.size >= 128) throw new Error('Too many folders. Restart the app to choose more.')
       try {
@@ -136,15 +150,15 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
       if (push.kind === 'events') {
         for (const run of push.runs) {
           runs.set(run.id, { ...run })
-          if (isTerminal(run.status)) approvals.delete(run.id)
+          if (isTerminal(run.status)) { obsolete(run.id); approvals.delete(run.id) }
         }
         for (const event of push.events) {
           if (event.seq <= (sequences.get(event.runId) ?? 0)) continue
           sequences.set(event.runId, event.seq)
           const p = event.payload
-          if (p.type === 'approval.requested') approvals.set(event.runId, { ...p })
-          if (p.type === 'approval.decided' && approvals.get(event.runId)?.approvalId === p.approvalId) approvals.delete(event.runId)
-          if (p.type === 'status' && isTerminal(p.status)) { approvals.delete(event.runId); runs.delete(event.runId) }
+          if (p.type === 'approval.requested') { obsolete(event.runId); approvals.set(event.runId, { ...p }) }
+          if (p.type === 'approval.decided' && approvals.get(event.runId)?.approvalId === p.approvalId) { obsolete(event.runId); approvals.delete(event.runId) }
+          if (p.type === 'status' && isTerminal(p.status)) { obsolete(event.runId); approvals.delete(event.runId); runs.delete(event.runId) }
         }
         for (const map of [runs, approvals, sequences]) while (map.size > 256) map.delete(map.keys().next().value!)
       }

@@ -1,7 +1,7 @@
 import { parseHostToMain } from '../agent/host/serve'
 import { existsSync } from 'node:fs'
 import { agentPaths } from '../agent/paths'
-import { isTerminal, type AgentEvent, type AgentPush, type HostCommand, type HostState, type HostToMain, type MainToHost, type RunSummary } from '../shared/agent-protocol'
+import { HOST_MESSAGE_MAX_BYTES, isTerminal, type CancelAllResult, type AgentEvent, type AgentPush, type HostCommand, type HostState, type HostToMain, type MainToHost, type RunSummary } from '../shared/agent-protocol'
 
 export interface ChildLike {
   postMessage(message: MainToHost): void
@@ -29,29 +29,33 @@ const CRASHED = 'Agent host stopped unexpectedly. Try again.'
 const UNAVAILABLE = 'Agent host unavailable. Try again.'
 const STOPPED = 'Agent host stopped.'
 const FLUSH_BYTES = 4 * 1024 * 1024
-const MESSAGE_BYTES = 8 * 1024 * 1024
-/** Cheap bounded preflight before JSON-based deep event validation. Reserve the
- * worst-case escape expansion only for strings that actually need escaping.
- * This is a conservative wire budget, not a second serialization of the batch. */
-function wireBytes(value: unknown, limit = MESSAGE_BYTES, lowerBound = false): number {
+/** Structural/string-length lower bound only: reject huge envelopes before
+ * scanning UTF-8 or escaping payloads. Exact bytes come from validation once. */
+function preflight(value: unknown): number {
   let bytes = 0, nodes = 0
   const seen = new Set<object>()
   const visit = (value: unknown, depth: number): void => {
-    if (++nodes > 20_000 || depth > 16 || bytes > limit) throw new Error('Too large.')
-    if (typeof value === 'string') {
-      if (value.length > limit - bytes) throw new Error('Too large.')
-      bytes += lowerBound ? value.length + 2 : Buffer.byteLength(value) + 2 + (/["\\\u0000-\u001f]/.test(value) ? value.length * 5 : 0)
-    } else if (value && typeof value === 'object') {
+    if (++nodes > 20_000 || depth > 16 || bytes > HOST_MESSAGE_MAX_BYTES) throw new Error('Too large.')
+    if (typeof value === 'string') bytes += value.length + 2
+    else if (value && typeof value === 'object') {
       if (seen.has(value)) throw new Error('Invalid message.')
       seen.add(value); bytes += 2
       if (Array.isArray(value)) {
         if (value.length > 1024) throw new Error('Too large.')
-        for (const item of value) { bytes++; visit(item, depth + 1) }
-      } else for (const [key, item] of Object.entries(value)) { bytes += 2; visit(key, depth + 1); visit(item, depth + 1) }
+        bytes += Math.max(0, value.length - 1)
+        for (const item of value) visit(item === undefined ? null : item, depth + 1)
+      } else {
+        let count = 0
+        for (const [key, item] of Object.entries(value)) if (item !== undefined) {
+          if (count++) bytes++
+          visit(key, depth + 1); bytes++; visit(item, depth + 1)
+        }
+      }
       seen.delete(value)
-    } else if (value === null || typeof value === 'boolean' || typeof value === 'number' || value === undefined) bytes += 24
-    else throw new Error('Invalid message.')
-    if (bytes > limit) throw new Error('Too large.')
+    } else if (value === null) bytes += 4
+    else if (typeof value === 'boolean' || typeof value === 'number') bytes += String(value).length
+    else if (value !== undefined) throw new Error('Invalid message.')
+    if (bytes > HOST_MESSAGE_MAX_BYTES) throw new Error('Too large.')
   }
   visit(value, 0)
   return bytes
@@ -78,6 +82,9 @@ export class AgentSupervisor {
   private volumeTimer?: NodeJS.Timeout
   private volume = 0
   private queuedPurge?: Extract<HostCommand, { kind: 'purge' }>
+  private inbox: Array<{ child: ChildLike; value: unknown; bytes: number }> = []
+  private inboxBytes = 0
+  private inboxTurn?: NodeJS.Immediate
 
   constructor(private readonly deps: SupervisorDeps) {}
   private setState(state: HostState, message?: string): void {
@@ -140,8 +147,44 @@ export class AgentSupervisor {
     try { child.postMessage(message) } catch { if (this.child === child) this.fail(UNAVAILABLE, true) }
   }
   private receive(child: ChildLike, value: unknown): void {
+    let bytes: number
+    try { bytes = preflight(value) } catch { this.invalidMessages++; return }
+    // Large legal batches can arrive together in one MessagePort poll phase.
+    // Bound each validation slice, not merely each envelope. Keep subsequent
+    // events FIFO (even tiny terminal events); replies/credentials stay immediate.
+    if ((value as { kind?: unknown })?.kind === 'events' && (bytes > 64 * 1024 || this.inboxTurn)) {
+      if (this.inboxTurn) {
+        if (this.inboxBytes + bytes > 16 * 1024 * 1024 || this.inbox.length >= 1024) {
+          // Do not silently drop a legal terminal/control event under overload.
+          // Surface interruption instead; retained work can resume in a new host.
+          this.clearOutput(); this.fail(CRASHED, true)
+          return
+        }
+        this.inbox.push({ child, value, bytes }); this.inboxBytes += bytes
+        return
+      }
+      this.scheduleInbox()
+    }
+    this.consume(child, value)
+  }
+  private scheduleInbox(): void {
+    this.inboxTurn = setImmediate(() => {
+      this.inboxTurn = undefined
+      const next = this.inbox.shift()
+      if (!next) return
+      this.inboxBytes -= next.bytes
+      this.scheduleInbox()
+      if (this.child === next.child) this.consume(next.child, next.value)
+    })
+  }
+  private clearInbox(): void {
+    clearImmediate(this.inboxTurn); this.inboxTurn = undefined
+    this.inbox = []; this.inboxBytes = 0
+  }
+  private consume(child: ChildLike, value: unknown): void {
     let m: HostToMain
-    try { wireBytes(value, MESSAGE_BYTES, true); wireBytes(value); m = parseHostToMain(value) } catch { this.invalidMessages++; return }
+    const sizes = new Map<object, number>()
+    try { m = parseHostToMain(value, sizes) } catch { this.invalidMessages++; return }
     if (m.kind === 'ready') {
       if (this.state !== 'starting') { this.invalidMessages++; return }
       this.setState('ready')
@@ -173,14 +216,14 @@ export class AgentSupervisor {
         if (this.terminalRuns.size > 256) this.terminalRuns.delete(this.terminalRuns.values().next().value!)
         for (const [key, binding] of this.bindings) if (binding.runId === event.runId) this.bindings.delete(key)
       }
-      for (const run of m.runs) { this.reserveOutput(wireBytes(run)); this.runs.set(run.id, run) }
-      for (const event of m.events) { this.reserveOutput(wireBytes(event)); this.events.push(event) }
+      for (const run of m.runs) { this.reserveOutput(sizes.get(run)!); this.runs.set(run.id, run) }
+      for (const event of m.events) { this.reserveOutput(sizes.get(event)!); this.events.push(event) }
       for (const event of m.events) if (event.payload.type === 'text' || (event.payload.type === 'status' && isTerminal(event.payload.status))) this.partials.delete(event.runId)
       const urgent = m.events.some(event => event.payload.type === 'approval.requested' || event.payload.type === 'approval.decided' || event.payload.type === 'question' || (event.payload.type === 'status' && isTerminal(event.payload.status)))
       if (urgent || this.events.length >= 256 || this.runs.size >= 256) this.flush()
       else this.scheduleFlush()
     } else {
-      this.reserveOutput(wireBytes(m))
+      this.reserveOutput(sizes.get(m)!)
       this.partials.set(m.runId, { kind: 'partial', runId: m.runId, step: m.step, text: m.text })
       if (this.partials.size > 256) { this.clearOutput(); this.fail(CRASHED, true); return }
       this.scheduleFlush()
@@ -207,6 +250,7 @@ export class AgentSupervisor {
     this.pending.clear()
   }
   private fail(message: string, kill: boolean): void {
+    this.clearInbox()
     clearTimeout(this.volumeTimer); this.volumeTimer = undefined; this.volume = 0
     const child = this.child
     this.child = undefined; this.revokeAuthority()
@@ -246,19 +290,27 @@ export class AgentSupervisor {
     this.stopping = true
     this.revokeAuthority()
     this.rejectPending(STOPPED)
-    this.stopped = this.submit({ kind: 'cancelAll' }, 1500).then(() => ({ ok: true as const }), () => {
+    const reap = (): { ok: true } => {
+      this.clearInbox()
       const child = this.child
       this.child = undefined
       this.terminate(child)
       this.rejectPending(STOPPED); this.flush()
       this.setState('stopped', STOPPED)
-      return { ok: true as const }
-    }).finally(() => { this.stopping = false; this.stopped = undefined })
+      return { ok: true }
+    }
+    this.stopped = this.submit({ kind: 'cancelAll' }, 1500).then(result => {
+      // Older hosts acknowledge cancellation without proving quiescence. Keep
+      // compatibility, but never let a new host's unsettled work strand Do.
+      const drain = result as Partial<CancelAllResult> | undefined
+      return drain?.ok === true && typeof drain.unsettled === 'number' && drain.unsettled > 0 ? reap() : { ok: true as const }
+    }, reap).finally(() => { this.stopping = false; this.stopped = undefined })
     return this.stopped
   }
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.clearInbox()
     clearTimeout(this.volumeTimer); this.volumeTimer = undefined
     const child = this.child
     this.child = undefined; this.revokeAuthority()
