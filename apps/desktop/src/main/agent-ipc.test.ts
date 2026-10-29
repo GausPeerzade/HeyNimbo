@@ -1,13 +1,13 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { mkdir, realpath, rm, symlink } from 'node:fs/promises'
+import { mkdir, realpath, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AgentChannels, DEFAULT_BUDGET, type AgentApi, type AgentPush, type HostCommand } from '../shared/agent-protocol'
 import type { AppSettings } from '../shared/app'
-const electron = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn(), showOpenDialog: vi.fn(), register: vi.fn(() => true), unregister: vi.fn(), expose: vi.fn(), invoke: vi.fn(async () => ({ ok: true })), rendererOn: vi.fn(), rendererRemove: vi.fn() }))
-vi.mock('electron', () => ({ app: { isPackaged: true }, ipcMain: { handle: electron.handle, removeHandler: electron.removeHandler }, dialog: { showOpenDialog: electron.showOpenDialog }, globalShortcut: { register: electron.register, unregister: electron.unregister }, contextBridge: { exposeInMainWorld: electron.expose }, ipcRenderer: { invoke: electron.invoke, on: electron.rendererOn, removeListener: electron.rendererRemove } }))
+const electron = vi.hoisted(() => ({ handle: vi.fn(), removeHandler: vi.fn(), showOpenDialog: vi.fn(), showMessageBox: vi.fn(async (_home: unknown, _options: { detail: string }) => ({ response: 0 })), register: vi.fn(() => true), unregister: vi.fn(), expose: vi.fn(), invoke: vi.fn(async () => ({ ok: true })), rendererOn: vi.fn(), rendererRemove: vi.fn() }))
+vi.mock('electron', () => ({ app: { isPackaged: true }, ipcMain: { handle: electron.handle, removeHandler: electron.removeHandler }, dialog: { showOpenDialog: electron.showOpenDialog, showMessageBox: electron.showMessageBox }, globalShortcut: { register: electron.register, unregister: electron.unregister }, contextBridge: { exposeInMainWorld: electron.expose }, ipcRenderer: { invoke: electron.invoke, on: electron.rendererOn, removeListener: electron.rendererRemove } }))
 const secretStore = vi.hoisted(() => ({ load: vi.fn(async () => 'brave-secret') }))
 vi.mock('./secrets', () => ({ loadSecret: secretStore.load }))
 import { credentialForAgent, registerAgentIpc } from './agent-ipc'
@@ -61,6 +61,87 @@ function setup(overrides: Partial<AppSettings> = {}, minimalModel = false) {
   const handler = electron.handle.mock.calls.find(call => call[0] === AgentChannels.request)![1] as (event: IpcMainInvokeEvent, request: unknown) => Promise<unknown>
   return { ipc, event, frame, commands, handler, supervisor, contents, settings }
 }
+it('requires main-owned approval of the retained host preview before forwarding an approved decision', async () => {
+  const { ipc, handler, event, commands } = setup()
+  const request = { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' }
+  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+  expect(electron.showMessageBox).not.toHaveBeenCalled()
+  const pending = { type: 'approval.requested' as const, approvalId: 'approval', callId: 'call', tool: 'fetch_url', preview: 'https://safe.invalid/a\u202E\u2066\u200E\u2028\n\u0001\u0085', digest: 'host_digest' }
+  ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', id: 'e1', seq: 1, at: 0, payload: pending }] })
+  await expect(handler(event, request)).rejects.toThrow('Nothing approved.')
+  expect(commands).toEqual([])
+  expect(electron.showMessageBox.mock.calls[0]?.[1]).toMatchObject({ type: 'warning', buttons: ['Cancel', 'Approve'], defaultId: 0, cancelId: 0 })
+  const detail = String(electron.showMessageBox.mock.calls[0]?.[1].detail)
+  expect(detail).toContain('Origin: https://safe.invalid\n')
+  expect(detail).toContain('host_digest')
+  expect(detail).toContain('\\u{202e}\\u{2066}\\u{200e}\\u{2028}\\u{a}\\u{1}\\u{85}')
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, request)
+  expect(commands).toEqual([request])
+  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+  expect(commands).toHaveLength(1)
+})
+it('refuses a compatible endpoint key unless its requested endpoint still matches before and after loading', async () => {
+  let baseURL = 'https://new.invalid/v1'
+  let release!: (secret: string) => void
+  const credential = () => new Promise<string>(resolve => { release = resolve })
+  const connections = { answer: () => ({ provider: 'compatible' as const, model: 'm', baseURL, vision: false, credential }) }
+  for (const binding of [undefined, { baseURL: 'https://old.invalid/v1' }]) {
+    // A stale run must be denied before even asking the new endpoint for a key.
+    const attempt = credentialForAgent('compatible', ['compatible'], connections, () => ({}), binding)
+    release?.('SYNTHETIC_NEW_KEY')
+    await expect(attempt).rejects.toThrow('Agent credential unavailable.')
+  }
+  const pending = credentialForAgent('compatible', ['compatible'], connections, () => ({}), { baseURL })
+  baseURL = 'https://third.invalid/v1'; release('STALE_KEY')
+  await expect(pending).rejects.toThrow('Agent credential unavailable.')
+  const valid = credentialForAgent('compatible', ['compatible'], connections, () => ({}), { baseURL })
+  release('CURRENT_KEY'); await expect(valid).resolves.toBe('CURRENT_KEY')
+})
+it.each(['changed', 'decided', 'terminal', 'cancel', 'stop', 'crash', 'settings', 'navigate', 'dispose'] as const)('rejects a native confirmation that became stale during %s without forwarding authority', async invalidation => {
+  const { ipc, handler, event, commands, frame } = setup()
+  const payload = { type: 'approval.requested' as const, approvalId: 'approval', callId: 'call', tool: 'save_artifact', preview: 'Save the file', digest: 'digest' }
+  ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', seq: 1, id: 'e1', at: 0, payload }] })
+  let release!: (value: { response: number }) => void
+  electron.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const request = { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' }
+  const pending = handler(event, request)
+  expect(commands).toEqual([]) // A programmatic Home request is only a trigger.
+  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+  expect(electron.showMessageBox).toHaveBeenCalledOnce()
+  if (invalidation === 'changed') ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', seq: 2, id: 'e2', at: 0, payload: { ...payload, preview: 'Different operation', digest: 'new_digest' } }] })
+  if (invalidation === 'decided') await handler(event, { ...request, decision: 'denied' })
+  if (invalidation === 'terminal') ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', seq: 2, id: 'e2', at: 0, payload: { type: 'status', status: 'cancelled' } }] })
+  if (invalidation === 'cancel') await handler(event, { kind: 'cancel', runId: 'run' })
+  if (invalidation === 'stop') await handler(event, { kind: 'stopAll' })
+  if (invalidation === 'crash') ipc.push({ kind: 'host', state: 'crashed' })
+  if (invalidation === 'settings') ipc.revokeAuthority()
+  if (invalidation === 'navigate') frame.url = 'https://navigated.invalid'
+  if (invalidation === 'dispose') ipc.dispose()
+  release({ response: 1 })
+  await expect(pending).rejects.toThrow('Approval expired.')
+  expect(commands.filter(command => command.kind === 'approve' && command.decision === 'approved')).toEqual([])
+})
+it('requires a native mixing confirmation for a known live run and makes the confirmed decision single-use', async () => {
+  const { ipc, handler, event, commands } = setup()
+  const request = { kind: 'allowMix', runId: 'run' }
+  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+  ipc.push({ kind: 'events', events: [], runs: [{ id: 'run', goal: 'Read \u202E then research', mode: 'local', mixed: false, status: 'running', persistence: 'temporary', created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } }] })
+  await expect(handler(event, request)).rejects.toThrow('Nothing approved.')
+  expect(commands).toEqual([])
+  expect(electron.showMessageBox.mock.calls[0]?.[1].detail).toContain('Local content may be sent to the web.')
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, request)
+  expect(commands).toEqual([request])
+  await expect(handler(event, request)).rejects.toThrow('Approval expired.')
+})
+it('hides native confirmation failures instead of exposing platform diagnostics to Home', async () => {
+  const { ipc, handler, event, commands } = setup()
+  ipc.push({ kind: 'events', runs: [], events: [{ runId: 'run', seq: 1, id: 'e1', at: 0, payload: { type: 'approval.requested', approvalId: 'approval', callId: 'call', tool: 'save_artifact', preview: 'Save file', digest: 'digest' } }] })
+  electron.showMessageBox.mockRejectedValueOnce(new Error('PRIVATE_PLATFORM_PATH'))
+  await expect(handler(event, { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' })).rejects.toThrow('Could not confirm this action.')
+  expect(commands).toEqual([])
+})
 it('rejects picker completion after disposal and does not leak filesystem failures', async () => {
   const { ipc, handler, event } = setup()
   let finish!: (value: { canceled: boolean; filePaths: string[] }) => void
@@ -114,7 +195,8 @@ it('returns only an opaque folder grant and resolves its canonical root only for
   expect(JSON.stringify(picked)).not.toContain(dir)
   expect(electron.showOpenDialog.mock.calls[0]![0]).toEqual({ properties: ['openDirectory'] })
   await handler(event, { kind: 'start', requestId: 'req', goal: 'Read', mode: 'local', grantIds: [picked.grant.id] })
-  expect(commands[0]).toMatchObject({ grants: [{ id: picked.grant.id, root: await realpath(root), label: basename(root) }] })
+  const pickedStat = await stat(await realpath(root), { bigint: true })
+  expect(commands[0]).toMatchObject({ grants: [{ id: picked.grant.id, root: await realpath(root), label: basename(root), identity: `${pickedStat.dev}:${pickedStat.ino}` }] })
 })
 it('forwards the current search configuration on Continue without credentials', async () => {
   const { handler, event, commands, settings } = setup({ agent: { search: { provider: 'brave' } } })

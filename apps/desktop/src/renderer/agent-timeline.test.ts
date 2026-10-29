@@ -79,6 +79,28 @@ it('renders host approval preview literally and locks both decisions until the p
   expect(root.children[0]).toBe(card); expect(card.all('button')).toHaveLength(0)
   expect(card.all('p')[0]?.textContent).toBe('Approved')
 })
+it('escapes bidi, controls and line separators in authority previews and artifact names', () => {
+  const timeline = setup(); timeline.reset('run', false)
+  const hostile = 'file\u202E\u2069\u200E\u2028\n\u0000\u009F'
+  timeline.append([event(1, { ...approval(), preview: hostile } as AgentEventPayload), event(2, { type: 'artifact', artifactId: 'artifact', name: hostile, mediaType: 'text/plain', bytes: 4 })]); flush()
+  const safe = 'file\\u{202e}\\u{2069}\\u{200e}\\u{2028}\\u{a}\\u{0}\\u{9f}'
+  expect(root.all('pre')[0]?.textContent).toBe(safe)
+  expect(root.all('button').at(-1)?.textContent).toBe(`${safe} · 4 bytes`)
+  timeline.reset('run', false); timeline.append([event(1, { ...approval(), preview: hostile } as AgentEventPayload)], 'earlier'); flush()
+  expect(root.all('pre')[0]?.textContent).toBe(safe)
+})
+it('shows artifact preview controls visibly while Copy preserves the exact original artifact', async () => {
+  const timeline = setup(); timeline.reset('run', false)
+  const text = 'safe\u202Etxt\u0000\u2029'
+  request = async () => ({ text })
+  const copy = vi.fn(async () => {})
+  vi.stubGlobal('navigator', { clipboard: { writeText: copy } })
+  timeline.append([event(1, { type: 'artifact', artifactId: 'artifact', name: 'Note', mediaType: 'text/plain', bytes: 20 })]); flush()
+  root.all('button')[0]!.onclick!(); await tick()
+  expect(root.all('pre')[0]?.textContent).toBe('safe\\u{202e}txt\\u{0}\\u{2029}')
+  root.all('button').find(node => node.textContent === 'Copy')!.onclick!(); await tick()
+  expect(copy).toHaveBeenCalledWith(text)
+})
 it('never offers buttons for stale approval replayed alongside or after its decision', () => {
   const timeline = setup(); timeline.reset('run', false)
   timeline.append([event(2, { type: 'approval.decided', approvalId: 'approval', decision: 'denied' }), event(1, approval())]); flush()

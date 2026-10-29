@@ -62,7 +62,7 @@ async function measureTraffic() {
     // Approval/terminal messages are urgent and must not be hidden by batching.
     h.child.emit('message', { v: 1, kind: 'events', runs: [], events: [{ id: 'urgent', runId: 'load', seq: ++seq, at: Date.now(), payload: { type: 'status', status: 'succeeded' } }] })
     const events = h.pushes.flatMap(push => push.kind === 'events' ? push.events : [])
-    const partials = h.pushes.filter(push => push.kind === 'partial')
+    const partials = h.pushes.flatMap(push => push.kind === 'events' ? push.partials ?? [] : push.kind === 'partial' ? [push] : [])
     const homePushes = h.pushes.filter(push => push.kind !== 'host').length
     const p99 = lag.percentile(99) / 1e6
     console.info(`[agent-perf] S1/S2 traffic: ${elapsed.toFixed(1)}ms, events=${events.length - 1}, partialInputs=2000, Home=${homePushes}, loop p99=${p99.toFixed(3)}ms`)
@@ -81,9 +81,8 @@ it('processes 5000 mixed valid events and 2000 partials without event loss or a 
   expect(result.partials.length).toBeLessThanOrEqual(Math.ceil(result.elapsed / 16) + 2)
 })
 
-// R1–R8 output-coalescing owner: current flush emits separate Home calls for
-// durable events and partials in the same frame (observed 101 vs a 69 bound).
-it.fails('limits combined Home event and partial pushes to approximately one per frame under mixed traffic', async () => {
+// Durable events and transient prefixes share one Home push per frame.
+it('limits combined Home event and partial pushes to approximately one per frame under mixed traffic', async () => {
   const result = await measureTraffic()
   expect(result.homePushes).toBeLessThanOrEqual(Math.ceil(result.elapsed / 16) + 4)
 })

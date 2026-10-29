@@ -35,6 +35,25 @@ it('rejects authority-bearing budget extras in created events before either port
   expect(host.invalidMessages).toBe(1)
   await host.dispose()
 })
+it('carries the compatible endpoint through the host credential port and validates the optional binding', async () => {
+  const port = new Port()
+  let credentials!: CredentialSource
+  const host = serveHost(port, async init => { credentials = init.credentials; return { handle: async () => ({}), shutdown: async () => {} } })
+  port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
+  const pending = credentials('compatible', { baseURL: 'https://chosen.invalid/v1' })
+  const request = { v: 1, kind: 'credential.request', id: 1, name: 'compatible', baseURL: 'https://chosen.invalid/v1' }
+  expect(port.sent).toContainEqual(request)
+  expect(parseHostToMain(request)).toEqual(request)
+  expect(() => parseHostToMain({ ...request, baseURL: 12 })).toThrow('Invalid')
+  port.emit('message', { v: 1, kind: 'credential', id: 1, ok: true, secret: 'synthetic' })
+  await expect(pending).resolves.toBe('synthetic')
+  await host.dispose()
+})
+it('accepts the main-picked bigint directory identity without accepting malformed authority', () => {
+  const command = { ...localStart, grants: [{ id: 'grant', root: '/allowed', label: 'allowed', identity: '123:456' }] }
+  expect(parseMainToHost({ v: 1, kind: 'command', id: 1, command })).toMatchObject({ command })
+  for (const identity of ['not-an-inode', '1:2:3', '1:-2', 12]) expect(() => parseMainToHost({ v: 1, kind: 'command', id: 1, command: { ...command, grants: [{ ...command.grants[0], identity }] } })).toThrow('Invalid')
+})
 it('caps pending credentials and sanitizes a disconnected main port without leaving timers', async () => {
   vi.useFakeTimers()
   const port = new Port()

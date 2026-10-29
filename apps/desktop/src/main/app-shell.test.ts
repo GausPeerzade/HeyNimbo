@@ -8,25 +8,51 @@ import { serveHost } from '../agent/host/serve'
 import { SqliteAgentStore } from '../agent/store'
 import { FileArtifactStore } from '../agent/artifacts'
 import { agentPaths } from '../agent/paths'
-import { DEFAULT_BUDGET, type MainToHost } from '../shared/agent-protocol'
+import { DEFAULT_BUDGET, type HostCommand, type MainToHost } from '../shared/agent-protocol'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import { AppShell, type ShellActions } from './app-shell'
+import { BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import type { AppRequest } from '../shared/app'
+import { AppShell, brandPath, type ShellActions } from './app-shell'
 import { pageURL } from './page-security'
 import { DEFAULT_SETTINGS } from './settings'
 import { TalkSession, type TalkDeps } from './voice/talk'
-const mocks = vi.hoisted(() => ({ dir: '', confirm: vi.fn(), microphoneStatus: vi.fn(), allowMicrophone: vi.fn(), external: vi.fn(), handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
+const mocks = vi.hoisted(() => ({ menus: [] as Electron.MenuItemConstructorOptions[][], lifecycle: new Map<string, () => void>(), packaged: false, dir: '', confirm: vi.fn(), microphoneStatus: vi.fn(), allowMicrophone: vi.fn(), external: vi.fn(), handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
 vi.mock('./audio-window', () => ({ microphoneAccessStatus: mocks.microphoneStatus, ensureMicrophoneAccess: mocks.allowMicrophone }))
-vi.mock('electron', () => ({
-  shell: { openExternal: mocks.external },
-  app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: true },
-  ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'heynimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
-  dialog: { showMessageBox: mocks.confirm },
-  nativeTheme: { shouldUseDarkColors: false },
-}))
+vi.mock('electron', async () => {
+  const { EventEmitter } = await import('node:events')
+  class Window extends EventEmitter {
+    minimized = false; fullScreen = false; shown = false; focused = false; visibleOnAllWorkspaces = false
+    bounds = { x: 20, y: 20, width: 900, height: 700 }
+    webContents = Object.assign(new EventEmitter(), { mainFrame: { url: '' }, getURL: () => this.webContents.mainFrame.url, send: vi.fn(), setWindowOpenHandler() {}, isLoading: () => false })
+    constructor(readonly options: unknown) { super() }
+    isDestroyed() { return false }
+    isMinimized() { return this.minimized }
+    isFullScreen() { return this.fullScreen }
+    getNormalBounds() { return this.bounds }
+    isFocused() { return this.focused }
+    restore() { this.minimized = false }
+    show() { this.shown = true }
+    focus() { this.focused = true }
+    setVisibleOnAllWorkspaces(value: boolean) { this.visibleOnAllWorkspaces = value }
+    async loadFile(file: string) { this.webContents.mainFrame.url = file.endsWith('settings.html') ? pageURL('settings') : pageURL('home') }
+  }
+  return {
+    BrowserWindow: Window,
+    shell: { openExternal: mocks.external },
+    app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', get isPackaged() { return mocks.packaged }, on: (event: string, listener: () => void) => mocks.lifecycle.set(event, listener), focus() {}, setLoginItemSettings() {} },
+    ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'heynimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
+    dialog: { showMessageBox: mocks.confirm },
+    nativeTheme: { shouldUseDarkColors: false },
+    screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1440, height: 900 } }] },
+    nativeImage: { createFromPath: () => ({ setTemplateImage() {} }) },
+    Menu: { buildFromTemplate: (items: Electron.MenuItemConstructorOptions[]) => { mocks.menus.push(items); return { popup() {} } }, setApplicationMenu() {} },
+    Tray: class { setToolTip() {} setContextMenu() {} destroy() {} },
+  }
+})
 let shell: AppShell | undefined, talk: TalkSession | undefined
 function fixture(ask: ShellActions['ask'] = () => ({ accepted: true }), extra: Partial<ShellActions> = {}) {
   mocks.dir = mkdtempSync(join(tmpdir(), 'heynimbo-shell-test-'))
+  mocks.menus.length = 0; mocks.lifecycle.clear(); mocks.packaged = false
   mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue({ response: 0 })
   const actions = { ...extra, ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
   shell = new AppShell(actions, true)
@@ -76,6 +102,113 @@ it('applies shorter retention and confirmed delete-all to real agent rows and bl
     expect(await bridge.supervisor.request({ kind: 'list', limit: 10 })).toEqual({ runs: [] })
     expect(await artifacts.read('recent', ids.find(run => run.id === 'recent')!.artifactId)).toBeUndefined()
   } finally { bridge.supervisor.dispose(); await bridge.host.dispose() }
+})
+it.each(['settings', 'key', 'legacy-key', 'connection-refresh'] as const)('revokes in-flight agent credentials before a %s mutation can replace their key or endpoint', async mutation => {
+  const { shell, event } = fixture(undefined, { connectionRequest: async () => ({ ok: true, message: 'Changed' }) })
+  Object.assign(shell, { preview: false })
+  const child = new EventEmitter(), sent: MainToHost[] = []
+  let release!: (secret: string) => void
+  const supervisor = new AgentSupervisor({ spawn: () => Object.assign(child, { postMessage: (message: MainToHost) => sent.push(message), kill: () => true }), credentials: () => new Promise(resolve => { release = resolve }), onPush() {}, dataDir: mocks.dir })
+  Object.assign(shell, { agent: supervisor })
+  const command: HostCommand = { kind: 'start', requestId: 'old', goal: 'Old run', mode: 'web', persistence: 'temporary', grants: [], budget: DEFAULT_BUDGET, model: { provider: 'compatible', model: 'fixture', baseURL: 'https://old.invalid/v1' } }
+  const pending = supervisor.request(command)
+  child.emit('message', { v: 1, kind: 'ready' })
+  child.emit('message', { v: 1, kind: 'reply', id: 1, ok: true, result: { runId: 'run' } }); await pending
+  child.emit('message', { v: 1, kind: 'credential.request', id: 10, name: 'compatible', baseURL: 'https://old.invalid/v1' })
+  const request: AppRequest = mutation === 'settings' ? { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, showMenuBar: false, connection: { ...DEFAULT_SETTINGS.connection!, baseURL: 'https://new.invalid/v1' } } } : mutation === 'key' ? { kind: 'connection', request: { kind: 'saveKey', provider: 'compatible', key: 'synthetic-new-key' } } : { kind: 'replaceKey' }
+  if (mutation === 'connection-refresh') shell.keyPresent = shell.keyPresent
+  else await mocks.handler?.(event, request)
+  release('SYNTHETIC_NEW_ENDPOINT_KEY'); await Promise.resolve()
+  expect(JSON.stringify(sent)).not.toContain('SYNTHETIC_NEW_ENDPOINT_KEY')
+  child.emit('message', { v: 1, kind: 'credential.request', id: 11, name: 'compatible', baseURL: 'https://old.invalid/v1' }); await Promise.resolve()
+  expect(sent.at(-1)).toMatchObject({ kind: 'credential', id: 11, ok: false })
+})
+type Surface = BrowserWindow & { minimized: boolean; fullScreen: boolean; shown: boolean; focused: boolean; visibleOnAllWorkspaces: boolean; bounds: Electron.Rectangle }
+it('keeps Home and Settings native windows reusable and saves normal bounds without accepting renderer navigation', async () => {
+  const { shell } = fixture()
+  shell.home = undefined
+  const home = shell.openHome(undefined, 'turn') as Surface
+  home.emit('ready-to-show'); home.webContents.emit('did-finish-load')
+  expect(home.webContents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { turnId: 'turn' })
+  home.emit('close'); expect(shell.settings.get().homeBounds).toEqual(home.bounds)
+  home.fullScreen = true; home.bounds = { ...home.bounds, width: 1200 }; home.emit('close')
+  expect(shell.settings.get().homeBounds?.width).toBe(900)
+  home.minimized = true; expect(shell.openHome()).toBe(home); expect(home.minimized).toBe(false)
+  Object.assign(shell, { preview: false })
+  shell.openHome(undefined, 'another-turn'); expect(home.shown).toBe(true); expect(home.focused).toBe(true); expect(home.visibleOnAllWorkspaces).toBe(false)
+  const settings = shell.openSettings('Connection') as Surface
+  settings.emit('ready-to-show'); settings.webContents.emit('did-finish-load'); settings.emit('focus')
+  expect(settings.webContents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { category: 'Connection' })
+  settings.minimized = true; expect(shell.openSettings('Privacy')).toBe(settings); expect(settings.minimized).toBe(false)
+  expect(settings.webContents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { category: 'Privacy' })
+  home.emit('closed'); settings.emit('closed'); expect(shell.home).toBeUndefined(); expect(shell.preferences).toBeUndefined()
+})
+it('confirms conversation deletion in the focused native window and preserves its exact target until confirmation', async () => {
+  const { shell, event } = fixture()
+  shell.home = undefined
+  const home = shell.openHome() as Surface, id = shell.conversations.newConversation()
+  shell.conversations.rename(id, 'Target')
+  const ownerEvent = { ...event, sender: home.webContents, senderFrame: home.webContents.mainFrame } as IpcMainInvokeEvent
+  await mocks.handler?.(ownerEvent, { kind: 'contextMenu', id: 'missing' }); expect(mocks.menus).toHaveLength(0)
+  await mocks.handler?.(ownerEvent, { kind: 'contextMenu', id })
+  const actions = mocks.menus.at(-1)!
+  const click = async (index: number) => { const action = actions[index]!.click!; await (action as () => unknown)() }
+  await click(0); expect(home.webContents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { renameId: id })
+  await click(1); expect(shell.conversations.get(id)?.pinned).toBe(true)
+  await click(2); expect(shell.conversations.get(id)).toBeDefined()
+  mocks.confirm.mockResolvedValueOnce({ response: 1 }); await click(2)
+  expect(shell.conversations.get(id)).toBeUndefined()
+})
+it('routes native menu actions through Home while keeping task deletion and settings changes owner-confirmed', async () => {
+  const { shell, event, actions } = fixture()
+  shell.home = undefined
+  const home = shell.openHome() as Surface
+  const ownerEvent = { ...event, sender: home.webContents, senderFrame: home.webContents.mainFrame } as IpcMainInvokeEvent
+  const first = shell.conversations.newConversation(), second = shell.conversations.newConversation()
+  await mocks.handler?.(ownerEvent, { kind: 'open', id: first, turnId: 'turn' }); expect(shell.conversations.currentId).toBe(first)
+  await mocks.handler?.(ownerEvent, { kind: 'rename', id: first, title: 'Renamed' }); expect(shell.conversations.get(first)?.title).toBe('Renamed')
+  expect(await mocks.handler?.(ownerEvent, { kind: 'search', query: 'Renamed' })).toEqual(expect.any(Array))
+  await mocks.handler?.(ownerEvent, { kind: 'stop' }); shell.stop(); expect(actions.stop).toHaveBeenCalled()
+  await mocks.handler?.(ownerEvent, { kind: 'new' }); expect(shell.conversations.currentId).not.toBe(second)
+  await mocks.handler?.(ownerEvent, { kind: 'settings', category: 'History & privacy' }); expect(shell.preferences).toBeDefined()
+  const previous = shell.settings.get()
+  await mocks.handler?.(ownerEvent, { kind: 'updateSettings', settings: { ...previous, retention: 7 } }); expect(shell.settings.get().retention).toBe(previous.retention)
+  await mocks.handler?.(ownerEvent, { kind: 'updateSettings', settings: { ...previous, saveHistory: false } }); expect(shell.conversations.currentId).toBeNull()
+})
+it('keeps native menu and tray actions usable before the lazy agent exists and never persists fullscreen bounds', async () => {
+  const fixtureValue = fixture(); fixtureValue.shell.close()
+  shell = new AppShell(fixtureValue.actions)
+  const appMenu = mocks.menus[0]!, trayMenu = mocks.menus[1]!
+  const click = async (action: Electron.MenuItemConstructorOptions) => { await (action.click as () => unknown)() }
+  const submenu = (index: number) => appMenu[index]!.submenu as Electron.MenuItemConstructorOptions[]
+  await click(submenu(0)[0]!); expect(shell.preferences).toBeDefined()
+  await click(submenu(0)[2]!); expect(shell.preferences).toBeDefined()
+  await click(submenu(1)[0]!); const home = shell.home as Surface; expect(shell.conversations.currentId).toBeTruthy()
+  await click(submenu(1)[1]!); expect(home.webContents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { focusSearch: true })
+  vi.spyOn(home.webContents, 'isLoading').mockReturnValueOnce(true)
+  await click(submenu(1)[1]!); home.webContents.emit('did-finish-load')
+  for (const action of trayMenu.filter(item => item.click)) await click(action)
+  expect(fixtureValue.actions.clear).toHaveBeenCalledOnce()
+  mocks.lifecycle.get('activate')!(); mocks.lifecycle.get('second-instance')!()
+  expect(shell.home).toBe(home)
+  home.emit('ready-to-show'); expect(home.shown).toBe(true)
+  home.emit('close'); expect(shell.settings.get().homeBounds).toEqual(home.bounds)
+  const settings = shell.preferences as Surface
+  settings.emit('ready-to-show'); expect(settings.shown).toBe(true)
+})
+it('validates connection settings before invalidating runs again and applies login changes only for a packaged app', async () => {
+  const { shell, event } = fixture(undefined, { validateSettings: async value => value })
+  const original = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+  Object.defineProperty(process, 'resourcesPath', { value: mocks.dir, configurable: true })
+  try {
+    expect(brandPath('test')).toContain('build/brand/test')
+    mocks.packaged = true; expect(brandPath('test')).toBe(join(mocks.dir, 'brand', 'test'))
+    Object.assign(shell, { preview: false })
+    await mocks.handler?.(event, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, openAtLogin: true } })
+    expect(shell.settings.get().openAtLogin).toBe(true)
+    await mocks.handler?.(event, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, retention: 0 } })
+    expect(shell.settings.get().retention).toBe(0)
+  } finally { if (original) Object.defineProperty(process, 'resourcesPath', original); else Reflect.deleteProperty(process, 'resourcesPath') }
 })
 it('queues daily retention without spawning an idle agent and applies it before the next list', async () => {
   vi.useFakeTimers()

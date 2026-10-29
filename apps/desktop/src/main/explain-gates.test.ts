@@ -257,6 +257,42 @@ it.each(['never-started', 'frozen', 'crashing'] as const)('keeps Explain answer,
   } finally { baseline.dispose(); fixture.dispose(); host.value.dispose(); await Promise.all(pending) }
 })
 
+it('wires endpoint-bound credentials through the real AppShell supervisor and revokes them when connection settings change', async () => {
+  electron.dir = temporaryDirectory()
+  const child = new Child(); electron.fork.mockReturnValueOnce(child)
+  let baseURL = 'https://old.invalid/v1', release!: (secret: string) => void, loads = 0
+  const shell = new AppShell({
+    ask: () => ({ accepted: true }), stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, permissions: () => ({ microphone: '', screen: '', input: '' }),
+    agentConnection: () => ({ provider: 'compatible', model: 'fixture', baseURL, vision: false, credential: () => ++loads === 1 ? new Promise(resolve => { release = resolve }) : Promise.resolve('NEW_ENDPOINT_KEY') }),
+  })
+  const frame = { url: pageURL('home') }, contents = { send() {}, mainFrame: frame, getURL: () => frame.url }
+  shell.home = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
+  const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
+  const request = (value: unknown) => electron.handlers.get('heynimbo:agent-request')!(event, value)
+  const start = async (requestId: string) => {
+    const result = request({ kind: 'start', requestId, goal: 'Research', mode: 'web' })
+    await Promise.resolve()
+    const message = child.sent.findLast(message => message.kind === 'command')!
+    if (message.kind !== 'command') throw new Error('No command.')
+    child.emit('message', { v: 1, kind: 'reply', id: message.id, ok: true, result: { runId: requestId } })
+    return result
+  }
+  try {
+    await start('old')
+    child.emit('message', { v: 1, kind: 'credential.request', id: 10, name: 'compatible', baseURL })
+    expect(loads).toBe(1)
+    baseURL = 'https://new.invalid/v1'
+    await electron.handlers.get('heynimbo:app-request')!(event, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, connection: { ...DEFAULT_SETTINGS.connection!, baseURL } } })
+    release('REVOKED_KEY'); await Promise.resolve(); await Promise.resolve()
+    expect(JSON.stringify(child.sent)).not.toContain('REVOKED_KEY')
+    await start('new')
+    child.emit('message', { v: 1, kind: 'credential.request', id: 11, name: 'compatible', baseURL: 'https://old.invalid/v1' })
+    child.emit('message', { v: 1, kind: 'credential.request', id: 12, name: 'compatible', baseURL })
+    await vi.waitFor(() => expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 12, ok: true, secret: 'NEW_ENDPOINT_KEY' }))
+    expect(child.sent).toContainEqual(expect.objectContaining({ kind: 'credential', id: 11, ok: false }))
+    expect(loads).toBe(2)
+  } finally { shell.home = undefined; shell.close() }
+})
 it('constructs a production AppShell and accepts Explain without spawning a host before the first Do request', async () => {
   electron.dir = temporaryDirectory()
   scriptedTransport()

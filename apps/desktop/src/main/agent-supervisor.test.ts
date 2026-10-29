@@ -131,10 +131,25 @@ it('clears request deadlines on errors and rejects stale replies and duplicate r
   expect(vi.getTimerCount()).toBe(0)
   supervisor.dispose(); supervisor.dispose()
 })
+it('keeps credentials authorized for two concurrent run generations instead of only the most recent provider', async () => {
+  const { supervisor, children, credentials } = setup()
+  let release!: (secret: string) => void
+  credentials.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const first = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'first' }); await first
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'openai' })
+  const second = supervisor.request({ ...start, requestId: 'second', model: { provider: 'anthropic', model: 'model' } })
+  child.reply({ runId: 'second' }); await second
+  release('FIRST_RUN_KEY'); await Promise.resolve()
+  expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 1, ok: true, secret: 'FIRST_RUN_KEY' })
+  child.emit('message', { v: 1, kind: 'credential.request', id: 2, name: 'anthropic' }); await Promise.resolve()
+  expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 2, ok: true, secret: 'test-secret' })
+  supervisor.dispose()
+})
 it('scopes Continue credentials to its explicit search backend instead of stale run search', async () => {
   const { supervisor, children } = setup()
   const started = supervisor.request({ ...start, search: { provider: 'brave' } }), child = children[0]!
-  child.ready(); child.reply(); await started
+  child.ready(); child.reply({ runId: 'run' }); await started
   const resumed = supervisor.request({ kind: 'continue', runId: 'run', model: start.model })
   child.reply(); await resumed
   child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'brave-search' }); await Promise.resolve()
@@ -185,6 +200,113 @@ it('never dispatches a queued start after Stop-all revokes work during host init
   child.reply()
   await stopped; await pending
   expect(child.killed).toBe(false)
+  supervisor.dispose()
+})
+it('drops the 255 by 48KB review batch before deep validation without killing the host', async () => {
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started
+  pushes.length = 0
+  const events: AgentEvent[] = Array.from({ length: 255 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  events.push({ runId: 'run', seq: 256, id: 'end', at: 0, payload: { type: 'status', status: 'succeeded' } })
+  child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(supervisor.invalidMessages).toBe(1)
+  expect(supervisor.state).toBe('ready'); expect(child.killed).toBe(false)
+  expect(pushes).toEqual([])
+  supervisor.dispose()
+})
+it('flushes before retained event payload exceeds four MiB even across valid sub-threshold messages', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
+  const events: AgentEvent[] = Array.from({ length: 200 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: i, text: 'x'.repeat(48_000) } }))
+  for (let offset = 0; offset < 200; offset += 50) child.emit('message', { v: 1, kind: 'events', events: events.slice(offset, offset + 50), runs: [] })
+  expect(pushes.length).toBeGreaterThan(0)
+  await vi.advanceTimersByTimeAsync(16)
+  expect(pushes.flatMap(push => push.kind === 'events' ? push.events : [])).toEqual(events)
+  for (const push of pushes) expect(Buffer.byteLength(JSON.stringify(push))).toBeLessThanOrEqual(4 * 1024 * 1024)
+  expect(child.killed).toBe(false); expect(supervisor.invalidMessages).toBe(0)
+  supervisor.dispose(); expect(vi.getTimerCount()).toBe(0)
+})
+it('denies old endpoint and missing endpoint credential requests then permits only a newly bound start after revocation', async () => {
+  const { supervisor, children, credentials } = setup()
+  let release!: (secret: string) => void
+  credentials.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const command = { ...start, model: { provider: 'compatible', model: 'fixture', baseURL: 'https://old.invalid/v1' } }
+  const started = supervisor.request(command), child = children[0]!
+  child.ready(); child.reply({ runId: 'old' }); await started
+  for (const [id, baseURL] of [[1, undefined], [2, 'https://new.invalid/v1']] as const) child.emit('message', { v: 1, kind: 'credential.request', id, name: 'compatible', ...(baseURL ? { baseURL } : {}) })
+  await Promise.resolve(); expect(credentials).not.toHaveBeenCalled()
+  child.emit('message', { v: 1, kind: 'credential.request', id: 3, name: 'compatible', baseURL: 'https://old.invalid/v1' })
+  supervisor.revokeAuthority()
+  release('REVOKED_KEY'); await Promise.resolve()
+  expect(JSON.stringify(child.sent)).not.toContain('REVOKED_KEY')
+  expect(child.sent).toContainEqual(expect.objectContaining({ kind: 'credential', id: 3, ok: false }))
+  const next = supervisor.request({ ...command, requestId: 'new', model: { ...command.model, baseURL: 'https://new.invalid/v1' } })
+  child.reply({ runId: 'new' }); await next
+  child.emit('message', { v: 1, kind: 'credential.request', id: 4, name: 'compatible', baseURL: 'https://old.invalid/v1' })
+  child.emit('message', { v: 1, kind: 'credential.request', id: 5, name: 'compatible', baseURL: 'https://new.invalid/v1' }); await Promise.resolve()
+  expect(child.sent).toContainEqual(expect.objectContaining({ kind: 'credential', id: 4, ok: false }))
+  expect(child.sent).toContainEqual(expect.objectContaining({ kind: 'credential', id: 5, ok: true }))
+  expect(credentials.mock.calls.at(-1)).toEqual(['compatible', ['compatible'], { baseURL: 'https://new.invalid/v1' }])
+  supervisor.dispose()
+})
+it('does not grant credentials to starts queued before a connection generation was revoked', async () => {
+  const { supervisor, children, credentials } = setup()
+  const started = expect(supervisor.request(start)).rejects.toThrow('Agent connection changed. Start or continue the task again.')
+  supervisor.revokeAuthority()
+  const child = children[0]!
+  child.ready()
+  expect(child.sent.filter(message => message.kind === 'command')).toEqual([])
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'openai' }); await Promise.resolve()
+  expect(credentials).not.toHaveBeenCalled()
+  await started; supervisor.dispose()
+})
+it('retires a run binding even when its terminal event arrives before the start acknowledgement', async () => {
+  const { supervisor, children, credentials } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready()
+  child.emit('message', { v: 1, kind: 'events', runs: [], events: [{ runId: 'run', seq: 1, id: 'end', at: 0, payload: { type: 'status', status: 'succeeded' } }] })
+  child.reply({ runId: 'run' }); await started
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'openai' }); await Promise.resolve()
+  expect(credentials).not.toHaveBeenCalled()
+  expect(child.sent.at(-1)).toMatchObject({ kind: 'credential', ok: false })
+  supervisor.dispose()
+})
+it('does not invalidate a simultaneous same-provider credential when another matching run finishes', async () => {
+  const { supervisor, children, credentials } = setup()
+  const first = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply({ runId: 'first' }); await first
+  const second = supervisor.request({ ...start, requestId: 'second' })
+  child.reply({ runId: 'second' }); await second
+  let release!: (secret: string) => void
+  credentials.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'openai' })
+  child.emit('message', { v: 1, kind: 'events', runs: [], events: [{ runId: 'first', seq: 1, id: 'end', at: 0, payload: { type: 'status', status: 'succeeded' } }] })
+  release('SECOND_KEY'); await Promise.resolve()
+  expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 1, ok: true, secret: 'SECOND_KEY' })
+  supervisor.dispose()
+})
+it('drops huge sparse reply arrays before accepting a matching request ID', async () => {
+  const { supervisor, children } = setup()
+  const started = expect(supervisor.request(start)).rejects.toThrow('Agent host stopped.')
+  const child = children[0]!; child.ready()
+  child.emit('message', { v: 1, kind: 'reply', id: 1, ok: true, result: { values: new Array(1_000_000) } })
+  expect(supervisor.invalidMessages).toBe(1)
+  supervisor.dispose(); await started
+})
+it('rejects cyclic, over-deep and non-JSON host values before forwarding or accepting a reply', async () => {
+  const { supervisor, children, pushes } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.emit('message', { v: 1, kind: 'partial', runId: 'run', step: 0, text: 'premature' })
+  child.ready(); child.reply({ runId: 'run' }); await started; pushes.length = 0
+  const cycle: { self?: unknown } = {}; cycle.self = cycle
+  let deep: unknown = null
+  for (let n = 0; n < 20; n++) deep = { nested: deep }
+  for (const result of [cycle, deep, 1n, Array.from({ length: 1000 }, () => Array(30).fill(null))]) child.emit('message', { v: 1, kind: 'reply', id: 99, ok: true, result })
+  expect(supervisor.invalidMessages).toBe(5)
+  expect(pushes).toEqual([]); expect(child.killed).toBe(false)
   supervisor.dispose()
 })
 it('flushes healthy bursts at the threshold without dropping events or killing the host', async () => {
@@ -258,7 +380,7 @@ it('coalesces frame deltas and latest summaries and partials while flushing appr
   await vi.advanceTimersByTimeAsync(15)
   expect(pushes).toEqual([])
   await vi.advanceTimersByTimeAsync(1)
-  expect(pushes).toEqual([{ kind: 'events', events: [e1, e2], runs: [{ ...run, updated: 1 }] }, { kind: 'partial', runId: 'run', step: 2, text: 'latest' }])
+  expect(pushes).toEqual([{ kind: 'events', events: [e1, e2], runs: [{ ...run, updated: 1 }], partials: [{ runId: 'run', step: 2, text: 'latest' }] }])
   for (const payload of [
     { type: 'approval.requested', approvalId: 'a', callId: 'c', tool: 'read', preview: 'Read file', digest: 'digest' },
     { type: 'question', questionId: 'q', text: 'Which?' },

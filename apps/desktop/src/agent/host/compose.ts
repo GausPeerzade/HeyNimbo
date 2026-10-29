@@ -14,7 +14,7 @@ import type { HostInit } from './serve'
 interface TestOverrides { models?: ModelFactory; resolver?: Resolver; allowLoopbackForTests?: boolean; clock?: Clock }
 const productionModels: ModelFactory = async (selection, credentials) => {
   if (!PROVIDERS.includes(selection.provider as ProviderId)) throw new Error('Unsupported model provider.')
-  const credential = () => credentials(selection.provider)
+  const credential = () => credentials(selection.provider, { baseURL: selection.baseURL })
   return sdkModel({ ...selection, provider: selection.provider as ProviderId, vision: false, credential }, await credential())
 }
 

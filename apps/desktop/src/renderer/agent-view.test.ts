@@ -117,6 +117,28 @@ it('stops only the selected active task, continues interrupted tasks, confirms d
   stopAll.onclick!(); await settle(); expect(requests).toContainEqual({ kind: 'stopAll' }); expect(stopAll.hidden).toBe(false)
   view.setActive(false); expect(stopAll.hidden).toBe(true)
 })
+it('offers Continue only for interrupted or provider-failed runs and dispatches provider recovery', async () => {
+  respond = async value => value.kind === 'list' ? { runs: [{ ...run(), status: 'failed', error: { code: 'provider', message: 'Continue to retry.' } }] } : value.kind === 'events' ? { events: [] } : { ok: true }
+  const view = setup(); view.setActive(true); await settle()
+  expect(button('Continue').hidden).toBe(false)
+  button('Continue').onclick!(); await settle()
+  expect(requests).toContainEqual({ kind: 'continue', runId: 'run' })
+  for (const code of ['policy', 'budget', 'tool'] as const) {
+    push({ kind: 'events', events: [], runs: [{ ...run('run', 101), status: 'failed', error: { code, message: 'Not resumable.' } }] }); flush()
+    expect(button('Continue').hidden).toBe(true)
+  }
+})
+it('renders selected-run partials from a combined events push without a second Home message', async () => {
+  respond = async value => value.kind === 'list' ? { runs: [run()] } : { events: [] }
+  const view = setup(); view.setActive(true); await settle()
+  push({ kind: 'events', runs: [], events: [event(1)], partials: [{ runId: 'foreign', step: 2, text: 'Wrong' }, { runId: 'run', step: 2, text: 'Combined live text' }] }); flush()
+  expect(panel.querySelectorAll('pre').map(node => node.textContent)).toEqual(['Text 1', 'Combined live text'])
+})
+it('escapes bidi and controls in folder names instead of letting labels reorder the picker UI', async () => {
+  respond = async value => value.kind === 'pickFolder' ? { grant: { id: 'grant', label: 'file\u202E\u2066\u200F\u2029\u0000\u0085' } } : { runs: [] }
+  const view = setup(); view.setActive(true); await settle(); button('Local files', folders).onclick!(); button('Add folder', folders).onclick!(); await settle()
+  expect(folders.querySelectorAll('span')[0]?.textContent).toBe('file\\u{202e}\\u{2066}\\u{200f}\\u{2029}\\u{0}\\u{85}')
+})
 it('shows fixed starting and crash banners without exposing host error details', async () => {
   const view = setup(); view.setActive(true); await settle()
   push({ kind: 'host', state: 'starting' }); flush()

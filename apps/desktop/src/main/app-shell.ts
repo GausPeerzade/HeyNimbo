@@ -58,7 +58,11 @@ export class AppShell {
   private agentIpc?: ReturnType<typeof registerAgentIpc>
   private status = ''
   private busy = false
-  keyPresent = false
+  private hasKey = false
+  get keyPresent(): boolean { return this.hasKey }
+  // Reconnect (including legacy setup/account refresh) reports readiness here,
+  // even when the boolean is unchanged. Old run authority must not survive it.
+  set keyPresent(value: boolean) { this.revokeAgentAuthority(); this.hasKey = value }
   onChanged?: (snapshot: AppSnapshot) => void
 
   constructor(private readonly actions: ShellActions, private readonly preview = false) {
@@ -66,7 +70,7 @@ export class AppShell {
       const connections = { answer: actions.agentConnection }
       this.agent = new AgentSupervisor({
         spawn: () => utilityProcess.fork(join(__dirname, 'agent-host.js'), [], { serviceName: 'HeyNimbo Agent', stdio: 'ignore' }),
-        credentials: (name, allowed) => credentialForAgent(name, allowed, connections, () => this.settings.get()),
+        credentials: (name, allowed, binding) => credentialForAgent(name, allowed, connections, () => this.settings.get(), binding),
         onPush: push => this.agentIpc?.push(push),
         dataDir: app.getPath('userData'),
       })
@@ -88,6 +92,7 @@ export class AppShell {
     }
   }
 
+  private revokeAgentAuthority(): void { this.agent?.revokeAuthority(); this.agentIpc?.revokeAuthority() }
   private pruneHistory(): void {
     const retention = this.settings.get().retention
     this.conversations.history.prune(retention)
@@ -207,8 +212,9 @@ export class AppShell {
         if (typeof next.retention === 'number' && next.retention > 0 && (previous.retention === 'forever' || previous.retention === 0 || next.retention < previous.retention)) {
           if (!await this.confirm('Apply shorter history retention?', 'Older conversations, including pinned ones, will be deleted.', 'Apply retention')) { this.publish(); return }
         }
-        next = await this.actions.validateSettings?.(next) ?? next
-        this.settings.set(next)
+        this.revokeAgentAuthority()
+        try { next = await this.actions.validateSettings?.(next) ?? next; this.settings.set(next) }
+        finally { this.revokeAgentAuthority() }
         if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset() }
         // Only a packaged app can own a login item, and only an actual change
         // should touch it, so a choice made in System Settings is left alone.
@@ -224,10 +230,12 @@ export class AppShell {
           const name = command.kind === 'removeKey' ? command.provider === 'openai' ? 'OpenAI' : PROVIDER_NAMES[command.provider] : 'ChatGPT'
           if (!await this.confirm(command.kind === 'signOut' ? 'Sign out of ChatGPT?' : `Remove ${name} key?`, 'This disconnects it on this Mac and stops the current answer. You can connect again later.', command.kind === 'signOut' ? 'Sign out' : 'Remove')) return { ok: false, message: 'Nothing removed.' }
         }
-        if (!['snapshot', 'details', 'usage', 'models', 'test'].includes(command.kind)) this.actions.stop()
-        return this.actions.connectionRequest(command)
+        if (['snapshot', 'details', 'usage', 'models', 'test'].includes(command.kind)) return this.actions.connectionRequest(command)
+        this.revokeAgentAuthority(); this.actions.stop()
+        try { return await this.actions.connectionRequest(command) }
+        finally { this.revokeAgentAuthority() }
       }
-      case 'replaceKey': if (!this.preview) this.actions.replaceKey(); return
+      case 'replaceKey': if (!this.preview) { this.revokeAgentAuthority(); this.actions.replaceKey() }; return
       case 'permission': {
         if (!this.preview && request.permission === 'microphone') {
           const status = microphoneAccessStatus()

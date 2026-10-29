@@ -50,7 +50,8 @@ function parseCommand(value: unknown): HostCommand {
     check(c.mode !== 'web' || c.grants.length === 0)
     for (const grant of c.grants) {
       const g = object(grant)
-      fields(g, ['id', 'root', 'label']); identifier(g.id); string(g.label, 300); string(g.root, 4096)
+      fields(g, ['id', 'root', 'label', 'identity']); identifier(g.id); string(g.label, 300); string(g.root, 4096)
+      if (g.identity !== undefined) check(typeof g.identity === 'string' && /^\d{1,30}:\d{1,30}$/.test(g.identity))
       check(isAbsolute(g.root as string))
     }
     budget(c.budget)
@@ -128,7 +129,10 @@ export function parseHostToMain(value: unknown): HostToMain {
       fields(m, ['v', 'kind', 'runId', 'step', 'text'])
       identifier(m.runId); integer(m.step, 0, 10_000); string(m.text, LIMITS.event, true)
       break
-    case 'credential.request': fields(m, ['v', 'kind', 'id', 'name']); integer(m.id, 1); identifier(m.name); break
+    case 'credential.request':
+      fields(m, ['v', 'kind', 'id', 'name', 'baseURL']); integer(m.id, 1); identifier(m.name)
+      if (m.baseURL !== undefined) string(m.baseURL, 2048)
+      break
     default: throw new Error('Invalid agent message.')
   }
   return m as unknown as HostToMain
@@ -141,13 +145,13 @@ export function serveHost(port: HostPort, compose: (init: HostInit) => Promise<A
   let invalidMessages = 0
   let credentialId = 0
   const pending = new Map<number, { resolve(secret: string): void; reject(error: Error): void; timer: NodeJS.Timeout }>()
-  const credentials: CredentialSource = name => new Promise((resolve, reject) => {
+  const credentials: CredentialSource = (name, binding) => new Promise((resolve, reject) => {
     if (disposed) { reject(new Error('Agent host stopped.')); return }
     if (pending.size >= 128 || !/^[A-Za-z0-9_-]{1,200}$/.test(name)) { reject(new Error('Agent credential unavailable.')); return }
     const id = ++credentialId
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('Agent credential timed out.')) }, 10_000)
     pending.set(id, { resolve, reject, timer })
-    try { port.postMessage({ v: 1, kind: 'credential.request', id, name }) }
+    try { port.postMessage({ v: 1, kind: 'credential.request', id, name, ...(binding?.baseURL !== undefined ? { baseURL: binding.baseURL } : {}) }) }
     catch { pending.delete(id); clearTimeout(timer); reject(new Error('Agent credential unavailable.')) }
   })
   const send = (message: HostToMain): void => {
