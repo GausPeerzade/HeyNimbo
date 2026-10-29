@@ -363,6 +363,8 @@ If Codex cannot serve a required provider/use case under the validated boundary,
 
 ### 11.1 Budgets and concurrency
 
+For MVP Do runs, wall time is budgeted per start/Continue activation (downtime is excluded); step, token and tool-output budgets remain cumulative across checkpoints.
+
 At run admission, reserve finite steps, tokens/cost, wall time, tool output and artifact bytes. Check before each model/tool call and reconcile reported usage afterward. Unknown prices use token/time limits plus a visible unknown cost; a monetary estimate cannot guarantee an exact provider charge. No automatic fallback from an exhausted plan/local model to a paid key.
 
 Initial concurrency: one active mutating operation per workspace/account/browser session; public read/research jobs may run concurrently under one aggregate profile budget. Native desktop control is exclusive. Add parent/child run budgets and inherited capability subsets before enabling subagents. Never recursively delegate without a depth/concurrency ceiling.

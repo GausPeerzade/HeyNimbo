@@ -60,6 +60,9 @@ function parseCommand(value: unknown): HostCommand {
     fields(c, ['kind', 'runId', 'model', 'search']); identifier(c.runId); model(c.model); search(c.search)
   } else if (c.kind === 'cancelAll') {
     fields(c, ['kind'])
+  } else if (c.kind === 'purge') {
+    fields(c, ['kind', 'before'])
+    if (c.before !== undefined) integer(c.before)
   } else if (c.kind === 'deleteConversation') {
     fields(c, ['kind', 'conversationId']); identifier(c.conversationId)
   } else {

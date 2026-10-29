@@ -55,6 +55,7 @@ export interface AgentStore {
   /** Purges the run, its events, checkpoints and artifact references. Returns artifact IDs to delete. */
   deleteRun(runId: string): string[]
   deleteConversation(conversationId: string): string[]
+  deleteBefore(before?: number): string[]
   close(): void
 }
 

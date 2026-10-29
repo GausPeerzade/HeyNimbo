@@ -30,6 +30,38 @@ function setup() {
   return { supervisor, children, pushes, credentials }
 }
 afterEach(() => vi.useRealTimers())
+it('queues only the latest idle retention purge and dispatches it before new work after ready', async () => {
+  const { supervisor, children } = setup()
+  await supervisor.purge(100)
+  await supervisor.purge(200)
+  expect(children).toHaveLength(0)
+  const started = supervisor.request(start), child = children[0]!
+  child.ready()
+  const commands = child.sent.filter(m => m.kind === 'command')
+  expect(commands.map(m => m.command.kind)).toEqual(['purge', 'start'])
+  expect(commands[0]!.command).toEqual({ kind: 'purge', before: 200 })
+  child.emit('message', { v: 1, kind: 'reply', id: commands[0]!.id, ok: true, result: { ok: true } })
+  child.reply(); await started
+  const pruning = supervisor.purge(300)
+  expect(child.sent.at(-1)).toMatchObject({ command: { kind: 'purge', before: 300 } })
+  child.reply(); await pruning
+  supervisor.dispose()
+})
+it('explicit delete-all starts an idle host only when durable agent data exists', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-delete-all-'))
+  const child = new Child()
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: () => {}, dataDir: dir })
+  try {
+    await supervisor.purge(undefined, true)
+    expect(child.sent).toEqual([])
+    new SqliteAgentStore(join(dir, 'agent.sqlite')).close()
+    const deleted = supervisor.purge(undefined, true)
+    child.ready()
+    expect(child.sent.at(-1)).toMatchObject({ command: { kind: 'purge' } })
+    child.reply(); await deleted
+    expect(supervisor.state).toBe('ready')
+  } finally { supervisor.dispose(); rmSync(dir, { recursive: true, force: true }) }
+})
 it('loads retained interrupted tasks on idle list only when an agent database exists', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-supervisor-'))
   const child = new Child()
@@ -79,10 +111,24 @@ it('clears request deadlines on errors and rejects stale replies and duplicate r
   expect(vi.getTimerCount()).toBe(0)
   supervisor.dispose(); supervisor.dispose()
 })
+it('scopes Continue credentials to its explicit search backend instead of stale run search', async () => {
+  const { supervisor, children } = setup()
+  const started = supervisor.request({ ...start, search: { provider: 'brave' } }), child = children[0]!
+  child.ready(); child.reply(); await started
+  const resumed = supervisor.request({ kind: 'continue', runId: 'run', model: start.model })
+  child.reply(); await resumed
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'brave-search' }); await Promise.resolve()
+  expect(child.sent.at(-1)).toMatchObject({ kind: 'credential', ok: false })
+  const brave = supervisor.request({ kind: 'continue', runId: 'run', model: start.model, search: { provider: 'brave' } })
+  child.reply(); await brave
+  child.emit('message', { v: 1, kind: 'credential.request', id: 2, name: 'brave-search' }); await Promise.resolve()
+  expect(child.sent.at(-1)).toMatchObject({ kind: 'credential', ok: true, secret: 'test-secret' })
+  supervisor.dispose()
+})
 it('keeps Continue credentials scoped to its model and the configured Brave backend', async () => {
   const child = new Child()
-  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => 'brave-secret', search: () => ({ provider: 'brave' }), onPush: () => {}, dataDir: '/data' })
-  const continued = supervisor.request({ kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' } })
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => 'brave-secret', onPush: () => {}, dataDir: '/data' })
+  const continued = supervisor.request({ kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' }, search: { provider: 'brave' } })
   child.ready(); child.reply(); await continued
   child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'brave-search' }); await Promise.resolve()
   expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 1, ok: true, secret: 'brave-secret' })

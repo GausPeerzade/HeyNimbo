@@ -67,7 +67,6 @@ export class AppShell {
       this.agent = new AgentSupervisor({
         spawn: () => utilityProcess.fork(join(__dirname, 'agent-host.js'), [], { serviceName: 'HeyNimbo Agent', stdio: 'ignore' }),
         credentials: (name, allowed) => credentialForAgent(name, allowed, connections, () => this.settings.get()),
-        search: () => this.settings.get().agent?.search,
         onPush: push => this.agentIpc?.push(push),
         dataDir: app.getPath('userData'),
       })
@@ -79,8 +78,8 @@ export class AppShell {
       if (parsed.kind === 'connection' && parsed.request.kind === 'details' && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
       return this.handle(parsed)
     })
-    this.conversations.history.prune(this.settings.get().retention)
-    this.pruneTimer = setInterval(() => { this.conversations.history.prune(this.settings.get().retention); this.publish() }, 86400000)
+    this.pruneHistory()
+    this.pruneTimer = setInterval(() => { this.pruneHistory(); this.publish() }, 86400000)
     if (!preview) {
       this.installMenu()
       this.updateTray()
@@ -89,6 +88,12 @@ export class AppShell {
     }
   }
 
+  private pruneHistory(): void {
+    const retention = this.settings.get().retention
+    this.conversations.history.prune(retention)
+    // Retention never starts a host or adds an await to the Explain path.
+    if (typeof retention === 'number' && retention > 0) void this.agent?.purge(Math.max(0, Date.now() - retention * 86_400_000)).catch(() => {})
+  }
   snapshot(): AppSnapshot {
     return {
       conversations: this.conversations.list(), currentId: this.conversations.currentId, turns: this.conversations.turns(),
@@ -209,9 +214,9 @@ export class AppShell {
         // should touch it, so a choice made in System Settings is left alone.
         if (!this.preview && app.isPackaged && next.openAtLogin !== previous.openAtLogin) app.setLoginItemSettings({ openAtLogin: next.openAtLogin })
         this.updateTray(); this.actions.settingsChanged(next, previous)
-        this.conversations.history.prune(next.retention); this.publish(); return
+        this.pruneHistory(); this.publish(); return
       }
-      case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) { this.actions.stop(); this.conversations.deleteAll() }; return
+      case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) { this.actions.stop(); this.conversations.deleteAll(); await this.agent?.purge(undefined, true) }; return
       case 'connection': {
         const command = request.request
         if ((this.preview && command.kind !== 'details') || !this.actions.connectionRequest) return { ok: false, message: 'Connections are disabled in preview.' }

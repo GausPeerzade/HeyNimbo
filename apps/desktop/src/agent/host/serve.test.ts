@@ -3,16 +3,13 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentRuntime, RuntimeSink, CredentialSource } from '../contracts'
 import { parseMainToHost, parseHostToMain, serveHost } from './serve'
 import { DEFAULT_BUDGET, type HostCommand } from '../../shared/agent-protocol'
-import { composeRuntime } from './compose'
 
 class Port extends EventEmitter {
   sent: unknown[] = []
   postMessage(message: unknown): void { this.sent.push(message) }
 }
 afterEach(() => vi.useRealTimers())
-it('fails closed until the integrator supplies the real runtime composition', async () => {
-  await expect(composeRuntime({ dataDir: '/data', credentials: async () => '', sink: { events: () => {}, partial: () => {} } })).rejects.toThrow('Agent runtime not available yet.')
-})
+
 it('delivers a 600-event flush completely and in order through bounded transport messages', async () => {
   const port = new Port()
   let sink!: RuntimeSink
@@ -65,6 +62,7 @@ it.each([
   localStart, { ...localStart, search: { provider: 'brave' } },
   { kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' } },
   { kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' }, search: { provider: 'searxng', baseURL: 'https://search.invalid' } },
+  { kind: 'purge' }, { kind: 'purge', before: 1234 },
   { kind: 'deleteConversation', conversationId: 'conversation' },
   { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' },
   { kind: 'answer', runId: 'run', questionId: 'q', text: 'answer' },

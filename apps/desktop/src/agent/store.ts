@@ -54,8 +54,9 @@ abstract class Store implements AgentStore {
     event(runId, 1, { type: 'status', status }, at)
     if (error !== undefined) event(runId, 1, { type: 'error', ...error }, at)
     this.mutate(runId, run => {
-      // Interrupted is resumable, unlike the three completed outcomes.
-      if (completed(run.status) && run.status !== status) throw new Error('Run is terminal.')
+      // Provider outages are retryable; policy/budget failures remain terminal.
+      const continuing = run.status === 'failed' && run.error?.code === 'provider' && status === 'running'
+      if (completed(run.status) && run.status !== status && !continuing) throw new Error('Run is terminal.')
       run.status = status
       run.updated = at
       if (error === undefined) delete run.error
@@ -78,6 +79,7 @@ abstract class Store implements AgentStore {
   abstract interruptUnfinished(at: number): string[]
   abstract deleteRun(runId: string): string[]
   abstract deleteConversation(conversationId: string): string[]
+  abstract deleteBefore(before?: number): string[]
 }
 
 type RunKey = Pick<RunSummary, 'id' | 'updated'>
@@ -231,6 +233,12 @@ export class MemoryAgentStore extends Store {
     return [...new Set(ids.flatMap(id => this.deleteRun(id)))]
   }
   close(): void { this.closed = true; this.runs.clear(); this.index = new RunIndex(); this.requests.clear(); this.log.clear(); this.checkpoints.clear(); this.latest.clear() }
+  deleteBefore(before?: number): string[] {
+    this.assertOpen()
+    if (before !== undefined) integer(before)
+    const ids = [...this.runs.values()].filter(run => before === undefined || run.updated < before).map(run => run.id)
+    return [...new Set(ids.flatMap(id => this.deleteRun(id)))]
+  }
 }
 
 type Row = Record<string, unknown>
@@ -297,6 +305,8 @@ export class SqliteAgentStore extends Store {
         conversationArtifacts: this.db.prepare("SELECT DISTINCT json_extract(e.payload,'$.artifactId') AS id FROM run_events e JOIN runs r ON r.id=e.run_id WHERE r.conversation_id=? AND json_extract(e.payload,'$.type')='artifact'"),
         deleteRun: this.db.prepare('DELETE FROM runs WHERE id=?'),
         deleteConversation: this.db.prepare('DELETE FROM runs WHERE conversation_id=?'),
+        purgeArtifacts: this.db.prepare("SELECT DISTINCT json_extract(e.payload,'$.artifactId') AS id FROM run_events e JOIN runs r ON r.id=e.run_id WHERE (? IS NULL OR r.updated < ?) AND json_extract(e.payload,'$.type')='artifact'"),
+        purge: this.db.prepare('DELETE FROM runs WHERE (? IS NULL OR updated < ?)'),
       }
     } catch (error) { this.db.close(); throw error }
   }
@@ -376,4 +386,12 @@ export class SqliteAgentStore extends Store {
     })
   }
   close(): void { if (!this.closed) { this.db.close(); this.closed = true } }
+  deleteBefore(before?: number): string[] {
+    if (before !== undefined) integer(before)
+    return this.transaction(() => {
+      const ids = this.statements.purgeArtifacts.all(before ?? null, before ?? null).map(row => String(row.id))
+      this.statements.purge.run(before ?? null, before ?? null)
+      return ids
+    })
+  }
 }

@@ -14,7 +14,6 @@ interface SupervisorDeps {
   spawn(): ChildLike
   forceKill?(pid: number): void
   credentials(name: string, allowed: readonly string[]): Promise<string>
-  search?(): SearchConfig | undefined
   onPush(push: AgentPush): void
   dataDir: string
 }
@@ -48,6 +47,7 @@ export class AgentSupervisor {
   private flushTimer?: NodeJS.Timeout
   private volumeTimer?: NodeJS.Timeout
   private volume = 0
+  private queuedPurge?: Extract<HostCommand, { kind: 'purge' }>
 
   constructor(private readonly deps: SupervisorDeps) {}
   private setState(state: HostState, message?: string): void {
@@ -55,6 +55,15 @@ export class AgentSupervisor {
     this.deps.onPush({ kind: 'host', state, ...(message ? { message } : {}) })
   }
   request(command: HostCommand): Promise<unknown> { return this.submit(command, 30_000) }
+  purge(before?: number, explicit = false): Promise<unknown> {
+    if (this.disposed) return Promise.reject(new Error(STOPPED))
+    const command = { kind: 'purge' as const, ...(before !== undefined ? { before } : {}) }
+    if (!this.child) {
+      if (!explicit) { this.queuedPurge = command; return Promise.resolve({ ok: true }) }
+      if (!existsSync(agentPaths(this.deps.dataDir).db)) return Promise.resolve({ ok: true })
+    }
+    return this.request(command).catch(error => { this.queuedPurge = command; throw error })
+  }
   private submit(command: HostCommand, timeoutMs: number): Promise<unknown> {
     if (this.disposed) return Promise.reject(new Error(STOPPED))
     if (this.stopping && command.kind !== 'cancelAll') return Promise.reject(new Error('Agent host is stopping.'))
@@ -62,7 +71,7 @@ export class AgentSupervisor {
     if (this.pending.size >= 256) return Promise.reject(new Error('Too many agent requests. Try again.'))
     if (command.kind === 'start' || command.kind === 'continue') {
       this.authority++
-      this.search = command.kind === 'start' ? command.search : this.deps.search?.() ?? this.search
+      this.search = command.search
       this.allowed = [command.model.provider, ...(this.search?.provider === 'brave' ? ['brave-search'] : [])]
     }
     return new Promise((resolve, reject) => {
@@ -99,6 +108,11 @@ export class AgentSupervisor {
     if (m.kind === 'ready') {
       if (this.state !== 'starting') { this.invalidMessages++; return }
       this.setState('ready')
+      if (this.queuedPurge) {
+        const purge = this.queuedPurge
+        this.queuedPurge = undefined
+        void this.request(purge).catch(() => { this.queuedPurge ??= purge })
+      }
       for (const [id, request] of this.pending) this.dispatch(id, request)
     } else if (m.kind === 'credential.request') {
       void this.credential(child, m.id, m.name)
