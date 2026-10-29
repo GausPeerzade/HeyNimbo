@@ -19,7 +19,7 @@ export interface ShellActions {
   settingsChanged(settings: AppSettings, previous: AppSettings): void
   connectionRequest?(request: ConnectionRequest): Promise<ConnectionResult>
   connectionSnapshot?(): ConnectionSnapshot
-  validateSettings?(settings: AppSettings): Promise<void>
+  validateSettings?(settings: AppSettings): Promise<AppSettings>
   permissions(): AppSnapshot['permissions']
 }
 
@@ -171,11 +171,11 @@ export class AppShell {
       }
       case 'updateSettings': {
         const previous = this.settings.get()
-        const next = request.settings
+        let next = request.settings
         if (typeof next.retention === 'number' && next.retention > 0 && (previous.retention === 'forever' || previous.retention === 0 || next.retention < previous.retention)) {
           if (!await this.confirm('Apply shorter history retention?', 'Older conversations, including pinned ones, will be deleted.', 'Apply retention')) { this.publish(); return }
         }
-        await this.actions.validateSettings?.(next)
+        next = await this.actions.validateSettings?.(next) ?? next
         this.settings.set(next)
         if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset() }
         // Only a packaged app can own a login item, and only an actual change

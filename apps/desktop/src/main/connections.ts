@@ -2,6 +2,7 @@ import { shell } from 'electron'
 import { PROVIDERS, PRESETS, defaultConnectionSettings, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type KeyProvider, type ModelInfo, type ProviderId } from '../shared/providers'
 import { ChatGPTAuth } from './chatgpt-auth'
 import { loadSecret, removeSecret, saveSecret } from './secrets'
+import { validateBaseURL } from './provider-settings'
 import { listProviderModels } from './model-catalog'
 import type { AnswerConnection } from './answer-provider'
 import type { SettingsStore } from './settings'
@@ -9,13 +10,21 @@ import type { SettingsStore } from './settings'
 export class Connections {
   readonly auth = new ChatGPTAuth(url => shell.openExternal(url))
   private keys = new Map<KeyProvider, string>()
+  private compatibleKey?: { baseURL: string; key: string }
   private catalogs = new Map<string, ModelInfo[]>()
   private mutating = false
   constructor(private readonly settings: SettingsStore, private readonly changed: () => void, private readonly openSettings: () => void = () => {}) {}
   async load(): Promise<void> {
     for (const provider of PROVIDERS) if (provider !== 'chatgpt') {
       const key = await loadSecret(`${provider}-key`)
-      if (key) this.keys.set(provider, key)
+      if (provider === 'compatible') {
+        this.compatibleKey = undefined
+        // Unbound legacy keys cannot safely be assigned to the current endpoint.
+        try {
+          const saved = JSON.parse(key ?? '') as { baseURL?: unknown; key?: unknown }
+          if (typeof saved.key === 'string' && saved.key) this.compatibleKey = { baseURL: validateBaseURL(saved.baseURL), key: saved.key }
+        } catch { /* Re-enter a key to bind it to an endpoint. */ }
+      } else if (key) this.keys.set(provider, key)
     }
     await this.auth.load()
   }
@@ -29,6 +38,7 @@ export class Connections {
     return {
       providers: Object.fromEntries(PROVIDERS.map(p => [p, p === 'chatgpt' ? Boolean(this.auth.active?.tokens?.scopes.includes('chatgpt.tokens.use.direct')) : p === 'compatible' ? Boolean(config.models.compatible.customModel) : this.keys.has(p)])) as Record<ProviderId, boolean>,
       accounts: this.auth.profiles.map(p => ({ id: p.id, name: p.identity?.name ?? 'Finish sign-in', email: p.identity?.email ?? '', connected: Boolean(p.tokens), sharing: Boolean(p.tokens?.scopes.includes('chatgpt.tokens.use.direct')) })), activeAccount: this.auth.active?.id,
+      compatibleKeyPresent: Boolean(this.compatibleKey?.baseURL === config.baseURL),
       models, answerModel: selected.model, answerVision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision,
       voice: this.voiceKey ? 'OpenAI key' : 'unavailable',
     }
@@ -37,26 +47,30 @@ export class Connections {
     const config = this.config
     return Boolean(selectedModel(config).model && this.snapshot().providers[config.provider])
   }
-  private async credential(provider: ProviderId): Promise<string> {
+  private async credential(provider: ProviderId, config = this.config): Promise<string> {
     if (provider === 'chatgpt') return this.auth.credential()
+    if (provider === 'compatible') return this.compatibleKey?.baseURL === config.baseURL ? this.compatibleKey.key : ''
     const key = this.keys.get(provider)
-    if (!key && provider !== 'compatible') throw new Error('Add a key for the selected answer provider in Settings → Connection.')
+    if (!key) throw new Error('Add a key for the selected answer provider in Settings → Connection.')
     return key ?? ''
   }
   private async discover(provider: ProviderId, key?: string, config = this.config): Promise<ModelInfo[]> {
-    const models = await listProviderModels(provider, key ?? await this.credential(provider), config.baseURL)
+    const models = await listProviderModels(provider, key ?? await this.credential(provider, config), config.baseURL)
     this.catalogs.set(this.catalogKey(provider, config), models)
     return models
   }
-  async validateSettings(config: ConnectionSettings | undefined): Promise<void> {
-    if (!config) return
+  async validateSettings(candidate: ConnectionSettings | undefined): Promise<ConnectionSettings | undefined> {
+    if (!candidate) return
+    const config = structuredClone(candidate)
+    if (config.baseURL !== this.config.baseURL) config.models.compatible = { preset: 'custom', customModel: '' }
     const choice = config.models[config.provider]
-    if (choice.preset !== 'custom') return
-    if (config.provider !== 'compatible' && !this.snapshot().providers[config.provider]) return
+    if (choice.preset !== 'custom' || !choice.customModel) return config
+    if (config.provider !== 'compatible' && !this.snapshot().providers[config.provider]) return config
     try {
       const models = await this.discover(config.provider, undefined, config)
       if (models.length && !models.some(m => m.id === choice.customModel)) throw new Error('That model is not available for this connection. Refresh the model list or choose another model.')
     } catch (error) { throw new Error(publicConnectionError(error)) }
+    return config
   }
   answer(): AnswerConnection {
     const config = structuredClone(this.config), selected = selectedModel(config)
@@ -64,7 +78,7 @@ export class Connections {
     return {
       provider: config.provider, ...selected, vision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision, baseURL: config.baseURL,
       credential: async () => {
-        const key = await this.credential(config.provider)
+        const key = await this.credential(config.provider, config)
         const models = this.catalogs.get(this.catalogKey(config.provider, config)) ?? await this.discover(config.provider, key, config)
         if ((config.provider === 'chatgpt' || models.length > 0) && !models.some(m => m.id === selected.model)) throw new Error('The selected model is not available for this connection. Choose one in Settings → Connection.')
         return key
@@ -79,15 +93,21 @@ export class Connections {
       let message = 'Connection updated.'
       switch (request.kind) {
         case 'saveKey': {
-          await this.discover(request.provider, request.key)
-          await saveSecret(`${request.provider}-key`, request.key)
-          this.keys.set(request.provider, request.key)
           const config = this.config
+          await this.discover(request.provider, request.key, config)
+          if (request.provider === 'compatible') {
+            const credential = { baseURL: config.baseURL, key: request.key }
+            await saveSecret('compatible-key', JSON.stringify(credential))
+            this.compatibleKey = credential
+          } else {
+            await saveSecret(`${request.provider}-key`, request.key)
+            this.keys.set(request.provider, request.key)
+          }
           // Adding an auxiliary voice key must not change the answer's billing path.
           if (options.selectSavedProvider) this.settings.set({ ...this.settings.get(), connection: { ...config, provider: request.provider } })
           message = 'Key tested and stored securely on this Mac.'; break
         }
-        case 'removeKey': await removeSecret(`${request.provider}-key`); this.keys.delete(request.provider); this.catalogs.delete(this.catalogKey(request.provider)); message = 'Key removed.'; break
+        case 'removeKey': await removeSecret(`${request.provider}-key`); if (request.provider === 'compatible') this.compatibleKey = undefined; this.keys.delete(request.provider); this.catalogs.delete(this.catalogKey(request.provider)); message = 'Key removed.'; break
         case 'test': case 'models': await this.discover(request.provider); message = 'Connection tested; model list refreshed.'; break
         case 'signIn':
           await this.auth.signIn(request.accountId, request.newAccount)

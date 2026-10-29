@@ -80,7 +80,7 @@ function render(s: AppSnapshot): void {
   document.getElementById('stop')!.hidden = !s.busy
   ;document.getElementById('send')!.hidden = s.busy || !s.keyPresent
   const screenContext = document.getElementById('screen-context')
-  if (screenContext) screenContext.textContent = s.connection?.answerVision === false ? 'Text-only model · no screen capture or coordinate drawing' : 'Includes a screen capture when you ask'
+  if (screenContext) screenContext.textContent = s.connection?.answerVision === false ? 'Text only · does not see or draw on your screen' : 'Includes a screen capture when you ask'
   document.getElementById('feedback')!.textContent = s.status
   document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? 'Kept until deleted' : `Saved locally for ${s.settings.retention} days`
 }

@@ -106,5 +106,5 @@ it('replaces the send action with Stop while a response is busy and restores it 
 it('explains that a non-vision model does not capture the screen or draw coordinates', async () => {
   await import('./home')
   mocks.snapshot!({ ...snapshot(), connection: { providers: { chatgpt: false, openai: false, anthropic: false, google: false, deepseek: false, openrouter: false, compatible: true }, accounts: [], models: [], answerModel: 'local-text', answerVision: false, voice: 'unavailable' } })
-  expect(nodes.get('screen-context')?.textContent).toBe('Text-only model · no screen capture or coordinate drawing')
+  expect(nodes.get('screen-context')?.textContent).toBe('Text only · does not see or draw on your screen')
 })

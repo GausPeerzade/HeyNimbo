@@ -59,6 +59,14 @@ and atomically written owner-only (`0600`). Unavailable/insecure storage is
 rejected. The existing `userData/openai-key.bin` is reused **in place**; no real
 credential was inspected, copied or re-entered during implementation. Other key
 files are provider-specific, and OAuth credentials live in `chatgpt-auth.bin`.
+Compatible keys include the normalized full endpoint URL inside the encrypted
+credential record. Discovery, pre-save validation and answer requests use a saved
+key only when that full endpoint matches; changing host, port or path never
+forwards the previous key. Old compatible keys without an endpoint binding are
+not reused: enter a key explicitly if the endpoint needs one. Endpoint edits clear
+the compatible model and save without contacting the old endpoint. The connection
+can stay unselected until Find models succeeds and a new model is chosen, so a
+dead endpoint or disjoint catalog cannot prevent repair.
 Settings contain only provider/model/endpoint preferences. IPC snapshots contain
 only presence, public account display data and model metadata, never saved
 credentials. Key entry is a one-way renderer-to-main operation; entered keys are
@@ -154,22 +162,39 @@ custom URL validation, model discovery/capability gating, voice gating and histo
 All fixtures use synthetic credentials, mocked transports and a mocked callback
 server: **no real network calls in tests**.
 
-Run `pnpm test`, `pnpm typecheck`, `pnpm build`, and
-`node apps/desktop/scripts/check-provider-mutations.mjs`. The mutation check
-restores sources in `finally` and requires actual test failures for 16 deliberate
-security, attribution and stream-completion mutations, rather than accepting
-syntax/import failures as kills.
+Run `pnpm test`, `pnpm typecheck` and `pnpm build`. The initial implementation's
+one-off mutation checks killed **16/16** deliberate changes: PKCE digest, callback
+state, ID-token issuer/audience/nonce/expiry, granted plan permission, loopback
+binding, redirect protection, remote HTTP rejection, vision gating, terminal
+stream events, encrypted storage, voice gating, billing isolation and turn model
+attribution. Each required an actual assertion failure, not a syntax/import error;
+sources were restored after each check. The one-off driver is not in the repository.
+
+Follow-up regressions cover full-endpoint credential ownership (including a
+same-host path change), explicit key replacement, unbound legacy keys, disjoint
+catalog switching, unreachable old endpoints, an unselected compatible state,
+the unified Model picker/collapsed sections/plain copy, and turn cancellation
+aborting stalled OpenAI and Anthropic SDK fetches. The follow-up mutation run was
+**blocked before execution by the local command safety filter**, a false positive
+on a source expression. It was not retried or worked around, and no mutation was
+applied. The supervisor runs those mutations independently after handoff.
+The full follow-up gates pass: **264 desktop tests, 20 Rust tests, typecheck and
+build**. Tests still use only mocked transports and synthetic credentials.
 
 Hidden, isolated Home/Settings/setup preview captures are in
 `/tmp/nimbo-auth-validation/` (light/dark, ChatGPT/OpenAI/Anthropic/local Connection,
-model/voice-key sections, narrow layout and first-run screens). Preview blocks all network
+model/Advanced/Voice sections, narrow layout and first-run screens). The revised
+Connection layout puts provider/sign-in/key first, then one Model picker (Fast,
+Balanced and Best before discovered models), a single model/capability summary,
+collapsed Advanced settings and separate optional Voice. Every section has at
+most one primary action. Preview blocks all network
 and never constructs a credential, capture, audio or gesture pipeline; sample
 account data is synthetic. Diagnostics report no renderer errors or horizontal
 Connection overflow. No visible app run or real screen capture was performed.
 
 Bundle impact: SDKs remain external main-process dependencies; no SDK is shipped
 in renderer bundles. Before changes, main output occupied 124 KiB on disk. The
-expanded main output is 166.70 kB (164 KiB allocated, reported by `du`),
+expanded main output is 168.45 kB (168 KiB allocated, reported by `du`),
 plus **27.56 MiB of newly installed uncompressed runtime dependency files**,
 including SDK source/docs/maps, peers and jose. This is an installation measurement,
 not an assertion about final compressed ASAR/installer size; packaging may omit

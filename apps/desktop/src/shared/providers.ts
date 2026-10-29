@@ -9,6 +9,7 @@ export interface ConnectionSnapshot {
   providers: Record<ProviderId, boolean>
   accounts: Array<{ id: string; name: string; email: string; connected: boolean; sharing: boolean }>
   activeAccount?: string
+  compatibleKeyPresent?: boolean
   models: ModelInfo[]
   answerModel: string
   answerVision: boolean

@@ -125,7 +125,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     replaceKey: () => openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true })),
     connectionRequest: request => connections.request(request),
     connectionSnapshot: () => connections.snapshot(),
-    validateSettings: settings => connections.validateSettings(settings.connection),
+    validateSettings: async settings => ({ ...settings, connection: await connections.validateSettings(settings.connection) }),
     settingsChanged: (settings, previous) => {
       setNotchVisibility(notch, settings.showNotch)
       audio.send({ kind: 'mute', muted: settings.muted })

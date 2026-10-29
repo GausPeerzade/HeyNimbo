@@ -30,3 +30,10 @@ it('validates provider/model/endpoint settings and refuses secret fields in sett
   for (const value of [{ kind: 'saveKey', provider: 'chatgpt', key: 'synthetic' }, { kind: 'saveKey', provider: 'anthropic', key: 'x\r\ninjected' }, { kind: 'removeKey', provider: 'openai', key: 'synthetic' }, { kind: 'signIn', token: 'synthetic' }]) expect(() => parseConnectionRequest(value)).toThrow()
   expect(parseConnectionRequest({ kind: 'saveKey', provider: 'anthropic', key: ' synthetic ' })).toEqual({ kind: 'saveKey', provider: 'anthropic', key: 'synthetic' })
 })
+
+it('allows a compatible endpoint to remain unselected while models are discovered', () => {
+  const config = defaultConnectionSettings(); config.provider = 'compatible'
+  config.models.compatible = { preset: 'custom', customModel: '' }
+  expect(parseConnectionSettings(config).models.compatible.customModel).toBe('')
+  expect(selectedModel(config).model).toBe('')
+})

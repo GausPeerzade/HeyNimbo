@@ -24,7 +24,7 @@ export function parseConnectionSettings(value: unknown): ConnectionSettings {
   for (const provider of PROVIDERS) {
     const choice = object(models[provider]); shape(choice, ['preset', 'customModel'])
     if (typeof choice.preset !== 'string' || !['fast', 'balanced', 'best', 'custom'].includes(choice.preset) || typeof choice.customModel !== 'string' || choice.customModel.length > 200 || (choice.customModel !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(choice.customModel))) throw new Error('Invalid model choice.')
-    if (choice.preset === 'custom' && !choice.customModel) throw new Error('Enter a custom model ID.')
+    if (choice.preset === 'custom' && !choice.customModel && provider !== 'compatible') throw new Error('Enter a custom model ID.')
     result.models[provider] = choice as unknown as ModelChoice
   }
   return result
