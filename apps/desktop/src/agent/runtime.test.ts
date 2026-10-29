@@ -306,7 +306,7 @@ describe('agent coordinator', () => {
     const stopping = h.runtime.shutdown().then(() => { stopped = true })
     await vi.advanceTimersByTimeAsync(0)
     expect(stopped).toBe(false)
-    await vi.advanceTimersByTimeAsync(999)
+    await vi.advanceTimersByTimeAsync(749)
     expect(stopped).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
     await stopping

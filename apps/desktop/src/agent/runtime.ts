@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { UnsupportedFunctionalityError, isStepCount, modelMessageSchema, jsonSchema, streamText, tool, wrapLanguageModel, type ModelMessage, type ToolSet } from 'ai'
-import { isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError } from '../shared/agent-protocol'
+import { isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError, type CancelAllResult } from '../shared/agent-protocol'
 import type { AgentRuntime, AgentTool, AgentStore, ArtifactStore, RunRecord, RuntimeDeps, StepCheckpoint } from './contracts'
 import { DO_INSTRUCTIONS } from './prompt'
 import { PlanAccessError } from './model-policy'
@@ -31,6 +31,8 @@ function canonical(value: unknown): string {
 class BudgetError extends Error {}
 const INPUT_BYTES = 16 * 1024
 const STREAM_BYTES = 1024 * 1024
+const RESPONSE_BYTES = 2 * 1024 * 1024
+const RESPONSE_ERROR = 'The model response was too large.'
 const CHECKPOINT_BYTES = 4 * 1024 * 1024
 const TRANSCRIPT_ERROR = 'The task transcript grew too large.'
 function transcript(messages: ModelMessage[]): ModelMessage[] {
@@ -66,7 +68,6 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   function admit() {
     if (reservations.size >= maxActiveRuns) throw new Error('The agent is at capacity. Stop a task or wait for it to finish.')
   }
-  const flights = new Set<Promise<unknown>>()
   let closing = false
   let pending: AgentEvent[] = []
   const affected = new Map<string, Binding>()
@@ -161,6 +162,18 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     status(state, outcome)
     active.delete(state.run.id)
   }
+  async function drain(outcome: 'cancelled' | 'interrupted'): Promise<CancelAllResult> {
+    const states = [...reservations.values()]
+    for (const state of states) cancel(state, outcome)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      // task also awaits owned provider/tool promises in its finally block.
+      // A timeout reports non-quiescence; only the parent can reap that work.
+      await Promise.race([Promise.allSettled(states.map(state => state.task)), new Promise<void>(resolve => { timer = setTimeout(resolve, 750) })])
+    } finally { clearTimeout(timer) }
+    flush()
+    return { ok: true, unsettled: reservations.size }
+  }
   function scopedArtifacts(state: Running): ArtifactStore {
     const check = (id: string) => { checkpoint(state); if (id !== state.run.id) throw new Error('Artifact access denied.') }
     return {
@@ -233,18 +246,33 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
             return response
           })
           const owned = state.toolFlights ??= new Set()
-          flights.add(flight)
           owned.add(flight)
-          const response = await flight.finally(() => { flights.delete(flight); owned.delete(flight) })
-          let bytes = 0, completeBytes = 0
-          return { ...response, stream: response.stream.pipeThrough(new TransformStream({ transform(part, controller) {
+          const response = await flight.finally(() => { owned.delete(flight) })
+          let bytes = 0, completeBytes = 0, envelopeBytes = 0
+          type Part = typeof response.stream extends ReadableStream<infer C> ? C : never
+          const transform = new TransformStream<Part, Part>({ transform(part, controller) {
+            // IDs/names are SDK accumulation keys, not just event labels. Bound
+            // them before forwarding even the first input-start or complete call.
+            for (const [key, value] of Object.entries(part)) {
+              if (typeof value === 'string' && value.length > (key === 'toolName' ? 128 : key === 'toolCallId' || key === 'id' ? 256 : RESPONSE_BYTES)) throw new BudgetError(RESPONSE_ERROR)
+            }
+            // Include every envelope field, including nested provider metadata,
+            // escaping and UTF-8 expansion, not only visible text or arguments.
+            envelopeBytes += Buffer.byteLength(JSON.stringify(part))
+            if (envelopeBytes > RESPONSE_BYTES) throw new BudgetError(RESPONSE_ERROR)
             if (part.type === 'tool-input-delta' || part.type === 'reasoning-delta') bytes += Buffer.byteLength(part.delta)
             // Complete calls may be supplied without deltas. Count them in a
             // separate envelope so providers that send both are not double counted.
             if (part.type === 'tool-call') completeBytes += Buffer.byteLength(part.input)
             if (bytes > STREAM_BYTES || completeBytes > STREAM_BYTES) throw new BudgetError(TRANSCRIPT_ERROR)
             controller.enqueue(part)
-          } })) }
+          } })
+          // pipeThrough hides the piping promise, including an abort-ignoring
+          // source cancel(). Keep that work reserved until it actually settles.
+          const streamFlight = response.stream.pipeTo(transform.writable).catch(() => {})
+          owned.add(streamFlight)
+          void streamFlight.then(() => { owned.delete(streamFlight) })
+          return { ...response, stream: transform.readable }
         },
       } })
       const artifacts = scopedArtifacts(state)
@@ -287,10 +315,9 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
               checkpoint(state)
               emit(state, id, { type: 'tool.call', step, callId: options.toolCallId, tool: entry.name, input: JSON.stringify(normalized).slice(0, 8000) })
               const flight = entry.execute(normalized, { runId: id, grants: state.run.grants, signal: state.controller.signal, checkpoint: () => checkpoint(state), artifacts, outputBudget: Math.max(0, state.run.budget.maxToolOutputBytes - state.outputBytes) })
-              flights.add(flight)
               const owned = state.toolFlights ??= new Set()
               owned.add(flight)
-              const outcome = await flight.finally(() => { flights.delete(flight); owned.delete(flight) })
+              const outcome = await flight.finally(() => { owned.delete(flight) })
               checkpoint(state)
               emit(state, id, { type: 'tool.result', callId: options.toolCallId, ok: outcome.ok, summary: outcome.summary.slice(0, 8000), ...(outcome.artifactId ? { artifactId: outcome.artifactId } : {}) })
               return consume(state, outcome.content)
@@ -457,7 +484,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           await Promise.all([retryArtifactCleanup(deps.store, deps.artifacts), retryArtifactCleanup(deps.memoryStore, deps.memoryArtifacts)])
           return { ok: true }
         }
-        case 'cancelAll': for (const state of active.values()) cancel(state); return { ok: true }
+        case 'cancelAll': return drain('cancelled')
         case 'answer': {
           const state = active.get(command.runId)
           const wait = state?.question
@@ -499,13 +526,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     },
     async shutdown() {
       closing = true
-      const states = [...reservations.values()]
       // Host shutdown is recoverable; only an explicit owner stop is cancellation.
-      for (const state of states) cancel(state, 'interrupted')
-      let timer: ReturnType<typeof setTimeout> | undefined
-      await Promise.race([Promise.allSettled([...states.map(state => state.task), ...flights]), new Promise<void>(resolve => { timer = setTimeout(resolve, 1000) })])
-      clearTimeout(timer)
-      flush()
+      return drain('interrupted')
     },
   }
 }

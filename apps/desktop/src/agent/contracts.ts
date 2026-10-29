@@ -13,7 +13,7 @@
 //   src/agent/host/serve.ts   serveHost(port, compose)  (utility-process side of the MessagePort)
 //   src/main/agent-supervisor.ts  AgentSupervisor (main side: lazy spawn, kill, credential scoping)
 import type { LanguageModel } from 'ai'
-import type { AgentEvent, AgentEventPayload, FolderGrant, HostCommand, ModelSelection, Persistence, RunBudget, RunMode, RunStatus, RunSummary, RunUsage, AgentError, SearchConfig } from '../shared/agent-protocol'
+import type { AgentEvent, AgentEventPayload, FolderGrant, HostCommand, ModelSelection, Persistence, RunBudget, RunMode, RunStatus, RunSummary, RunUsage, AgentError, SearchConfig, CancelAllResult } from '../shared/agent-protocol'
 
 // ---------------------------------------------------------------------------
 // Store (agent.sqlite or in-memory)
@@ -153,8 +153,8 @@ export interface RuntimeSink {
 /** The whole agent runtime as the host process sees it. */
 export interface AgentRuntime {
   handle(command: HostCommand): Promise<unknown>
-  /** Cancels every run and waits (bounded) for in-flight tools to settle. */
-  shutdown(): Promise<void>
+  /** Reports held reservations after bounded drain; void supports lightweight host/test adapters. */
+  shutdown(): Promise<CancelAllResult | void>
 }
 
 export interface RuntimeDeps {

@@ -44,7 +44,7 @@ export async function composeRuntime(init: HostInit, overrides: TestOverrides = 
     tools: options => [...localTools(), ...artifactTools(), ...webTools({ ...options, resolver: overrides.resolver, allowLoopbackForTests: overrides.allowLoopbackForTests })],
     credentials: init.credentials, sink: init.sink, clock: overrides.clock,
   })
-  let stopped: Promise<void> | undefined
+  let stopped: ReturnType<AgentRuntime['shutdown']> | undefined
   return {
     handle: command => runtime.handle(command),
     shutdown: () => stopped ??= runtime.shutdown().finally(() => { store.close(); memoryStore.close() }),
