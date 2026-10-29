@@ -106,9 +106,11 @@ export type HostCommand =
   | { kind: 'allowMix'; runId: string }
   | { kind: 'cancel'; runId: string }
   /** Grants are the ones persisted with the run; main cannot widen them on continue. */
-  | { kind: 'continue'; runId: string; model: ModelSelection }
+  | { kind: 'continue'; runId: string; model: ModelSelection; search?: SearchConfig }
   | { kind: 'delete'; runId: string }
   | { kind: 'deleteConversation'; conversationId: string }
+  /** Retention/Delete-all: removes runs (and their artifacts) last updated before `before`; all runs when omitted. */
+  | { kind: 'purge'; before?: number }
   | { kind: 'cancelAll' }
   | { kind: 'list'; before?: number; limit: number }
   | { kind: 'events'; runId: string; afterSeq: number; limit: number }
