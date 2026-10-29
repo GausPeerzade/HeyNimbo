@@ -142,6 +142,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     replaceKey: () => openSetupWindow(request => connections.request(request, { selectSavedProvider: true })),
     connectionRequest: request => connections.request(request),
     connectionSnapshot: () => connections.snapshot(),
+    agentConnection: () => connections.answer(),
     validateSettings: async settings => ({ ...settings, connection: await connections.validateSettings(settings.connection) }),
     settingsChanged: (settings, previous) => {
       setNotchVisibility(notch, settings.showNotch)
