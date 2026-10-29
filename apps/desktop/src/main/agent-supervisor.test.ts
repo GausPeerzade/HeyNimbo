@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { SqliteAgentStore } from '../agent/store'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentSupervisor } from './agent-supervisor'
 import { DEFAULT_BUDGET, type AgentEvent, type AgentPush, type HostCommand, type MainToHost, type RunSummary } from '../shared/agent-protocol'
@@ -26,6 +30,75 @@ function setup() {
   return { supervisor, children, pushes, credentials }
 }
 afterEach(() => vi.useRealTimers())
+it('queues only the latest idle retention purge and dispatches it before new work after ready', async () => {
+  const { supervisor, children } = setup()
+  await supervisor.purge(100)
+  await supervisor.purge(200)
+  expect(children).toHaveLength(0)
+  const started = supervisor.request(start), child = children[0]!
+  child.ready()
+  const commands = child.sent.filter(m => m.kind === 'command')
+  expect(commands.map(m => m.command.kind)).toEqual(['purge', 'start'])
+  expect(commands[0]!.command).toEqual({ kind: 'purge', before: 200 })
+  child.emit('message', { v: 1, kind: 'reply', id: commands[0]!.id, ok: true, result: { ok: true } })
+  child.reply(); await started
+  const pruning = supervisor.purge(300)
+  expect(child.sent.at(-1)).toMatchObject({ command: { kind: 'purge', before: 300 } })
+  child.reply(); await pruning
+  supervisor.dispose()
+})
+it('retries a rejected queued purge before new work after a host crash and restart', async () => {
+  const { supervisor, children } = setup()
+  await supervisor.purge(100)
+  const started = supervisor.request(start), first = children[0]!
+  first.ready()
+  const purge = first.sent.find(m => m.kind === 'command' && m.command.kind === 'purge')!
+  if (purge.kind !== 'command') throw new Error('Purge not sent.')
+  first.emit('message', { v: 1, kind: 'reply', id: purge.id, ok: false, message: 'unsafe-host-error' })
+  first.reply(); await started; await Promise.resolve()
+  first.emit('exit', 1)
+  const list = supervisor.request({ kind: 'list', limit: 10 }), next = children[1]!
+  next.ready()
+  const commands = next.sent.filter(m => m.kind === 'command')
+  expect(commands.map(m => m.command.kind)).toEqual(['purge', 'list'])
+  expect(commands[0]!.command).toEqual({ kind: 'purge', before: 100 })
+  next.emit('message', { v: 1, kind: 'reply', id: commands[0]!.id, ok: true, result: { ok: true } })
+  next.reply({ runs: [] })
+  await expect(list).resolves.toEqual({ runs: [] })
+  supervisor.dispose()
+})
+it('explicit delete-all starts an idle host only when durable agent data exists', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-delete-all-'))
+  const child = new Child()
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: () => {}, dataDir: dir })
+  try {
+    await supervisor.purge(undefined, true)
+    expect(child.sent).toEqual([])
+    new SqliteAgentStore(join(dir, 'agent.sqlite')).close()
+    const deleted = supervisor.purge(undefined, true)
+    child.ready()
+    expect(child.sent.at(-1)).toMatchObject({ command: { kind: 'purge' } })
+    child.reply(); await deleted
+    expect(supervisor.state).toBe('ready')
+  } finally { supervisor.dispose(); rmSync(dir, { recursive: true, force: true }) }
+})
+it('loads retained interrupted tasks on idle list only when an agent database exists', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-supervisor-'))
+  const child = new Child()
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: () => {}, dataDir: dir })
+  try {
+    await expect(supervisor.request({ kind: 'list', limit: 10 })).resolves.toEqual({ runs: [] })
+    expect(child.sent).toEqual([])
+    const store = new SqliteAgentStore(join(dir, 'agent.sqlite'))
+    store.createRun({ id: 'old', requestId: 'old-request', goal: 'Resume me', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: 0 })
+    store.interruptUnfinished(1)
+    const runs = store.listRuns(10); store.close()
+    const list = supervisor.request({ kind: 'list', limit: 10 })
+    expect(child.sent).toEqual([{ v: 1, kind: 'init', dataDir: dir }])
+    child.ready(); child.reply({ runs })
+    await expect(list).resolves.toMatchObject({ runs: [{ id: 'old', status: 'interrupted' }] })
+  } finally { supervisor.dispose(); rmSync(dir, { recursive: true, force: true }) }
+})
 it('reaps a real SIGSTOP-frozen child with the production SIGKILL fallback', async () => {
   const processChild = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'ignore'] })
   const exited = once(processChild, 'exit')
@@ -58,10 +131,24 @@ it('clears request deadlines on errors and rejects stale replies and duplicate r
   expect(vi.getTimerCount()).toBe(0)
   supervisor.dispose(); supervisor.dispose()
 })
+it('scopes Continue credentials to its explicit search backend instead of stale run search', async () => {
+  const { supervisor, children } = setup()
+  const started = supervisor.request({ ...start, search: { provider: 'brave' } }), child = children[0]!
+  child.ready(); child.reply(); await started
+  const resumed = supervisor.request({ kind: 'continue', runId: 'run', model: start.model })
+  child.reply(); await resumed
+  child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'brave-search' }); await Promise.resolve()
+  expect(child.sent.at(-1)).toMatchObject({ kind: 'credential', ok: false })
+  const brave = supervisor.request({ kind: 'continue', runId: 'run', model: start.model, search: { provider: 'brave' } })
+  child.reply(); await brave
+  child.emit('message', { v: 1, kind: 'credential.request', id: 2, name: 'brave-search' }); await Promise.resolve()
+  expect(child.sent.at(-1)).toMatchObject({ kind: 'credential', ok: true, secret: 'test-secret' })
+  supervisor.dispose()
+})
 it('keeps Continue credentials scoped to its model and the configured Brave backend', async () => {
   const child = new Child()
-  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => 'brave-secret', search: () => ({ provider: 'brave' }), onPush: () => {}, dataDir: '/data' })
-  const continued = supervisor.request({ kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' } })
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => 'brave-secret', onPush: () => {}, dataDir: '/data' })
+  const continued = supervisor.request({ kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' }, search: { provider: 'brave' } })
   child.ready(); child.reply(); await continued
   child.emit('message', { v: 1, kind: 'credential.request', id: 1, name: 'brave-search' }); await Promise.resolve()
   expect(child.sent).toContainEqual({ v: 1, kind: 'credential', id: 1, ok: true, secret: 'brave-secret' })
@@ -100,15 +187,33 @@ it('never dispatches a queued start after Stop-all revokes work during host init
   expect(child.killed).toBe(false)
   supervisor.dispose()
 })
-it('bounds a valid event flood instead of buffering unlimited renderer data', async () => {
-  const { supervisor, children } = setup()
+it('flushes healthy bursts at the threshold without dropping events or killing the host', async () => {
+  const { supervisor, children, pushes } = setup()
   const started = supervisor.request(start), child = children[0]!
   child.ready(); child.reply({ runId: 'run' }); await started
   const events = Array.from({ length: 256 }, (_, n) => ({ runId: 'run', seq: n + 1, id: `e${n}`, at: 0, payload: { type: 'text', step: 0, text: 'x' } }))
   for (let n = 0; n < 3; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  expect(supervisor.state).toBe('ready')
+  expect(pushes.flatMap(p => p.kind === 'events' ? p.events : [])).toHaveLength(768)
+  supervisor.dispose()
+})
+it('kills abusive volumes above 10000 events in one frame even across threshold flushes', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply(); await started
+  const events = Array.from({ length: 256 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: 0, text: 'x' } }))
+  for (let n = 0; n < 39; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  await vi.advanceTimersByTimeAsync(16)
+  child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  for (let n = 0; n < 39; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
   expect(child.killed).toBe(true)
   expect(supervisor.state).toBe('crashed')
   supervisor.dispose()
+  expect(vi.getTimerCount()).toBe(0)
 })
 it('escalates a frozen host to SIGKILL even when graceful kill reports successful delivery', async () => {
   vi.useFakeTimers()

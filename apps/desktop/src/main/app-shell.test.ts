@@ -1,4 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { AgentSupervisor } from './agent-supervisor'
+import { composeRuntime } from '../agent/host/compose'
+import { serveHost } from '../agent/host/serve'
+import { SqliteAgentStore } from '../agent/store'
+import { FileArtifactStore } from '../agent/artifacts'
+import { agentPaths } from '../agent/paths'
+import { DEFAULT_BUDGET, type MainToHost } from '../shared/agent-protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent, BrowserWindow } from 'electron'
 import { AppShell, type ShellActions } from './app-shell'
@@ -16,7 +26,7 @@ vi.mock('electron', () => ({
 }))
 let shell: AppShell | undefined, talk: TalkSession | undefined
 function fixture(ask: ShellActions['ask'] = () => ({ accepted: true }), extra: Partial<ShellActions> = {}) {
-  mocks.dir = mkdtempSync('/tmp/heynimbo-shell-test-')
+  mocks.dir = mkdtempSync(join(tmpdir(), 'heynimbo-shell-test-'))
   mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue({ response: 0 })
   const actions = { ...extra, ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
   shell = new AppShell(actions, true)
@@ -26,6 +36,59 @@ function fixture(ask: ShellActions['ask'] = () => ({ accepted: true }), extra: P
   return { shell, event, contents, actions }
 }
 afterEach(() => { talk?.close(); talk = undefined; shell?.close(); shell = undefined; vi.restoreAllMocks(); vi.useRealTimers(); if (mocks.dir) rmSync(mocks.dir, { recursive: true, force: true }) })
+function agentBridge(shell: AppShell) {
+  const inbound = new EventEmitter(), child = new EventEmitter()
+  let spawns = 0
+  const host = serveHost({ on: (_event, listener) => inbound.on('message', listener), postMessage: message => queueMicrotask(() => child.emit('message', message)) }, composeRuntime)
+  const supervisor = new AgentSupervisor({
+    spawn: () => { spawns++; return Object.assign(child, { postMessage: (message: MainToHost) => inbound.emit('message', message), kill: () => true }) },
+    credentials: async () => { throw new Error('No model access in deletion tests.') }, onPush: () => {}, dataDir: mocks.dir,
+  })
+  Object.assign(shell, { agent: supervisor })
+  return { supervisor, host, spawns: () => spawns }
+}
+async function seedAgentHistory() {
+  const paths = agentPaths(mocks.dir), store = new SqliteAgentStore(paths.db), artifacts = new FileArtifactStore(paths.artifacts)
+  for (const [id, created] of [['old', Date.now() - 8 * 86_400_000], ['recent', Date.now()]] as const) {
+    store.createRun({ id, requestId: id, goal: 'Retained evidence', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created })
+    const meta = await artifacts.save(id, 'note', 'text/plain', new TextEncoder().encode(id))
+    store.appendEvent(id, { type: 'artifact', artifactId: meta.id, name: meta.name, mediaType: meta.mediaType, bytes: meta.bytes }, created)
+    store.setStatus(id, 'succeeded', created)
+  }
+  const ids = store.listRuns(10).map(run => ({ id: run.id, artifactId: (store.events(run.id, 0, 10)[0]!.payload as { artifactId: string }).artifactId }))
+  store.close()
+  return { artifacts, ids }
+}
+it('applies shorter retention and confirmed delete-all to real agent rows and blobs while cancellation leaves them intact', async () => {
+  const { shell, event } = fixture(), { artifacts, ids } = await seedAgentHistory()
+  const bridge = agentBridge(shell)
+  try {
+    await bridge.supervisor.request({ kind: 'list', limit: 10 })
+    mocks.confirm.mockResolvedValue({ response: 1 })
+    await mocks.handler?.(event, { kind: 'updateSettings', settings: { ...DEFAULT_SETTINGS, retention: 7 } })
+    await vi.waitFor(async () => expect(await bridge.supervisor.request({ kind: 'list', limit: 10 })).toMatchObject({ runs: [{ id: 'recent' }] }))
+    expect(await artifacts.read('old', ids.find(run => run.id === 'old')!.artifactId)).toBeUndefined()
+    mocks.confirm.mockResolvedValue({ response: 0 })
+    await mocks.handler?.(event, { kind: 'deleteAll' })
+    expect(await bridge.supervisor.request({ kind: 'list', limit: 10 })).toMatchObject({ runs: [{ id: 'recent' }] })
+    mocks.confirm.mockResolvedValue({ response: 1 })
+    await mocks.handler?.(event, { kind: 'deleteAll' })
+    expect(await bridge.supervisor.request({ kind: 'list', limit: 10 })).toEqual({ runs: [] })
+    expect(await artifacts.read('recent', ids.find(run => run.id === 'recent')!.artifactId)).toBeUndefined()
+  } finally { bridge.supervisor.dispose(); await bridge.host.dispose() }
+})
+it('queues daily retention without spawning an idle agent and applies it before the next list', async () => {
+  vi.useFakeTimers()
+  const { shell } = fixture(); await seedAgentHistory()
+  shell.settings.set({ ...DEFAULT_SETTINGS, retention: 7 })
+  const bridge = agentBridge(shell)
+  try {
+    await vi.advanceTimersByTimeAsync(86_400_000)
+    expect(bridge.spawns()).toBe(0)
+    vi.useRealTimers()
+    expect(await bridge.supervisor.request({ kind: 'list', limit: 10 })).toMatchObject({ runs: [{ id: 'recent' }] })
+  } finally { bridge.supervisor.dispose(); await bridge.host.dispose() }
+})
 it('rejects app requests from other contents, subframes and navigated documents', () => {
   const { event, contents } = fixture()
   for (const invalid of [{ sender: {} }, { ...event, senderFrame: { url: pageURL('home') } }]) expect(() => mocks.handler?.(invalid as IpcMainInvokeEvent, { kind: 'snapshot' })).toThrow('Not allowed')

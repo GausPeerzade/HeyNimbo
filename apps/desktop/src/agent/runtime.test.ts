@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import { MemoryAgentStore, SqliteAgentStore } from './store'
+import { FileArtifactStore, MemoryArtifactStore } from './artifacts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UnsupportedFunctionalityError } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import type { AgentTool, RuntimeDeps, ToolContext, ToolOutcome } from './contracts'
 import { DEFAULT_BUDGET, isTerminal, parseAgentEvent, type AgentEvent, type AgentEventPayload, type HostCommand } from '../shared/agent-protocol'
 import { FakeArtifacts, FakeStore } from './test-fakes'
+import { DO_INSTRUCTIONS } from './prompt'
 import { createAgentRuntime } from './runtime'
 
 type Chunk = Awaited<ReturnType<MockLanguageModelV4['doStream']>>['stream'] extends ReadableStream<infer C> ? C : never
@@ -50,6 +57,82 @@ function setup(model = scripted([{ text: 'done' }]), tools: AgentTool[] = [], ov
 }
 
 describe('agent coordinator', () => {
+  it('instructs file tools to address grants by label rather than opaque picker IDs', () => {
+    expect(DO_INSTRUCTIONS).toContain('folder-grant labels')
+    expect(DO_INSTRUCTIONS).not.toContain('Use opaque folder-grant IDs')
+  })
+  it('gives Continue a fresh activation wall budget after downtime exceeds the original budget', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'heynimbo-wall-'))
+    const store = new SqliteAgentStore(join(dir, 'agent.sqlite'))
+    let time = 10_000_000
+    store.createRun({ id: 'old', requestId: 'old-request', goal: 'Finish', mode: 'web', persistence: 'retained', grants: [], budget: { ...DEFAULT_BUDGET, maxWallMs: 100 }, created: 0 })
+    store.interruptUnfinished(time)
+    const model = scripted([{ text: 'finished after restart' }])
+    const h = setup(model, [], { store, memoryStore: new MemoryAgentStore(), artifacts: new MemoryArtifactStore(), memoryArtifacts: new MemoryArtifactStore(), clock: { now: () => time } })
+    try {
+      await h.runtime.handle({ kind: 'continue', runId: 'old', model: { provider: 'mock', model: 'mock' } })
+      expect((await h.terminal('old')).status).toBe('succeeded')
+      expect(model.doStreamCalls).toHaveLength(1)
+      time++
+    } finally { await h.runtime.shutdown(); store.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+  it.each(['start', 'continue'] as const)('rolls back %s registration after a real SQLite status failure so Stop-all cannot cancel an unstarted activation', async kind => {
+    const dir = mkdtempSync(join(tmpdir(), 'heynimbo-activation-')), path = join(dir, 'agent.sqlite')
+    const store = new SqliteAgentStore(path), db = new DatabaseSync(path)
+    if (kind === 'continue') {
+      store.createRun({ id: 'old', requestId: 'old', goal: 'Continue', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: Date.now() })
+      store.interruptUnfinished(Date.now())
+    }
+    db.exec("CREATE TRIGGER reject_activation BEFORE UPDATE OF status ON runs WHEN NEW.status='running' BEGIN SELECT RAISE(ABORT, 'Injected activation failure'); END")
+    const h = setup(scripted([{ text: 'Recovered' }]), [], { store, memoryStore: new MemoryAgentStore(), artifacts: new MemoryArtifactStore(), memoryArtifacts: new MemoryArtifactStore() })
+    try {
+      await expect(kind === 'continue' ? h.runtime.handle({ kind: 'continue', runId: 'old', model: { provider: 'mock', model: 'mock' } }) : h.start()).rejects.toThrow()
+      const runId = store.listRuns(1)[0]!.id
+      await h.runtime.handle({ kind: 'cancelAll' })
+      expect(store.getRun(runId)?.status).toBe(kind === 'continue' ? 'interrupted' : 'queued')
+      db.exec('DROP TRIGGER reject_activation')
+      if (kind === 'start') store.interruptUnfinished(Date.now())
+      await h.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })
+      expect((await h.terminal(runId)).status).toBe('succeeded')
+    } finally { await h.runtime.shutdown(); db.close(); store.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+  it('purges safely after a deleted run still has an abort-ignoring provider initialization in flight', async () => {
+    const store = new MemoryAgentStore(), memoryStore = new MemoryAgentStore()
+    const gate = deferred<MockLanguageModelV4>()
+    const h = setup(undefined, [], { store, memoryStore, artifacts: new MemoryArtifactStore(), memoryArtifacts: new MemoryArtifactStore(), models: () => gate.promise })
+    const { runId } = await h.start()
+    await h.runtime.handle({ kind: 'delete', runId })
+    try {
+      await expect(h.runtime.handle({ kind: 'purge', before: Date.now() + 1 })).resolves.toEqual({ ok: true })
+      expect(store.listRuns(10)).toEqual([])
+    } finally { gate.resolve(scripted([{ text: 'Late response' }])); await h.runtime.shutdown() }
+  })
+  it('purges old active runs and their real blobs from both partitions without deleting newer runs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'heynimbo-purge-'))
+    const store = new SqliteAgentStore(join(dir, 'agent.sqlite')), memoryStore = new MemoryAgentStore()
+    const artifacts = new FileArtifactStore(join(dir, 'artifacts')), memoryArtifacts = new MemoryArtifactStore()
+    let time = 100
+    const h = setup(scripted([{ calls: [{ name: 'ask_user', id: 'q1', input: '{"question":"Wait?"}' }] }, { calls: [{ name: 'ask_user', id: 'q2', input: '{"question":"Wait?"}' }] }]), [], { store, memoryStore, artifacts, memoryArtifacts, clock: { now: () => time } })
+    try {
+      const retained = await h.start(); await h.event(retained.runId, 'question')
+      const temporary = await h.start({ requestId: 'temp', persistence: 'temporary' }); await h.event(temporary.runId, 'question')
+      const saved = []
+      for (const [id, partition, blobs] of [[retained.runId, store, artifacts], [temporary.runId, memoryStore, memoryArtifacts]] as const) {
+        const meta = await blobs.save(id, 'old', 'text/plain', new TextEncoder().encode('private'))
+        partition.appendEvent(id, { type: 'artifact', artifactId: meta.id, name: meta.name, bytes: meta.bytes, mediaType: meta.mediaType }, time)
+        saved.push({ id, blobs, artifactId: meta.id })
+      }
+      time = 1000
+      store.createRun({ id: 'new', requestId: 'new', goal: 'Keep', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: time })
+      await expect(h.runtime.handle({ kind: 'purge', before: 200 })).resolves.toEqual({ ok: true })
+      expect(store.listRuns(10).map(run => run.id)).toEqual(['new'])
+      expect(memoryStore.listRuns(10)).toEqual([])
+      for (const savedBlob of saved) expect(await savedBlob.blobs.read(savedBlob.id, savedBlob.artifactId)).toBeUndefined()
+      await expect(h.runtime.handle({ kind: 'answer', runId: retained.runId, questionId: 'q1', text: 'late' })).rejects.toThrow()
+      await h.runtime.handle({ kind: 'purge' })
+      expect(store.listRuns(10)).toEqual([])
+    } finally { await h.runtime.shutdown(); store.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
   it('cancel-all stops both persistence partitions and list pagination returns only public summaries', async () => {
     let time = 1000
     const h = setup(scripted([
@@ -167,10 +250,13 @@ describe('agent coordinator', () => {
   it('a repeated completed tool-call ID after restart cannot execute its effect again', async () => {
     let effects = 0
     const tools = [agentTool({ execute: async () => { effects++; return { ok: true, content: 'once evidence', summary: 'once' } } })]
-    const first = setup(scripted([{ calls: [{ name: 'research', id: 'stable' }] }, { text: 'done' }]), tools)
+    let index = 0
+    const blocked = deferred<ReturnType<MockLanguageModelV4['doStream']> extends PromiseLike<infer T> ? T : never>()
+    const first = setup(new MockLanguageModelV4({ doStream: async () => index++ === 0 ? { stream: new ReadableStream<Chunk>({ start(controller) { for (const part of chunks({ calls: [{ name: 'research', id: 'stable' }] })) controller.enqueue(part); controller.close() } }) } : blocked.promise }), tools)
     const { runId } = await first.start()
-    await first.terminal(runId)
-    first.store.setStatus(runId, 'interrupted', Date.now())
+    await vi.waitFor(() => expect(first.store.latestCheckpoint(runId)?.step).toBe(1))
+    await first.runtime.shutdown()
+    blocked.resolve({ stream: new ReadableStream<Chunk>({ start(controller) { controller.close() } }) })
     const next = setup(scripted([{ calls: [{ name: 'research', id: 'stable' }] }, { text: 'continued' }]), tools, { store: first.store })
     await next.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })
     expect((await next.terminal(runId)).status).toBe('succeeded')

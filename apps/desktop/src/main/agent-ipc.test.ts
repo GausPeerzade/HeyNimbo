@@ -88,6 +88,20 @@ it.each([{ saveHistory: false }, { retention: 0 as const }, { saveHistory: true,
   await expect(handler(event, { kind: 'start', requestId: 'req4', goal: 'Read', mode: 'local', persistence: 'retained' })).rejects.toThrow('Invalid agent request.')
   expect(commands).toHaveLength(1)
 })
+it('disambiguates duplicate folder basenames into unique per-run tool labels', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-labels-')); dirs.push(dir)
+  const { handler, event, commands } = setup()
+  const ids: string[] = []
+  for (const path of ['a/src', 'b/src', 'c/src (2)']) {
+    const root = join(dir, path); await mkdir(root, { recursive: true })
+    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [root] })
+    ids.push((await handler(event, { kind: 'pickFolder' }) as { grant: { id: string } }).grant.id)
+  }
+  await handler(event, { kind: 'start', requestId: 'req', goal: 'Read', mode: 'local', grantIds: ids })
+  expect(commands[0]).toMatchObject({ grants: [{ label: 'src' }, { label: 'src (2)' }, { label: 'src (2) (2)' }] })
+  await handler(event, { kind: 'start', requestId: 'req2', goal: 'Read', mode: 'local', grantIds: [ids[1]] })
+  expect(commands[1]).toMatchObject({ grants: [{ label: 'src' }] })
+})
 it('returns only an opaque folder grant and resolves its canonical root only for a local host start', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
   const root = join(dir, 'chosen'); await mkdir(root)
@@ -102,6 +116,15 @@ it('returns only an opaque folder grant and resolves its canonical root only for
   await handler(event, { kind: 'start', requestId: 'req', goal: 'Read', mode: 'local', grantIds: [picked.grant.id] })
   expect(commands[0]).toMatchObject({ grants: [{ id: picked.grant.id, root: await realpath(root), label: basename(root) }] })
 })
+it('forwards the current search configuration on Continue without credentials', async () => {
+  const { handler, event, commands, settings } = setup({ agent: { search: { provider: 'brave' } } })
+  await handler(event, { kind: 'continue', runId: 'run' })
+  expect(commands[0]).toMatchObject({ kind: 'continue', search: { provider: 'brave' } })
+  settings.agent = { search: { provider: 'searxng', baseURL: 'https://search.invalid' } }
+  await handler(event, { kind: 'continue', runId: 'run' })
+  expect(commands[1]).toMatchObject({ search: settings.agent.search })
+  expect(JSON.stringify(commands)).not.toContain('not-for-renderer')
+})
 it('forwards narrow task requests and delivers Stop-all from the global shortcut without window focus', async () => {
   const { ipc, handler, event, commands, supervisor, contents, frame } = setup()
   await handler(event, { kind: 'continue', runId: 'run' })
@@ -111,7 +134,8 @@ it('forwards narrow task requests and delivers Stop-all from the global shortcut
   await handler(event, { kind: 'stopAll' })
   expect(supervisor.stopAll).toHaveBeenCalledTimes(1)
   const [accelerator, callback] = electron.register.mock.calls[0]! as unknown as [string, () => void]
-  expect(accelerator).toBe('Control+Option+Command+.')
+  expect(accelerator).toBe('Command+Option+Shift+.')
+  expect(accelerator).not.toContain('Control')
   frame.url = 'https://not-focused.invalid'
   callback()
   await Promise.resolve()

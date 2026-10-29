@@ -109,6 +109,20 @@ const queues = new Map<string, Promise<void>>()
 export class FileArtifactStore implements ArtifactStore {
   private dir: string
   constructor(dir: string) { this.dir = resolve(dir) }
+  /** Cold startup cleanup is streamed and limited to the owned two-level layout. */
+  async sweepTemporary(now: number): Promise<void> {
+    return this.exclusive(async () => {
+      if (!await directory(this.dir, false)) return
+      const sweep = async (path: string, root: boolean): Promise<void> => {
+        for await (const entry of await opendir(path)) {
+          const child = join(path, entry.name)
+          if (root && entry.isDirectory() && (entry.name === 'meta' || /^[a-f0-9]{2}$/.test(entry.name))) await sweep(child, false)
+          else if (entry.isFile() && entry.name.endsWith('.tmp') && (await lstat(child)).mtimeMs < now - 3_600_000) await rm(child, { force: true })
+        }
+      }
+      await sweep(this.dir, true)
+    })
+  }
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
     const result = (queues.get(this.dir) ?? Promise.resolve()).then(action).catch(() => { throw new Error('Artifact unavailable.') })
     const settled = result.then(() => {}, () => {})

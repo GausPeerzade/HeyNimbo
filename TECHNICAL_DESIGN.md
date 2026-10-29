@@ -363,6 +363,8 @@ If Codex cannot serve a required provider/use case under the validated boundary,
 
 ### 11.1 Budgets and concurrency
 
+For MVP Do runs, wall time is budgeted per start/Continue activation (downtime is excluded); step, token and tool-output budgets remain cumulative across checkpoints.
+
 At run admission, reserve finite steps, tokens/cost, wall time, tool output and artifact bytes. Check before each model/tool call and reconcile reported usage afterward. Unknown prices use token/time limits plus a visible unknown cost; a monetary estimate cannot guarantee an exact provider charge. No automatic fallback from an exhausted plan/local model to a paid key.
 
 Initial concurrency: one active mutating operation per workspace/account/browser session; public read/research jobs may run concurrently under one aggregate profile budget. Native desktop control is exclusive. Add parent/child run budgets and inherited capability subsets before enabling subagents. Never recursively delegate without a depth/concurrency ceiling.
@@ -383,6 +385,8 @@ For file operations reject traversal/symlink escapes and use race-resistant hand
 - UI replay replays **events**, not executable actions. Tool results remain immutable references.
 
 ### 11.4 Stop is an execution operation
+
+The main-owned emergency shortcut is `Command+Option+Shift+.` (no Control, so no intermediate chord triggers Explain hold-to-talk or dictate).
 
 Revoke capabilities first; stop new dispatch; abort model requests; invalidate approvals; close browser work; terminate supervised processes with bounded escalation; verify/reap descendants. A sent signal or `AbortSignal` alone is not proof of termination. Detached descendants and macOS packaged containment are explicit Phase 0 blockers. If containment cannot be proven, disable untrusted local code and offer a properly isolated fallback—never quietly run it on the host.
 

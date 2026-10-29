@@ -3,6 +3,7 @@ import { UnsupportedFunctionalityError, isStepCount, modelMessageSchema, jsonSch
 import { isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError } from '../shared/agent-protocol'
 import type { AgentRuntime, AgentTool, AgentStore, ArtifactStore, RunRecord, RuntimeDeps, StepCheckpoint } from './contracts'
 import { DO_INSTRUCTIONS } from './prompt'
+import { PlanAccessError } from './model-policy'
 
 type Binding = { store: AgentStore; artifacts: ArtifactStore; eventCallIds?: Map<string, string> }
 type Decision = 'approved' | 'denied'
@@ -14,6 +15,7 @@ type Running = Binding & {
   approval?: Wait<Decision>
   question?: Wait<string>
   wallTimer?: ReturnType<typeof setTimeout>
+  deadline: number
   outputBytes: number
   outputExhausted: boolean
   partialTimer?: ReturnType<typeof setTimeout>
@@ -69,9 +71,17 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     else flushTimer ??= setTimeout(flush, flushMs)
   }
   function status(state: Running, value: RunRecord['status'], error?: AgentError) {
-    state.run.status = value
     state.store.setStatus(state.run.id, value, now(), error)
+    state.run.status = value
     emit(state, state.run.id, { type: 'status', status: value }, isTerminal(value) || value === 'waiting_approval' || value === 'waiting_user')
+  }
+  function activate(state: Running, created = false) {
+    const run = state.run
+    active.set(run.id, state)
+    try {
+      if (created) emit(state, run.id, { type: 'run.created', goal: run.goal, mode: run.mode, persistence: run.persistence, budget: run.budget })
+      status(state, 'running')
+    } catch (error) { active.delete(run.id); throw error }
   }
   function find(id: string): Binding {
     const cached = active.get(id)
@@ -83,7 +93,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   }
   function checkpoint(state: Running) {
     state.controller.signal.throwIfAborted()
-    if (now() - state.run.created >= state.run.budget.maxWallMs) {
+    if (now() >= state.deadline) {
       fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' })
       state.controller.signal.throwIfAborted()
     }
@@ -108,7 +118,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     state.question?.reject(new Error('Run stopped.'))
     state.question = undefined
   }
-  function cancel(state: Running) {
+  function cancel(state: Running, outcome: 'cancelled' | 'interrupted' = 'cancelled') {
     if (state.controller.signal.aborted || isTerminal(state.run.status)) return
     clearTimeout(state.partialTimer)
     clearTimeout(state.wallTimer)
@@ -117,7 +127,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     state.approval = undefined
     state.question?.reject(new Error('Run cancelled.'))
     state.question = undefined
-    status(state, 'cancelled')
+    status(state, outcome)
   }
   function scopedArtifacts(state: Running): ArtifactStore {
     const check = (id: string) => { checkpoint(state); if (id !== state.run.id) throw new Error('Artifact access denied.') }
@@ -139,7 +149,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   }
   async function execute(state: Running, command: Pick<Extract<HostCommand, { kind: 'start' }>, 'model' | 'search'>, resume?: StepCheckpoint) {
     const id = state.run.id
-    state.wallTimer = setTimeout(() => fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' }), Math.max(0, state.run.budget.maxWallMs - (now() - state.run.created)))
+    // Wall time is per activation; persisted step/token/output budgets remain cumulative.
+    state.wallTimer = setTimeout(() => fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' }), Math.max(0, state.deadline - now()))
     try {
       checkpoint(state)
       if (state.run.usage.outputTokens >= state.run.budget.maxOutputTokens) throw new BudgetError('The output-token budget was exhausted.')
@@ -273,6 +284,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
       throw new BudgetError('The model-step budget was exhausted.')
     } catch (error) {
       if (error instanceof BudgetError) fail(state, { code: 'budget', message: error.message })
+      else if (error instanceof PlanAccessError) fail(state, { code: 'model_unsupported', message: error.message })
       else if (UnsupportedFunctionalityError.isInstance(error) && /tool/i.test(error.functionality)) fail(state, { code: 'model_unsupported', message: 'The selected model does not support agent tools. Choose a tool-capable model.' })
       else fail(state, { code: 'provider', message: PROVIDER_ERROR })
     } finally {
@@ -296,10 +308,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const created = store.createRun({ id: randomUUID(), requestId: command.requestId, goal: command.goal, mode: command.mode, persistence: command.persistence, grants: command.mode === 'local' ? command.grants : [], budget: command.budget, created: now(), ...(command.conversationId ? { conversationId: command.conversationId } : {}) })
           const run = created.run
           if (created.created) {
-            const state: Running = { run, store, artifacts, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
-            active.set(run.id, state)
-            emit(state, run.id, { type: 'run.created', goal: run.goal, mode: run.mode, persistence: run.persistence, budget: run.budget })
-            status(state, 'running')
+            const state: Running = { run, store, artifacts, deadline: now() + run.budget.maxWallMs, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
+            activate(state, true)
             state.task = execute(state, command)
           }
           return { runId: run.id }
@@ -308,9 +318,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const binding = find(command.runId)
           const run = binding.store.getRun(command.runId)!
           if (active.has(run.id) || !(run.status === 'interrupted' || (run.status === 'failed' && run.error?.code === 'provider'))) throw new Error('Only an interrupted or provider-failed run can continue.')
-          const state: Running = { ...binding, run, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
-          active.set(run.id, state)
-          status(state, 'running')
+          const state: Running = { ...binding, run, deadline: now() + run.budget.maxWallMs, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
+          activate(state)
           state.task = execute(state, command, binding.store.latestCheckpoint(run.id))
           return { ok: true }
         }
@@ -327,6 +336,24 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const state = active.get(command.runId)
           if (state) cancel(state)
           await binding.artifacts.delete(binding.store.deleteRun(command.runId))
+          return { ok: true }
+        }
+        case 'purge': {
+          if (command.before !== undefined && (!Number.isSafeInteger(command.before) || command.before < 0)) throw new Error('Invalid retention cursor.')
+          const retained: string[] = [], temporary: string[] = []
+          for (const state of active.values()) {
+            const run = state.store.getRun(state.run.id)
+            if (!run || (command.before !== undefined && run.updated >= command.before)) continue
+            cancel(state)
+            // Cancellation updates timestamps; delete selected active runs before the bulk cursor pass.
+            const ids = state.store.deleteRun(state.run.id)
+            active.delete(state.run.id)
+            const target = state.store === deps.store ? retained : temporary
+            target.push(...ids)
+          }
+          retained.push(...deps.store.deleteBefore(command.before))
+          temporary.push(...deps.memoryStore.deleteBefore(command.before))
+          await Promise.all([deps.artifacts.delete(retained), deps.memoryArtifacts.delete(temporary)])
           return { ok: true }
         }
         case 'deleteConversation': {
@@ -377,7 +404,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     async shutdown() {
       closing = true
       const states = [...active.values()]
-      for (const state of states) cancel(state)
+      // Host shutdown is recoverable; only an explicit owner stop is cancellation.
+      for (const state of states) cancel(state, 'interrupted')
       let timer: ReturnType<typeof setTimeout> | undefined
       await Promise.race([Promise.allSettled([...states.map(state => state.task), ...flights]), new Promise<void>(resolve => { timer = setTimeout(resolve, 1000) })])
       clearTimeout(timer)

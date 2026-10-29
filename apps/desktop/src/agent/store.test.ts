@@ -25,6 +25,23 @@ describe.each([
   ['SQLite', () => tracked(new SqliteAgentStore(join(temp(), 'agent.sqlite')))],
   ['memory', () => tracked(new MemoryAgentStore())],
 ] as const)('%s AgentStore contract', (_, create) => {
+  it('purges runs strictly before the retention cursor including checkpoints and artifact references', () => {
+    const store = create()
+    store.createRun(run())
+    store.createRun(run({ id: 'run_2', requestId: 'request_2', created: 200 }))
+    store.appendEvent('run_1', { type: 'artifact', artifactId: 'old_blob', name: 'old', mediaType: 'text/plain', bytes: 3 }, 100)
+    store.appendEvent('run_2', { type: 'artifact', artifactId: 'new_blob', name: 'new', mediaType: 'text/plain', bytes: 3 }, 200)
+    store.saveCheckpoint({ runId: 'run_1', step: 1, messages: '[]', at: 100 })
+    expect(() => store.deleteBefore(-1)).toThrow()
+    expect(store.deleteBefore(200)).toEqual(['old_blob'])
+    expect(store.getRun('run_1')).toBeUndefined()
+    expect(store.events('run_1', 0, 10)).toEqual([])
+    expect(store.latestCheckpoint('run_1')).toBeUndefined()
+    expect(store.listRuns(10).map(run => run.id)).toEqual(['run_2'])
+    expect(store.deleteBefore()).toEqual(['new_blob'])
+    expect(store.listRuns(10)).toEqual([])
+    expect(store.deleteBefore()).toEqual([])
+  })
   it('creates an idempotent run while keeping grants out of public summaries', () => {
     const store = create()
     expect(store.createRun(run())).toEqual({ created: true, run: {
