@@ -47,6 +47,26 @@ it('queues only the latest idle retention purge and dispatches it before new wor
   child.reply(); await pruning
   supervisor.dispose()
 })
+it('retries a rejected queued purge before new work after a host crash and restart', async () => {
+  const { supervisor, children } = setup()
+  await supervisor.purge(100)
+  const started = supervisor.request(start), first = children[0]!
+  first.ready()
+  const purge = first.sent.find(m => m.kind === 'command' && m.command.kind === 'purge')!
+  if (purge.kind !== 'command') throw new Error('Purge not sent.')
+  first.emit('message', { v: 1, kind: 'reply', id: purge.id, ok: false, message: 'unsafe-host-error' })
+  first.reply(); await started; await Promise.resolve()
+  first.emit('exit', 1)
+  const list = supervisor.request({ kind: 'list', limit: 10 }), next = children[1]!
+  next.ready()
+  const commands = next.sent.filter(m => m.kind === 'command')
+  expect(commands.map(m => m.command.kind)).toEqual(['purge', 'list'])
+  expect(commands[0]!.command).toEqual({ kind: 'purge', before: 100 })
+  next.emit('message', { v: 1, kind: 'reply', id: commands[0]!.id, ok: true, result: { ok: true } })
+  next.reply({ runs: [] })
+  await expect(list).resolves.toEqual({ runs: [] })
+  supervisor.dispose()
+})
 it('explicit delete-all starts an idle host only when durable agent data exists', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-delete-all-'))
   const child = new Child()
