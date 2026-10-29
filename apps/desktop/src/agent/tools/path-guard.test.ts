@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, realpath, symlink, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -18,6 +18,26 @@ beforeEach(async () => {
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
 describe('grant path resolution', () => {
+  it.each([true, false])('opens the unchanged persisted root with identity=%s', async identity => {
+    const picked = await stat(grant.root, { bigint: true })
+    const saved = JSON.parse(JSON.stringify({ ...grant, ...(identity ? { identity: `${picked.dev}:${picked.ino}` } : {}) })) as FolderGrant
+    const opened = await openPath('notes.txt', [saved])
+    try { expect(await opened.handle.readFile('utf8')).toBe('safe') } finally { await opened.handle.close() }
+  })
+
+  it('denies malformed, empty and stale directory identities rather than treating them as legacy grants', async () => {
+    for (const identity of ['', 'not-an-identity', '0:0']) {
+      await expect(resolvePath('notes.txt', [{ ...grant, identity }])).rejects.toThrow('Access denied by file policy.')
+    }
+  })
+
+  it('denies a picked directory replaced by a regular file even when its new identity is supplied', async () => {
+    await rm(grant.root, { recursive: true })
+    await writeFile(grant.root, 'not a folder')
+    const picked = await stat(grant.root, { bigint: true })
+    await expect(resolvePath(undefined, [{ ...grant, identity: `${picked.dev}:${picked.ino}` }])).rejects.toThrow('Access denied by file policy.')
+  })
+
   it('denies credential names and aliases even when a home-like directory was granted', async () => {
     const denied = ['.env', '.env.local', 'cert.pem', 'signing.KEY', 'id_rsa.pub', '.ssh/config', '.aws/credentials', '.git/config', '.npmrc', '.netrc', 'login.keychain-db', 'Library/Keychains/login']
     for (const path of denied) {

@@ -7,6 +7,9 @@ export const POLICY_DENIED = 'Access denied by file policy.'
 export class PathDenied extends Error {
   constructor() { super(POLICY_DENIED) }
 }
+class HardLinkDenied extends PathDenied {
+  constructor() { super(); this.message = 'This file has multiple hard links and cannot be read safely.' }
+}
 export interface GuardedPath { absolute: string; root: string; modelPath: string }
 export interface OpenedPath { path: GuardedPath; handle: FileHandle; stat: Stats }
 type Checkpoint = () => void
@@ -43,7 +46,13 @@ export async function resolvePath(modelPath: string | undefined, grants: readonl
   if (matches.length) parts.shift()
   if (deniedName(parts.join('/')) || deniedName(grant.root)) throw new PathDenied()
   const root = await io(checkpoint, () => realpath(grant.root))
-  if (deniedName(root)) throw new PathDenied()
+  // The picked canonical path is authority, not a fresh symlink target. Legacy
+  // grants lack identity but still must not follow a replaced root/ancestor.
+  if (root !== grant.root) throw new PathDenied()
+  if (grant.identity !== undefined) {
+    const stat = await io(checkpoint, () => lstat(root, { bigint: true }))
+    if (!stat.isDirectory() || `${stat.dev}:${stat.ino}` !== grant.identity) throw new PathDenied()
+  }
   let absolute = root
   for (const part of parts) {
     const candidate = join(absolute, part)
@@ -66,6 +75,10 @@ export async function openPath(modelPath: string | undefined, grants: readonly F
   try {
     const stat = await io(checkpoint, () => handle.stat())
     if (!validKind(stat) || !sameFile(before, stat)) throw new PathDenied()
+    // A safe name cannot prove provenance: hard links can alias denied names
+    // inside or outside this grant. Reject all multi-link files, including
+    // legitimate ones, rather than pretending a name denylist covers aliases.
+    if (kind === 'file' && stat.nlink > 1) throw new HardLinkDenied()
     // Linux exposes the actual opened handle. Node has no F_GETPATH on macOS:
     // open the canonical path, compare dev/ino with lstat, then recheck its path.
     const current = await io(checkpoint, () => realpath(process.platform === 'linux' ? `/proc/self/fd/${handle.fd}` : path.absolute))

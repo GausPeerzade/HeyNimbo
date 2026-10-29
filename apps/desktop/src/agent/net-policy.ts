@@ -30,8 +30,15 @@ export function isPublicAddress(ip: string): boolean {
     const high = words[6]!, low = words[7]!
     return isPublicAddress(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`)
   }
-  return !((a & 0xfe00) === 0xfc00 || (a & 0xffc0) === 0xfe80 || (a & 0xff00) === 0xff00 ||
-    (a === 0x2001 && b === 0xdb8) || (a === 0x64 && b === 0xff9b && words.slice(2, 6).every(word => word === 0)))
+  // Conservative global-unicast allowlist, reviewed against IANA's IPv6
+  // Special-Purpose registry (snapshot last updated 2025-10-09):
+  // https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xhtml
+  // Deny 2001::/23 wholesale (including its global exceptions), documentation
+  // and all 6to4: embedded public IPv4 alone does not prove global routing.
+  // Outside 2000::/3, deny everything except the mapped/compatible IPv4 forms
+  // handled above. This also denies both NAT64 prefixes and deprecated site-local.
+  return (a & 0xe000) === 0x2000 && !(a === 0x2001 && (b < 0x200 || b === 0xdb8))
+    && a !== 0x2002 && !(a === 0x3fff && b < 0x1000)
 }
 
 interface FetchOptions {
