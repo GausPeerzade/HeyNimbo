@@ -15,14 +15,18 @@ export interface ConnectionSnapshot {
   answerVision: boolean
   voice: 'OpenAI key' | 'unavailable'
 }
+/** Connection-only details, never broadcast: at most four key characters and no OAuth token hints. */
+export interface KeyHint { suffix: string; savedAt?: number }
+export type KeyHints = Partial<Record<KeyProvider, KeyHint>>
 export type ConnectionRequest =
   | { kind: 'saveKey'; provider: KeyProvider; key: string }
   | { kind: 'removeKey'; provider: KeyProvider }
+  | { kind: 'useForAnswers'; provider: ProviderId }
   | { kind: 'test' | 'models'; provider: ProviderId }
   | { kind: 'signIn'; accountId?: string; newAccount?: boolean }
-  | { kind: 'signOut' | 'usage' | 'snapshot' | 'settings' }
+  | { kind: 'signOut' | 'usage' | 'snapshot' | 'details' | 'settings' }
   | { kind: 'selectAccount'; accountId: string }
-export interface ConnectionResult { ok: boolean; message: string; connection?: ConnectionSnapshot }
+export interface ConnectionResult { ok: boolean; message: string; connection?: ConnectionSnapshot; keyHints?: KeyHints }
 export const PROVIDER_NAMES: Record<ProviderId, string> = { chatgpt: 'ChatGPT', openai: 'OpenAI key', anthropic: 'Anthropic', google: 'Google Gemini', deepseek: 'DeepSeek', openrouter: 'OpenRouter', compatible: 'OpenAI-compatible' }
 export const PRESETS: Record<ProviderId, Record<Exclude<Preset, 'custom'>, { model: string; effort?: 'low' | 'medium'; vision: boolean }>> = {
   chatgpt: { fast: { model: 'gpt-6.1-terra', effort: 'low', vision: true }, balanced: { model: 'gpt-6.1-terra', effort: 'medium', vision: true }, best: { model: 'gpt-6.1-sol', effort: 'medium', vision: true } },

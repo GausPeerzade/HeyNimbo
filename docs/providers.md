@@ -22,14 +22,15 @@ Files uploads and the transcription API are explicitly unsupported. Realtime
 speech is **not** an authorized route; support for another client or API is not
 permission for this flow ([errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)).
 
-Consequently **ChatGPT plan tokens power answers only**. Ears and mouth retain
-our existing OpenAI realtime implementation and use only a separately saved
-OpenAI API key, regardless of the answer provider. Without that key, typed Home
-questions still work, complete without audio, and retain supported drawings.
-Control + Option explains how to enable voice without capturing audio. A separate
-Voice key section saves that key without changing the answer provider, including
-when the selected plan is expired, signed out or identity-only. An
-on-device transcription/speech alternative is a follow-up, not part of this change.
+Consequently **ChatGPT plan tokens power answers only**. Voice retains our
+existing OpenAI realtime implementation and automatically reuses the **one OpenAI
+provider key**, regardless of which provider answers use. There is no separate
+voice credential, setup section or key field: add or replace the key in the
+OpenAI row of Saved connections. Saving it never changes the answer provider,
+including when the selected plan is expired, signed out or identity-only.
+Without that key, typed Home questions still work and retain supported drawings.
+Control + Option explains the limitation without capturing audio. Built-in Mac
+speech is labeled coming soon; no on-device speech fallback is implemented here.
 
 ## Sign-in, storage and terms
 
@@ -69,8 +70,38 @@ can stay unselected until Find models succeeds and a new model is chosen, so a
 dead endpoint or disjoint catalog cannot prevent repair.
 Settings contain only provider/model/endpoint preferences. IPC snapshots contain
 only presence, public account display data and model metadata, never saved
-credentials. Key entry is a one-way renderer-to-main operation; entered keys are
-cleared after submission. SDK errors are sanitized before logs, history or IPC.
+credentials or key hints. Key entry is a one-way renderer-to-main operation;
+entered keys are cleared after submission. SDK errors are sanitized before logs,
+history or IPC.
+
+### Saved connections and the four-character hint decision
+
+Settings → Connection intentionally discloses **only the last four characters**
+of a saved API key, computed in main, so the user can identify which key belongs
+to each provider without retrieving it. No prefix or additional credential
+characters are returned. Keys of four characters or fewer get an empty suffix,
+so even a short custom-server key is never disclosed in full. **OAuth access,
+refresh and ID tokens never get hints**, including when ChatGPT is signed in.
+Custom-endpoint hints are bound to the same normalized full URL as the credential;
+another host, port or path gets neither that key nor its hint.
+
+Hints and saved dates travel only in the dedicated `connection/details` response,
+not `ConnectionSnapshot`, `AppSnapshot`, broadcasts, history or application logs.
+The IPC handler permits this request only from the Settings main frame; Home and
+setup cannot retrieve it. The Settings renderer requests and caches hints only
+while Connection is open, clears them on navigation away, and rejects stale
+responses. They are passed separately to the Connection view, never merged into
+app snapshots. Key hints are an explicit, limited disclosure for this local UI,
+not a masking of a full key sent to the renderer.
+
+The saved date is the encrypted credential file's last-write time, read in main.
+This preserves legacy files without rewriting their contents or inventing a
+provider-side creation date; a restored file can therefore reflect its restored
+mtime. A missing timestamp is left unknown. Removing a key deletes its hint and
+date from main's cache as well as deleting the encrypted record, after a native
+confirmation dialog. Sign out likewise confirms before disconnecting ChatGPT.
+Use for answers changes only the selected provider: every provider's saved model
+choice, the other credentials and automatic voice routing are preserved.
 
 **Terms review before release:** the full [Sign in with ChatGPT Terms](https://openai.com/policies/sign-in-with-chatgpt-terms/)
 could not be retrieved because OpenAI's page returned a Cloudflare JavaScript
@@ -177,24 +208,44 @@ the unified Model picker/collapsed sections/plain copy, and turn cancellation
 aborting stalled OpenAI and Anthropic SDK fetches. The follow-up mutation run was
 **blocked before execution by the local command safety filter**, a false positive
 on a source expression. It was not retried or worked around, and no mutation was
-applied. The supervisor runs those mutations independently after handoff.
-The full follow-up gates pass: **264 desktop tests, 20 Rust tests, typecheck and
-build**. Tests still use only mocked transports and synthetic credentials.
+applied. Those mutation checks were delegated to the supervisor at that handoff.
+That follow-up's full gates passed: **264 desktop tests, 20 Rust tests, typecheck
+and build**. Tests still use only mocked transports and synthetic credentials.
+
+Saved-connections checks additionally cover the four-character budget, short-key
+non-disclosure, no OAuth hints, saved dates, Settings-only delivery, hint cache
+clearing/stale responses, model-preserving provider switches, confirmed removal,
+all-provider status rows, a clear signed-in ChatGPT state and read-only automatic
+voice. **19/19 targeted mutations were killed by assertion failures**: suffix
+length, short-key protection, OAuth exclusion, details-only delivery, provider
+selection, model preservation, ordinary/custom key removal, Settings/setup IPC
+boundaries, removal confirmation, automatic voice, the current-provider marker,
+Connection-only requests, stale-response rejection, cache clearing and saved-date
+delivery/persistence/rendering (including a known epoch timestamp). Sources were
+restored exactly after each check; no mutation driver was added to the repository.
+Latest full gates pass: **343 desktop tests
+across 49 suites, 20 Rust tests, typecheck and build**.
 
 Hidden, isolated Home/Settings/setup preview captures are in
 `/tmp/nimbo-auth-validation/` (light/dark, ChatGPT/OpenAI/Anthropic/local Connection,
-model/Advanced/Voice sections, narrow layout and first-run screens). The revised
-Connection layout puts provider/sign-in/key first, then one Model picker (Fast,
-Balanced and Best before discovered models), a single model/capability summary,
-collapsed Advanced settings and separate optional Voice. Every section has at
-most one primary action. Preview blocks all network
+Your AI/Model/Saved connections/Advanced sections, narrow layout, replacement-key
+entry and first-run screens). Your AI names the current answer model/provider,
+shows read-only automatic voice status and one line per capability. Change moves
+keyboard focus to the provider/model controls. The single Model picker keeps
+Fast, Balanced and Best before discovered models. Saved connections lists every
+provider, its key status/saved date or ChatGPT identity, the current-provider
+marker and row actions. ChatGPT has one signed-in state with Sign out and Manage
+usage; registration identifiers and duplicate Continue/Add actions are not shown.
+Advanced retains custom model/endpoint and account switching. Every section has
+at most one primary action. There is no separate voice-key UI. Preview blocks all network
 and never constructs a credential, capture, audio or gesture pipeline; sample
 account data is synthetic. Diagnostics report no renderer errors or horizontal
 Connection overflow. No visible app run or real screen capture was performed.
 
 Bundle impact: SDKs remain external main-process dependencies; no SDK is shipped
 in renderer bundles. Before changes, main output occupied 124 KiB on disk. The
-expanded main output is 168.45 kB (168 KiB allocated, reported by `du`),
+original provider implementation's main output was 168.45 kB (168 KiB allocated,
+reported by `du`), before subsequent merged app work,
 plus **27.56 MiB of newly installed uncompressed runtime dependency files**,
 including SDK source/docs/maps, peers and jose. This is an installation measurement,
 not an assertion about final compressed ASAR/installer size; packaging may omit

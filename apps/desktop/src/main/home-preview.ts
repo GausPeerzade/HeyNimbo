@@ -20,9 +20,9 @@ export function configureHomePreview(): void {
 export async function runHomePreview(): Promise<void> {
   app.dock?.hide()
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
-  const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, connectionSnapshot: (): ConnectionSnapshot => {
+  const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, connectionRequest: async request => request.kind === 'details' ? { ok: true, message: '', keyHints: { openai: { suffix: 'a1b2', savedAt: 1793232000000 }, anthropic: { suffix: 'c3d4', savedAt: 1793232000000 }, compatible: { suffix: 'e5f6', savedAt: 1793232000000 } } } : { ok: false, message: 'Preview only.' }, connectionSnapshot: (): ConnectionSnapshot => {
     const config = shell.settings.get().connection ?? defaultConnectionSettings(), model = selectedModel(config)
-    return { providers: Object.fromEntries(PROVIDERS.map(p => [p, true])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', models: [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()], answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'unavailable' : 'OpenAI key' }
+    return { providers: Object.fromEntries(PROVIDERS.map(p => [p, ['chatgpt', 'anthropic', 'compatible'].includes(p) || (p === 'openai' && config.provider !== 'compatible')])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', compatibleKeyPresent: true, models: [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()], answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'unavailable' : 'OpenAI key' }
   }, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
   shell.keyPresent = true
   const output = '/tmp/nimbo-auth-validation'
@@ -109,11 +109,16 @@ export async function runHomePreview(): Promise<void> {
       const config = shell.settings.get().connection ?? defaultConnectionSettings()
       shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider } })
       shell.publish(true); settings.webContents.send(AppChannels.navigate, { category: 'Connection' }); await pause()
-      await capture(settings, `connection-${provider}-${theme}`)
-      if (provider === 'chatgpt') {
-        await settings.webContents.executeJavaScript("{ const voice = document.getElementById('connection-voice'); voice.open = true; voice.scrollIntoView() }")
-        await pause(); await capture(settings, `connection-chatgpt-voice-${theme}`)
-        await settings.webContents.executeJavaScript("document.getElementById('connection-voice').open = false")
+      await settings.webContents.executeJavaScript("document.activeElement?.blur(); document.querySelector('main').scrollTop = 0")
+      await pause(); await capture(settings, `connection-${provider}-${theme}`)
+      if (provider === 'anthropic') {
+        for (const target of ['saved-chatgpt', 'saved-google', 'saved-compatible']) {
+          await settings.webContents.executeJavaScript(`document.getElementById('${target === 'saved-chatgpt' ? 'saved-connections' : target}').scrollIntoView()`)
+          await pause(); await capture(settings, `connection-${target}-${theme}`)
+        }
+        await settings.webContents.executeJavaScript("document.getElementById('replace-key-anthropic').click(); document.getElementById('saved-anthropic').scrollIntoView()")
+        await pause(); await capture(settings, `connection-replace-key-${theme}`)
+        await settings.webContents.executeJavaScript("document.querySelector('.connection-key-editor').querySelectorAll('button')[1].click()")
       }
       await settings.webContents.executeJavaScript("document.getElementById('connection-model-section').scrollIntoView()")
       await pause(); await capture(settings, `connection-${provider}-models-${theme}`)
@@ -125,7 +130,8 @@ export async function runHomePreview(): Promise<void> {
       const config = shell.settings.get().connection ?? defaultConnectionSettings()
       shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider: 'compatible', models: { ...config.models, compatible: { preset: 'custom', customModel: 'local-text' } } } })
       shell.publish(true); settings.webContents.send(AppChannels.navigate, { category: 'Connection' }); await pause()
-      await capture(settings, `connection-local-${theme}`)
+      await settings.webContents.executeJavaScript("document.activeElement?.blur(); document.querySelector('main').scrollTop = 0")
+      await pause(); await capture(settings, `connection-local-${theme}`)
       await settings.webContents.executeJavaScript("{ const advanced = document.getElementById('connection-advanced'); advanced.open = true; advanced.scrollIntoView() }")
       await pause(); await capture(settings, `connection-local-advanced-${theme}`)
       await settings.webContents.executeJavaScript("document.getElementById('connection-advanced').open = false; document.getElementById('connection-model-section').scrollIntoView()")

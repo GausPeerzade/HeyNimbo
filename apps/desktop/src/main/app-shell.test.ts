@@ -5,16 +5,18 @@ import { AppShell, type ShellActions } from './app-shell'
 import { pageURL } from './page-security'
 import { DEFAULT_SETTINGS } from './settings'
 import { TalkSession, type TalkDeps } from './voice/talk'
-const mocks = vi.hoisted(() => ({ dir: '', handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
+const mocks = vi.hoisted(() => ({ dir: '', confirm: vi.fn(), handler: undefined as ((event: IpcMainInvokeEvent, request: unknown) => unknown) | undefined }))
 vi.mock('electron', () => ({
   app: { getPath: () => mocks.dir, getVersion: () => '0.1.0', isPackaged: true },
   ipcMain: { handle: (channel: string, handler: typeof mocks.handler) => { if (channel === 'nimbo:app-request') mocks.handler = handler }, removeHandler: vi.fn() },
+  dialog: { showMessageBox: mocks.confirm },
   nativeTheme: { shouldUseDarkColors: false },
 }))
 let shell: AppShell | undefined, talk: TalkSession | undefined
-function fixture(ask: ShellActions['ask'] = () => ({ accepted: true })) {
+function fixture(ask: ShellActions['ask'] = () => ({ accepted: true }), extra: Partial<ShellActions> = {}) {
   mocks.dir = mkdtempSync('/tmp/nimbo-shell-test-')
-  const actions = { ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
+  mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue({ response: 0 })
+  const actions = { ...extra, ask: vi.fn(ask), stop: vi.fn(), clear: vi.fn(), replaceKey: vi.fn(), settingsChanged: vi.fn(), permissions: () => ({ microphone: '', screen: '', input: '' }) }
   shell = new AppShell(actions, true)
   const frame = { url: pageURL('home') }, contents = { send: vi.fn(), mainFrame: frame, getURL: () => frame.url }
   shell.home = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
@@ -66,4 +68,29 @@ it('coalesces repeated snapshot work and flushes the final idle status without a
   expect(contents.send).toHaveBeenLastCalledWith('nimbo:app-snapshot', expect.objectContaining({ busy: false, status: '' }))
   expect(snapshot).toHaveBeenCalledTimes(2)
   vi.advanceTimersByTime(250); expect(snapshot).toHaveBeenCalledTimes(2)
+})
+
+it('serves key hints only to the Settings page through the dedicated details request, never app broadcasts', async () => {
+  const connectionRequest = vi.fn(async () => ({ ok: true, message: '', keyHints: { openai: { suffix: 'abcd', savedAt: 1793232000000 } } }))
+  const { shell, event, contents } = fixture(undefined, { connectionRequest })
+  expect(() => mocks.handler?.(event, { kind: 'connection', request: { kind: 'details' } })).toThrow('Not allowed')
+  expect(connectionRequest).not.toHaveBeenCalled()
+  const frame = { url: pageURL('settings') }, settingsContents = { send: vi.fn(), mainFrame: frame, getURL: () => frame.url }
+  shell.preferences = { webContents: settingsContents, isDestroyed: () => false } as unknown as BrowserWindow
+  const settingsEvent = { sender: settingsContents, senderFrame: frame } as unknown as IpcMainInvokeEvent
+  expect(await mocks.handler?.(settingsEvent, { kind: 'connection', request: { kind: 'details' } })).toMatchObject({ keyHints: { openai: { suffix: 'abcd' } } })
+  shell.publish(true)
+  for (const target of [contents, settingsContents]) expect(JSON.stringify(target.send.mock.calls)).not.toMatch(/keyHints|abcd/)
+  expect(JSON.stringify(await mocks.handler?.(settingsEvent, { kind: 'snapshot' }))).not.toMatch(/keyHints|abcd/)
+})
+it.each([{ kind: 'removeKey', provider: 'anthropic' }, { kind: 'signOut' }])('requires native confirmation before $kind removes a saved connection', async request => {
+  const connectionRequest = vi.fn(async () => ({ ok: true, message: 'Removed.' }))
+  const { shell, event, actions } = fixture(undefined, { connectionRequest })
+  Object.assign(shell, { preview: false })
+  expect(await mocks.handler?.(event, { kind: 'connection', request })).toMatchObject({ ok: false, message: 'Nothing removed.' })
+  expect(connectionRequest).not.toHaveBeenCalled(); expect(actions.stop).not.toHaveBeenCalled()
+  mocks.confirm.mockResolvedValue({ response: 1 })
+  expect(await mocks.handler?.(event, { kind: 'connection', request })).toMatchObject({ ok: true })
+  expect(connectionRequest).toHaveBeenCalledWith(request)
+  expect(actions.stop).toHaveBeenCalledOnce()
 })
