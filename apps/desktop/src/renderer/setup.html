@@ -10,7 +10,7 @@
     <form id="form">
       <h1>Connect OpenAI</h1>
       <p>Paste an OpenAI API key. It's encrypted with your macOS Keychain and only ever sent to OpenAI.</p>
-      <input id="key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" autofocus />
+      <input id="key" aria-label="OpenAI API key" name="api-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" autofocus />
       <button id="save" type="submit">Save key</button>
       <p id="status" role="status"></p>
     </form>

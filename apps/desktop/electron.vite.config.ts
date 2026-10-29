@@ -10,6 +10,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
+          app: resolve(__dirname, 'src/preload/app.ts'),
           setup: resolve(__dirname, 'src/preload/setup.ts'),
           voice: resolve(__dirname, 'src/preload/voice.ts'),
         },
@@ -23,6 +24,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           notch: resolve(__dirname, 'src/renderer/notch.html'),
+          home: resolve(__dirname, 'src/renderer/home.html'),
+          settings: resolve(__dirname, 'src/renderer/settings.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
           setup: resolve(__dirname, 'src/renderer/setup.html'),
           voice: resolve(__dirname, 'src/renderer/voice.html'),

@@ -57,6 +57,7 @@ export type SaveKeyResult = { ok: true } | { ok: false; reason: string }
 
 /** Main → hidden audio window. Audio is mono PCM16 at 24 kHz. */
 export type VoiceCommand =
+  | { kind: 'mute'; muted: boolean }
   /** `id` tags this recording so late audio from an earlier one is dropped. */
   | { kind: 'micStart'; id: number }
   | { kind: 'micStop' }

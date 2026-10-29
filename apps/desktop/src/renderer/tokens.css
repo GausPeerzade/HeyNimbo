@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light dark;
+  --canvas: #F7FAFB; --raised: #FFFFFF; --text: #182C34; --secondary: #52636C;
+  --accent: #006B68; --on-accent: #FFFFFF; --success: #1D6B43; --warning: #805500; --error: #B4233A;
+  --separator: #c5d1d6; --selection: #e0eeed; --focus: AccentColor;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --radius-small: 6px; --radius-artifact: 10px; --radius-composer: 14px;
+  --pressed: 90ms; --disclosure: 140ms; --peek: 200ms; --ease: cubic-bezier(.2,0,0,1);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px; font-optical-sizing: auto;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --canvas: #14242D; --raised: #22343D; --text: #EAF3F5; --secondary: #B0C1C8; --accent: #72D6C5; --on-accent: #14242D; --success: #8BD5A0; --warning: #F4CB7B; --error: #FFA3AF; --separator: #49616c; --selection: #2a494d; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--text); background: var(--canvas); }
+button, input, textarea, select { font: inherit; color: inherit; }
+button, select { min-height: 32px; border: 1px solid var(--separator); border-radius: var(--radius-small); padding: 6px 12px; background: var(--raised); }
+button { user-select: none; touch-action: manipulation; }
+button:active { background: var(--selection); }
+button:disabled { opacity: .55; }
+input::placeholder, textarea::placeholder { color: var(--secondary); opacity: 1; }
+input, textarea { border: 1px solid var(--separator); border-radius: var(--radius-small); background: var(--raised); padding: 8px 10px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.primary:active { filter: brightness(.88); }
+.danger { color: var(--error); }
+h1,h2,h3 { text-wrap: balance; user-select: none; }
+h1 { font-size: 20px; font-weight: 600; } h2 { font-size: 17px; font-weight: 600; }
+small, .muted { color: var(--secondary); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

@@ -38,6 +38,8 @@ export class AudioWindow {
     loadPage(this.window, 'voice')
   }
 
+  close(): void { if (!this.window.isDestroyed()) this.window.destroy() }
+
   send(command: VoiceCommand): void {
     if (this.queued) this.queued.push(command)
     else if (!this.window.isDestroyed()) this.window.webContents.send(Channels.voiceCommand, command)

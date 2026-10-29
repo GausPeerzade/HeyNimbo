@@ -3,9 +3,12 @@ import { Channels, type SaveKeyResult } from '../shared/ipc'
 import { saveOpenAIKey, validateOpenAIKey } from './secrets'
 import { loadPage, secureWebPreferences } from './windows'
 
+let setup: BrowserWindow | undefined
+
 /** Asks for an OpenAI key, checks it with the API, then stores it encrypted.
  *  Only this window's renderer may call the save handler. */
 export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
+  if (setup && !setup.isDestroyed()) { setup.show(); setup.focus(); return setup }
   const window = new BrowserWindow({
     width: 460,
     height: 300,
@@ -14,6 +17,7 @@ export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
     show: false,
     webPreferences: secureWebPreferences('setup'),
   })
+  setup = window
   ipcMain.handle(Channels.saveOpenAIKey, async (event, key: unknown): Promise<SaveKeyResult> => {
     if (event.sender !== window.webContents) return { ok: false, reason: 'Not allowed.' }
     const trimmed = typeof key === 'string' ? key.trim() : ''
@@ -29,7 +33,7 @@ export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
     setTimeout(() => window.close(), 800)
     return { ok: true }
   })
-  window.on('closed', () => ipcMain.removeHandler(Channels.saveOpenAIKey))
+  window.on('closed', () => { setup = undefined; ipcMain.removeHandler(Channels.saveOpenAIKey) })
   window.once('ready-to-show', () => {
     window.show()
     app.focus({ steal: true })

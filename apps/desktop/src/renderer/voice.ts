@@ -81,6 +81,8 @@ function queueMic(task: () => Promise<void>): void {
 }
 
 const speaker = new AudioContext({ sampleRate: RATE })
+const output = speaker.createGain()
+output.connect(speaker.destination)
 const playing = new Set<AudioBufferSourceNode>()
 const scribbling = new Set<AudioBufferSourceNode>()
 let playhead = 0
@@ -102,7 +104,7 @@ function play(line: number, pcm: Uint8Array): void {
   for (let i = 0; i < samples.length; i++) channel[i] = (samples[i] ?? 0) / 0x8000
   const source = speaker.createBufferSource()
   source.buffer = buffer
-  source.connect(speaker.destination)
+  source.connect(output)
   // Schedule back to back; a small lead absorbs IPC jitter on the first chunk.
   const at = Math.max(playhead, speaker.currentTime + 0.02)
   source.start(at)
@@ -145,7 +147,7 @@ function scribble(durationMs: number): void {
     pressure.gain.linearRampToValueAtTime(0.01 + Math.random() * 0.025, start + t)
   }
   pressure.gain.linearRampToValueAtTime(0, start + seconds)
-  source.connect(band).connect(pressure).connect(speaker.destination)
+  source.connect(band).connect(pressure).connect(output)
   scribbling.add(source)
   source.onended = () => scribbling.delete(source)
   source.start(start)
@@ -154,6 +156,9 @@ function scribble(durationMs: number): void {
 
 function handle(command: VoiceCommand): void {
   switch (command.kind) {
+    case 'mute':
+      output.gain.value = command.muted ? 0 : 1
+      return
     case 'micStart':
       return queueMic(() => startMic(command.id))
     case 'micStop':
