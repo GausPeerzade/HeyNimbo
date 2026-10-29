@@ -125,6 +125,11 @@ export function strokesFor(mark: Mark, paper = false): Stroke[] {
     case 'dot':
       // One small loop with a pen as wide as the radius fills the whole disc.
       return [{ points: arcPoints(mark.x, mark.y, mark.r / 2, -90, 360), style: 'pen', size: mark.r }]
+    case 'model':
+    case 'part':
+    case 'move':
+    case 'cut':
+    case 'tag':
     case 'card':
     case 'heading':
     case 'step':

@@ -1,6 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OverlayCommand, OverlayEvent } from '../shared/ipc'
 
+const modelMocks = vi.hoisted(() => ({ stages: [] as any[] }))
+vi.mock('./model-stage', async () => {
+  const { ModelGraph } = await import('./model-geometry')
+  return { ModelStage: class {
+    graph = new ModelGraph()
+    margin = 120
+    afterRender?: () => void
+    visit?: () => void
+    offset = 0
+    revealCalls: Array<{ name: string; progress: number }> = []
+    dispose = vi.fn(() => { this.graph.dispose(); this.afterRender = undefined; this.visit = undefined })
+    constructor(readonly host: unknown, readonly options: any) { modelMocks.stages.push(this) }
+    prepare(spec: any) { return this.graph.add(spec) }
+    reveal(part: any, progress: number) { this.graph.reveal(part, progress); this.revealCalls.push({ name: part.spec.name, progress }) }
+    project() { return [200 + this.offset, 100 + this.offset] }
+    labelEdges() { return [150, 300] }
+    move = vi.fn()
+    tick() { this.afterRender?.(); this.visit?.(); return false }
+  } }
+})
+
 /** A small SVG/input test surface; layout measurement and the monotonic clock are explicit stubs. */
 class SvgNode {
   children: SvgNode[] = []
@@ -32,6 +53,7 @@ class SvgNode {
 
 async function setup(ready = true) {
   vi.resetModules()
+  modelMocks.stages.length = 0
   const stage = new SvgNode('stage')
   const clear = new SvgNode('button')
   let now = 0
@@ -187,4 +209,71 @@ describe('overlay card pipeline', () => {
     expect(warning).toHaveBeenCalledWith('[drawing] card a: omitted 2 step(s); no readable slot fits the display.')
   })
 
+})
+
+describe('overlay model beats', () => {
+  const model = (id = 'pump') => ({ kind: 'model' as const, id, x: 50, y: 40, w: 600, h: 500, title: 'Pump', turntable: false })
+  const part = async (id = 'pump', name = 'barrel') => {
+    const { parseModelCommand } = await import('../shared/model-protocol')
+    return parseModelCommand(`@part ${id} ${name} tube copies=3 step=1,0,0`)!
+  }
+  it('reveals repeated parts as one visit within the beat, keeping queued geometry invisible until its sentence', async () => {
+    const app = await setup()
+    app.beat([model()], 1000); app.pump(1000)
+    app.beat([await part()], 1200)
+    const stage = modelMocks.stages[0]!
+    expect(stage.graph.parts.get('barrel').built).toBe(false)
+    let growing = false, visited = false
+    const start = app.now()
+    app.pump(1200, () => {
+      const progress = stage.revealCalls.at(-1)?.progress
+      if (progress > 0 && progress < 1) {
+        growing = true
+        visited ||= app.stage.all('buddy')[0]?.getAttribute('transform')?.startsWith('translate(251 169)') ?? false
+      }
+    })
+    expect(growing).toBe(true); expect(visited).toBe(true)
+    expect(stage.revealCalls.at(-1)).toEqual({ name: 'barrel', progress: 1 })
+    expect(stage.graph.parts.get('barrel').reveals.every((node: any) => node.scale.x === 1)).toBe(true)
+    expect(app.now() - start).toBe(1200)
+  })
+  it('reveals dot → leader → handwriting, then updates endpoints without reflowing or rewriting labels', async () => {
+    const app = await setup()
+    app.beat([model(), await part()], 1500); app.pump(1500)
+    app.beat([{ kind: 'tag', id: 'pump', part: 'barrel', text: 'Air chamber', side: 'left' }], 1700)
+    const order: string[] = []; let partial = false
+    app.pump(1700, () => {
+      if (app.stage.all('leader-dot').length && !order.includes('dot')) order.push('dot')
+      if (app.stage.all('model-leader').length && !order.includes('leader')) order.push('leader')
+      const words = app.stage.all('note')[0]
+      if (words && !order.includes('words')) order.push('words')
+      if (words) {
+        const mask = words.parent!.children.find((node) => `url(#${node.getAttribute('id')})` === words.getAttribute('mask'))!
+        const width = Number(mask.children[0]!.getAttribute('width'))
+        partial ||= width > 0 && width < 90
+      }
+    })
+    expect(order).toEqual(['dot', 'leader', 'words']); expect(partial).toBe(true)
+    const words = app.stage.all('note'), attrs = words.map((node) => [...node.attributes])
+    const leader = app.stage.all('model-leader')[0]!, before = leader.getAttribute('d')
+    modelMocks.stages[0]!.offset = 35
+    app.receive({ kind: 'cursor', at: { x: 100, y: 100 } }); app.pump(50)
+    expect(leader.getAttribute('d')).not.toBe(before)
+    expect(app.stage.all('note')).toEqual(words)
+    expect(words.map((node) => [...node.attributes])).toEqual(attrs)
+    expect(app.stage.all('leader-dot')[0]!.getAttribute('cx')).toBe('286')
+  })
+  it('close and clear dispose only their contexts and cancel queued reveals/leaders without orphans', async () => {
+    const app = await setup()
+    app.beat([model(), model('other')], 1200); app.pump(1200)
+    app.beat([await part(), await part('other')], 1200)
+    const [a, b] = modelMocks.stages
+    app.stage.all('paper-card')[0]!.all('card-close')[0]!.dispatch('click')
+    app.pump(1400)
+    expect(a.dispose).toHaveBeenCalledOnce(); expect(a.revealCalls).toHaveLength(0)
+    expect(b.dispose).not.toHaveBeenCalled(); expect(b.revealCalls.at(-1)?.progress).toBe(1)
+    app.receive({ kind: 'clear' }); app.pump(100)
+    expect(a.dispose).toHaveBeenCalledOnce(); expect(b.dispose).toHaveBeenCalledOnce()
+    expect(app.stage.all('paper-card')).toHaveLength(0); expect(app.stage.all('model-leader')).toHaveLength(0)
+  })
 })

@@ -44,6 +44,7 @@ export function toOverlaySpace(marks: readonly Mark[], capture: CaptureSpace, di
         return { ...mark, x: x(mark.x), y: y(mark.y), r: mark.r * sx }
       case 'curve':
         return { ...mark, points: mark.points.map(([px, py]): [number, number] => [x(px), y(py)]) }
+      case 'model':
       case 'card': {
         const w = Math.min(displayBounds.width, Math.max(CARD_MIN_OVERLAY_WIDTH, mark.w * sx))
         const h = Math.min(displayBounds.height, mark.h * sy)
@@ -57,6 +58,10 @@ export function toOverlaySpace(marks: readonly Mark[], capture: CaptureSpace, di
         return { ...mark, x1: x(mark.x1), y1: y(mark.y1), x2: x(mark.x2), y2: y(mark.y2) }
       case 'label':
         return { ...mark, x: x(mark.x), y: y(mark.y), lx: x(mark.lx), ly: y(mark.ly) }
+      case 'part':
+      case 'move':
+      case 'cut':
+      case 'tag':
       case 'heading':
       case 'step':
       case 'note':

@@ -61,6 +61,11 @@ html, body { margin: 0; width: 100%; height: 100%; background: transparent; over
 .paper-card { pointer-events: auto; }
 /* Opacity alone does not disable SVG hit-testing, including explicit child controls. */
 .paper-card[data-interactive="false"], .paper-card[data-interactive="false"] * { pointer-events: none; }
+.model-leader { fill: none; stroke: var(--ink); stroke-width: 1.25; stroke-linecap: round; }
+.model-viewport { overflow: hidden; }
+.model-host, .model-host canvas { width: 100%; height: 100%; display: block; background: transparent; }
+.model-host canvas { pointer-events: auto; cursor: grab; touch-action: none; }
+.model-host canvas:active { cursor: grabbing; }
 .card-drag { fill: transparent; cursor: grab; pointer-events: all; touch-action: none; }
 .card-drag:active { cursor: grabbing; }
 .card-close { opacity: 0; cursor: pointer; pointer-events: all; }

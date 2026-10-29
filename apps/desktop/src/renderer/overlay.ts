@@ -1,4 +1,7 @@
 import type { Mark } from '../shared/beats'
+import { MODEL_LIMITS } from '../shared/model-protocol'
+import { ModelStage } from './model-stage'
+import { labelSlots, type LabelSlot } from './model-geometry'
 import { CardScene, layoutFlow, markCenter, objectPoint, BADGE_RADIUS, type CardState, type SceneObject } from './card-scene'
 import { sampleWriting, wrapWriting, writingDuration, type WritingLayout } from './handwriting'
 import { FrameTrace } from './frame-trace'
@@ -13,6 +16,17 @@ const clearButton = document.getElementById('clear') as HTMLButtonElement
 const scene = layer('scene')
 const cardsLayer = layer('cards', scene)
 const cardScene = new CardScene()
+const modelStages = new Map<CardState, ModelStage>()
+interface ModelLabel {
+  mark: Extract<Mark, { kind: 'tag' }>
+  owner: SceneObject
+  writing: WritingLayout
+  slot?: LabelSlot
+  words?: Point
+  dot?: SVGCircleElement
+  leader?: SVGPathElement
+}
+const modelLabels = new Map<ModelStage, ModelLabel[]>()
 const pillBoxes: Array<{ x: number; y: number; w: number; h: number; node: SVGGElement }> = []
 const objectNodes = new Map<SceneObject, SVGGElement>()
 const cardViews = new Map<CardState, { root: SVGGElement; surface: SVGRectElement; board: SVGRectElement; body: SVGGElement; layers: Record<'wash' | 'ink' | 'words', SVGGElement> }>()
@@ -123,10 +137,12 @@ function tick(now: number): void {
       buddyAt = undefined
     }
   }
+  let modelsActive = false
+  for (const model of modelStages.values()) modelsActive = model.tick(now) || modelsActive
   const followed = follow(now)
   const morphing = morph(now)
   lastFrame = now
-  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined || followed || morphing) wake()
+  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined || followed || morphing || modelsActive) wake()
 }
 
 function followTarget(): Point | undefined {
@@ -279,7 +295,8 @@ function retainObject(center: Point, card?: CardState, kind: 'wash' | 'ink' | 'w
   return owner
 }
 
-function cardAction(mark: Extract<Mark, { kind: 'card' }>, group: number): Action[] {
+function cardAction(mark: Extract<Mark, { kind: 'card' | 'model' }>, group: number): Action[] {
+  if (mark.kind === 'model' && modelStages.size >= MODEL_LIMITS.cards) return []
   const card = cardScene.open(mark)
   if (!card) return []
   const root = layer('paper-card', cardsLayer)
@@ -289,13 +306,25 @@ function cardAction(mark: Extract<Mark, { kind: 'card' }>, group: number): Actio
   const header = element('path', { class: 'card-header', d: `M${card.x + 10} ${card.y}H${card.x + card.w - 10}Q${card.x + card.w} ${card.y} ${card.x + card.w} ${card.y + 10}V${card.y + 28}H${card.x}V${card.y + 10}Q${card.x} ${card.y} ${card.x + 10} ${card.y}` })
   const patternId = `board-${nextId++}`
   const pattern = element('pattern', { id: patternId, width: 20, height: 20, patternUnits: 'userSpaceOnUse', x: card.x, y: card.y + 28 })
-  if (mark.board === 'grid') pattern.append(element('path', { class: 'grid-line', d: 'M20 0H0V20', fill: 'none' }))
-  if (mark.board === 'dots') pattern.append(element('circle', { class: 'grid-dot', cx: 1, cy: 1, r: 1 }))
+  if (mark.kind === 'card' && mark.board === 'grid') pattern.append(element('path', { class: 'grid-line', d: 'M20 0H0V20', fill: 'none' }))
+  if (mark.kind === 'card' && mark.board === 'dots') pattern.append(element('circle', { class: 'grid-dot', cx: 1, cy: 1, r: 1 }))
   const board = element('rect', { x: card.x + 1, y: card.y + 28, width: card.w - 2, height: card.h - 29, rx: 8, fill: `url(#${patternId})` })
   const title = element('text', { class: 'card-title', x: card.x + 14, y: card.y + 19 })
   title.textContent = mark.title
   root.append(pattern, surface, board, header, title)
   const body = layer('card-body', root)
+  if (mark.kind === 'model') {
+    const viewport = element('foreignObject', { x: card.x + 1, y: card.y + 29, width: card.w - 2, height: card.h - 30, class: 'model-viewport' })
+    const host = document.createElementNS('http://www.w3.org/1999/xhtml', 'div') as HTMLDivElement
+    host.setAttribute('class', 'model-host')
+    viewport.append(host); body.append(viewport)
+    modelStages.set(card, new ModelStage(host, {
+      id: card.id, width: card.w - 2, height: card.h - 30, turntable: mark.turntable, wake,
+      capture: (over, captured) => reportRegion(`card:${card.id}`, over, captured),
+      overCard: (x, y) => x >= card.x + card.offset[0] && x <= card.x + card.offset[0] + card.w && y >= card.y + card.offset[1] && y <= card.y + card.offset[1] + card.h,
+      trace: (until) => trace.activeUntil(until), debug: () => trace.enabled,
+    }))
+  }
   const layers = { wash: layer('wash', body), ink: layer('ink', body), words: layer('words', body) }
   cardViews.set(card, { root, surface, board, body, layers })
   while (title.getComputedTextLength() > card.w - 56 && title.textContent!.length > 1) title.textContent = title.textContent!.slice(0, -2) + '…'
@@ -309,6 +338,107 @@ function cardAction(mark: Extract<Mark, { kind: 'card' }>, group: number): Actio
       return (progress) => root.setAttribute('opacity', String(progress))
     },
   }]
+}
+
+function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag' }>, group: number): Action[] {
+  const card = cardScene.cards.get(mark.id)
+  const model = card && modelStages.get(card)
+  if (!card || card.closed || !model) return []
+  const at: Point = [card.x + card.w / 2, card.y + card.h / 2]
+  const owner = retainObject(at, card)
+  if (mark.kind === 'part') {
+    const part = model.prepare(mark)
+    if (!part) return []
+    return [{ group, owner, from: at, to: at, seconds: 0.6, begin: () => (progress) => {
+      const visit = (): void => {
+        const point = model.project(mark.name)
+        moveBuddy(objectPoint(owner, [card.x + 1 + point[0], card.y + 29 + point[1]]), IDLE_ANGLE)
+      }
+      model.visit = progress < 1 ? visit : undefined
+      model.reveal(part, progress); visit()
+    } }]
+  }
+  if (mark.kind === 'move') return [{ group, owner, from: at, to: at, seconds: 0, begin: () => {
+    model.move(mark, performance.now())
+    return () => {}
+  } }]
+  if (mark.kind === 'cut') return [{ group, owner, from: at, to: at, seconds: 0.15, begin: () => {
+    model.cut(mark.axis)
+    return () => {}
+  } }]
+  return modelTagActions(mark, group, card, model, owner)
+}
+
+function reserveModelLabels(model: ModelStage, card: CardState): void {
+  const labels = modelLabels.get(model) ?? []
+  const pending = labels.filter((label) => !label.slot && model.graph.parts.get(label.mark.part)?.built)
+  const intents = pending.map((label) => {
+    const point = model.project(label.mark.part)
+    return { id: label.mark.part, y: point[1], side: label.mark.side ?? (point[0] < model.options.width / 2 ? 'left' : 'right'), height: label.writing.lines.length * label.writing.lineHeight }
+  })
+  const slots = labelSlots(intents, 12, model.options.height - 16, labels.flatMap((label) => label.slot ? [label.slot] : []))
+  for (const label of pending) {
+    const slot = slots.find((slot) => slot.id === label.mark.part)
+    if (!slot) continue
+    label.slot = slot
+    const width = Math.max(...label.writing.lines.map((line) => line.width))
+    const [modelLeft, modelRight] = model.labelEdges()
+    const left = slot.side === 'left' ? Math.max(card.x + 12, card.x + modelLeft - width - 10)
+      : Math.min(card.x + card.w - width - 12, card.x + modelRight + 10)
+    label.words = [left, card.y + 29 + slot.baseline - (label.writing.lines.length - 1) * label.writing.lineHeight]
+  }
+}
+
+function updateModelLeaders(model: ModelStage, card: CardState): void {
+  for (const label of modelLabels.get(model) ?? []) {
+    if (!label.words || !label.dot) continue
+    const projected = model.project(label.mark.part)
+    const point: Point = [card.x + 1 + projected[0], card.y + 29 + projected[1]]
+    label.dot.setAttribute('cx', String(point[0])); label.dot.setAttribute('cy', String(point[1]))
+    if (label.leader) {
+      const width = Math.max(...label.writing.lines.map((line) => line.width))
+      const end: Point = [label.words[0] + (label.slot!.side === 'left' ? width + 4 : -4), label.words[1] - 7]
+      label.leader.setAttribute('d', `M${point[0]} ${point[1]}L${end[0]} ${end[1]}`)
+    }
+  }
+}
+
+function modelTagActions(mark: Extract<Mark, { kind: 'tag' }>, group: number, card: CardState, model: ModelStage, owner: SceneObject): Action[] {
+  const labels = modelLabels.get(model) ?? []
+  if (labels.length >= MODEL_LIMITS.tags || labels.some((label) => label.mark.part === mark.part) || !model.graph.parts.has(mark.part)) return []
+  const writing = wrapWriting(mark.text, model.margin - 22, 22, measureWriting(22), 2)
+  const label: ModelLabel = { mark, owner, writing }
+  labels.push(label); modelLabels.set(model, labels)
+  model.afterRender = () => updateModelLeaders(model, card)
+  const at = owner.center
+  return [
+    { group, owner, from: at, to: at, seconds: 0.15, begin: () => {
+      reserveModelLabels(model, card)
+      if (!label.slot) { console.warn(`[drawing] model ${card.id}: no readable label slot for ${mark.part}`); return () => {} }
+      label.dot = element('circle', { class: 'leader-dot', r: 0 })
+      objectNodes.get(owner)!.append(label.dot)
+      updateModelLeaders(model, card)
+      return (progress) => {
+        label.dot!.setAttribute('r', String(2.8 * progress))
+        const point = model.project(mark.part)
+        moveBuddy(objectPoint(owner, [card.x + 1 + point[0], card.y + 29 + point[1]]), IDLE_ANGLE)
+      }
+    } },
+    { group, owner, from: at, to: at, seconds: 0.28, begin: () => {
+      if (!label.slot) return () => {}
+      label.leader = element('path', { class: 'model-leader', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 1 })
+      objectNodes.get(owner)!.append(label.leader)
+      updateModelLeaders(model, card)
+      return (progress) => {
+        label.leader!.setAttribute('stroke-dashoffset', String(1 - progress))
+        const point = model.project(mark.part), width = Math.max(...writing.lines.map((line) => line.width))
+        const near: Point = [label.words![0] + (label.slot!.side === 'left' ? width + 4 : -4), label.words![1] - 7]
+        const dot: Point = [card.x + 1 + point[0], card.y + 29 + point[1]]
+        moveBuddy(objectPoint(owner, [dot[0] + (near[0] - dot[0]) * progress, dot[1] + (near[1] - dot[1]) * progress]), IDLE_ANGLE)
+      }
+    } },
+    { group, owner, from: at, to: at, seconds: writingDuration(mark.text), begin: (duration) => label.words ? writingAction(writing, label.words, group, owner).begin(duration) : () => {} },
+  ]
 }
 
 function flowActions(mark: Extract<Mark, { kind: 'step' | 'heading' | 'note' }>, group: number): Action[] {
@@ -471,7 +601,8 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
       clearScene()
       animations.length = 0
       actions.length = 0
-    } else if (mark.kind === 'card') actions.push(...cardAction(mark, group))
+    } else if (mark.kind === 'card' || mark.kind === 'model') actions.push(...cardAction(mark, group))
+    else if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') actions.push(...modelActions(mark, group))
     else if (mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') actions.push(...flowActions(mark, group))
     else {
       const owner = retainObject(markCenter(mark)!, undefined, mark.kind === 'highlight' ? 'wash' : ['text', 'label', 'point'].includes(mark.kind) ? 'words' : 'ink')
@@ -523,6 +654,9 @@ function warnOmissions(card: CardState): void {
 }
 
 function clearScene(): void {
+  for (const model of modelStages.values()) model.dispose()
+  modelStages.clear()
+  modelLabels.clear()
   for (const card of cardScene.cards.values()) warnOmissions(card)
   warnedOmissions.clear()
   for (const release of releaseDrags.values()) release()
@@ -608,6 +742,9 @@ function wireCard(card: CardState, root: SVGGElement): void {
     releaseDrags.delete(card)
     warnOmissions(card)
     cardScene.close(card.id)
+    const model = modelStages.get(card)
+    if (model) { model.dispose(); modelLabels.delete(model) }
+    modelStages.delete(card)
     root.remove()
     cardViews.delete(card)
     for (const [object, node] of objectNodes) if (object.removed) { node.remove(); objectNodes.delete(object) }

@@ -1,17 +1,18 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { app, BrowserWindow, nativeTheme, session } from 'electron'
 import { AppChannels } from '../shared/app'
 import { Channels } from '../shared/ipc'
 import { AppShell } from './app-shell'
 import { devFlag } from './dev'
+import { isolateDevProfile } from './dev-profile'
 import { loadPage, secureWebPreferences } from './windows'
-let directory: string | undefined
+let cleanup: (() => void) | undefined
 
 export function configureHomePreview(): void {
   if (!devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return
-  directory = mkdtempSync('/tmp/nimbo-home-preview-')
-  app.setPath('userData', directory)
-  setTimeout(() => app.exit(1), 60000).unref()
+  cleanup = isolateDevProfile('home-preview')
+  // Long enough for every screen in both themes; the profile goes with the exit.
+  setTimeout(() => { cleanup?.(); app.exit(1) }, 60000).unref()
 }
 
 /** Only app-owned, never-shown windows are captured; no capture/audio/credential path runs. */
@@ -116,6 +117,6 @@ export async function runHomePreview(): Promise<void> {
   }
   writeFileSync(`${output}/diagnostics.json`, JSON.stringify({ screens: diagnostics, errors }, null, 2))
   setup.destroy(); notch.destroy(); shell.home?.destroy(); shell.preferences?.destroy(); shell.close()
-  if (directory) rmSync(directory, { recursive: true, force: true })
+  cleanup?.()
   app.quit()
 }
