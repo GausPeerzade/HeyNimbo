@@ -59,7 +59,7 @@ function createGesturePresenter(
 }
 
 /** Builds the voice pipeline once a key is available. */
-function startTalking(key: string, notch: BrowserWindow): TalkSession {
+function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager): TalkSession {
   void ensureMicrophoneAccess()
   const ears = new Ears(key)
   const mouth = new Mouth(key)
@@ -72,6 +72,15 @@ function startTalking(key: string, notch: BrowserWindow): TalkSession {
     audio,
     capture: captureCursorDisplay,
     onStatus: (label) => sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()),
+    drawing: {
+      draw: (marks, durationMs, space) => {
+        overlays.drawBeat(marks, durationMs, space)
+        if (marks.some((mark) => mark.kind !== 'point' && mark.kind !== 'clear')) {
+          audio.send({ kind: 'scribble', durationMs: Math.min(durationMs, 2_500) })
+        }
+      },
+      fadeSoon: () => overlays.fadeSoon(),
+    },
   })
   ears.warm()
   mouth.warm()
@@ -105,8 +114,8 @@ app.whenReady().then(async () => {
   else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 
   const key = await loadOpenAIKey()
-  if (key) talk = startTalking(key, notch)
-  else openSetupWindow((saved) => (talk = startTalking(saved, notch)))
+  if (key) talk = startTalking(key, notch, overlays)
+  else openSetupWindow((saved) => (talk = startTalking(saved, notch, overlays)))
 })
 
 // A menu-bar style app keeps running with no focused window.

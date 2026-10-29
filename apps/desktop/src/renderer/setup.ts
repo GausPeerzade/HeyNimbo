@@ -16,10 +16,16 @@ form.addEventListener('submit', (event) => {
   save.disabled = true
   status.className = ''
   status.textContent = 'Checking the key with OpenAI…'
-  void window.nimboSetup.saveOpenAIKey(input.value).then((result) => {
-    save.disabled = false
-    status.className = result.ok ? 'ok' : 'error'
-    status.textContent = result.ok ? 'Saved. Hold Ctrl+Option and ask away.' : result.reason
-    if (result.ok) input.value = ''
-  })
+  window.nimboSetup
+    .saveOpenAIKey(input.value)
+    .then((result) => {
+      status.className = result.ok ? 'ok' : 'error'
+      status.textContent = result.ok ? 'Saved. Hold Ctrl+Option and ask away.' : result.reason
+      if (result.ok) input.value = ''
+    })
+    .catch(() => {
+      status.className = 'error'
+      status.textContent = 'Something went wrong. Please try again.'
+    })
+    .finally(() => (save.disabled = false))
 })

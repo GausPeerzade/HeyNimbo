@@ -57,6 +57,17 @@ export class RealtimeSocket {
   }
 }
 
+/** Opens a Realtime socket; injectable so session logic can be tested. */
+export type SocketFactory = (
+  query: string,
+  key: string,
+  onEvent: (event: RealtimeEvent) => void,
+  onClose: (reason: string) => void,
+) => Pick<RealtimeSocket, 'isOpen' | 'send' | 'close'>
+
+export const openSocket: SocketFactory = (query, key, onEvent, onClose) =>
+  new RealtimeSocket(query, key, onEvent, onClose)
+
 export function base64(pcm: Uint8Array): string {
   return Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength).toString('base64')
 }

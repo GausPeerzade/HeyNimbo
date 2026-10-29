@@ -20,7 +20,11 @@ export function openSetupWindow(onSaved: (key: string) => void): BrowserWindow {
     if (!/^sk-[\w-]{20,}$/.test(trimmed)) return { ok: false, reason: 'That does not look like an OpenAI API key.' }
     const valid = await validateOpenAIKey(trimmed)
     if (!valid.ok) return valid
-    await saveOpenAIKey(trimmed)
+    try {
+      await saveOpenAIKey(trimmed)
+    } catch {
+      return { ok: false, reason: 'Could not store the key securely on this Mac.' }
+    }
     onSaved(trimmed)
     setTimeout(() => window.close(), 800)
     return { ok: true }

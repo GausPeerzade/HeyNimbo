@@ -1,12 +1,15 @@
 import type { ScreenCaptures } from '@nimboguide/native'
+import { BeatParser, type Beat, type Mark } from '../../shared/beats'
 import type { VoiceCommand, VoiceEvent } from '../../shared/ipc'
-import { SentenceSplitter } from '../../shared/sentences'
+import type { CaptureSpace } from '../overlay-geometry'
 import { streamAnswer, type Exchange, type Screenshot } from './brain'
 import type { Ears } from './ears'
 import type { Mouth } from './mouth'
 
 const HISTORY_LIMIT = 6
 const MIC_STOP_TIMEOUT_MS = 1_500
+/** Speaking pace used to spread a sentence's drawing across its audio. */
+const WORDS_PER_SECOND = 2.6
 
 export interface TalkDeps {
   key: string
@@ -16,6 +19,12 @@ export interface TalkDeps {
   capture: () => Promise<ScreenCaptures | undefined>
   /** A label while busy, or undefined to return the notch to rest. */
   onStatus: (label: string | undefined) => void
+  drawing: {
+    /** Draws marks given in the capture's screenshot pixels. */
+    draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
+    /** The answer is over; let the drawing linger, then fade it. */
+    fadeSoon(): void
+  }
 }
 
 interface Turn {
@@ -26,6 +35,9 @@ interface Turn {
   releasedAt?: number
   micStopped?: () => void
   spoken: boolean
+  /** Marks waiting for their sentence's audio to start, by line number. */
+  readonly lines: Map<number, { marks: Mark[]; durationMs: number }>
+  space?: CaptureSpace
 }
 
 /** One push-to-talk conversation: listen while held, then transcribe, think and
@@ -41,7 +53,14 @@ export class TalkSession {
     this.interrupt()
     this.deps.ears.begin()
     const id = ++this.nextId
-    this.turn = { id, abort: new AbortController(), capture: this.deps.capture(), marks: new Map(), spoken: false }
+    this.turn = {
+      id,
+      abort: new AbortController(),
+      capture: this.deps.capture(),
+      marks: new Map(),
+      spoken: false,
+      lines: new Map(),
+    }
     this.deps.audio.send({ kind: 'micStart', id })
     this.deps.onStatus('Listening…')
   }
@@ -83,8 +102,18 @@ export class TalkSession {
           this.deps.onStatus('Speaking…')
         }
         return
+      case 'lineScheduled': {
+        const line = turn?.lines.get(event.line)
+        if (!turn || !line) return
+        turn.lines.delete(event.line)
+        setTimeout(() => this.draw(turn, line.marks, line.durationMs), event.startsInMs)
+        return
+      }
       case 'playbackDrained':
-        if (turn?.spoken) this.finish(turn)
+        if (turn?.spoken) {
+          this.finish(turn)
+          this.deps.drawing.fadeSoon()
+        }
         return
       case 'micStarted':
     }
@@ -97,18 +126,31 @@ export class TalkSession {
     if (turn.abort.signal.aborted) return
     if (!question) return this.finish(turn)
     this.deps.onStatus('Thinking…')
-    const screenshot = toScreenshot(await turn.capture)
-    const splitter = new SentenceSplitter()
+    const display = (await turn.capture)?.displays[0]
+    const screenshot = toScreenshot(display)
+    if (display) turn.space = { frame: display.frame, pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight }
+    const beats = new BeatParser({ width: display?.pixelWidth ?? 0, height: display?.pixelHeight ?? 0 })
     let speech: Promise<void> = Promise.resolve()
-    const say = (sentence: string): void => {
+    let lineNumber = 0
+    const say = ({ sentence, marks }: Beat): void => {
+      if (sentence === undefined) {
+        // Trailing marks with no sentence of their own draw once speech reaches them.
+        speech = speech.then(() => this.draw(turn, marks, 800))
+        return
+      }
       if (!turn.marks.has('first line')) this.mark(turn, 'first line')
+      const line = ++lineNumber
+      const words = sentence.split(/\s+/).length
+      if (marks.length) turn.lines.set(line, { marks, durationMs: Math.max(800, (words / WORDS_PER_SECOND) * 1000) })
       speech = speech.then(() =>
         turn.abort.signal.aborted
           ? undefined
           : this.deps.mouth.speak(sentence, (pcm) => {
-              if (!turn.abort.signal.aborted) this.deps.audio.send({ kind: 'play', pcm })
+              if (!turn.abort.signal.aborted) this.deps.audio.send({ kind: 'play', line, pcm })
             }),
       )
+      // A failed sentence stops the whole turn now, not after the answer streams.
+      speech.catch((error: unknown) => this.fail(turn, error))
     }
     let answer = ''
     for await (const delta of streamAnswer({
@@ -120,9 +162,9 @@ export class TalkSession {
     })) {
       if (!answer) this.mark(turn, 'first token')
       answer += delta
-      splitter.push(delta).forEach(say)
+      beats.push(delta).forEach(say)
     }
-    splitter.flush().forEach(say)
+    beats.flush().forEach(say)
     await speech
     if (turn.abort.signal.aborted) return
     this.history.push({ question, answer })
@@ -164,13 +206,16 @@ export class TalkSession {
     }, 2_500)
   }
 
+  private draw(turn: Turn, marks: Mark[], durationMs: number): void {
+    if (this.turn === turn && turn.space && marks.length) this.deps.drawing.draw(marks, durationMs, turn.space)
+  }
+
   private mark(turn: Turn, label: string): void {
     if (!turn.marks.has(label)) turn.marks.set(label, performance.now())
   }
 }
 
-function toScreenshot(captures: ScreenCaptures | undefined): Screenshot | undefined {
-  const display = captures?.displays[0]
+function toScreenshot(display: ScreenCaptures['displays'][number] | undefined): Screenshot | undefined {
   if (!display) return undefined
   return {
     jpeg: display.jpeg,

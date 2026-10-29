@@ -1,24 +1,37 @@
-import { base64, RealtimeSocket, type RealtimeEvent } from '../openai/realtime'
+import { base64, openSocket, type RealtimeEvent, type SocketFactory } from '../openai/realtime'
 
 /** The API rejects commits under 100 ms of audio; such taps are not questions. */
 const MIN_TURN_BYTES = 24_000 * 2 * 0.1
 const TRANSCRIPT_TIMEOUT_MS = 10_000
 
+/** One commit sent to the API, matched to its acknowledgement in send order. */
+interface Commit {
+  itemId?: string
+}
+
 interface PendingTurn {
   resolve: (transcript: string) => void
   reject: (error: Error) => void
-  itemId?: string
+  commit: Commit
   timer: NodeJS.Timeout
 }
+
+
 
 /** Streaming speech-to-text over one warm transcription session, reused across
  *  turns and reopened if it drops. */
 export class Ears {
-  private socket: RealtimeSocket | undefined
+  private socket: ReturnType<SocketFactory> | undefined
   private bytes = 0
   private pending: PendingTurn | undefined
+  /** Commits awaiting acknowledgement, oldest first, including cancelled ones,
+   *  so a late transcript from an interrupted turn never answers a newer one. */
+  private unacknowledged: Commit[] = []
 
-  constructor(private readonly key: string) {}
+  constructor(
+    private readonly key: string,
+    private readonly connect: SocketFactory = openSocket,
+  ) {}
 
   /** Opens the session ahead of the first question. */
   warm(): void {
@@ -42,8 +55,11 @@ export class Ears {
     this.cancel()
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => this.settle(new Error('Transcription timed out.')), TRANSCRIPT_TIMEOUT_MS)
-      this.pending = { resolve, reject, timer }
-      this.session().send({ type: 'input_audio_buffer.commit' })
+      const socket = this.session()
+      const commit: Commit = {}
+      this.unacknowledged.push(commit)
+      this.pending = { resolve, reject, commit, timer }
+      socket.send({ type: 'input_audio_buffer.commit' })
     })
   }
 
@@ -58,9 +74,11 @@ export class Ears {
     this.socket = undefined
   }
 
-  private session(): RealtimeSocket {
+  private session(): ReturnType<SocketFactory> {
     if (this.socket?.isOpen) return this.socket
-    this.socket = new RealtimeSocket(
+    // A new connection starts with no commits in flight.
+    this.unacknowledged = []
+    this.socket = this.connect(
       'intent=transcription',
       this.key,
       (event) => this.onEvent(event),
@@ -88,12 +106,13 @@ export class Ears {
       const message = (event.error as { message?: string } | undefined)?.message ?? 'Transcription failed.'
       if (pending) this.settle(new Error(message))
       else console.warn(`[ears] ${message}`)
-    } else if (pending && event.type === 'input_audio_buffer.committed') {
-      pending.itemId = String(event.item_id)
+    } else if (event.type === 'input_audio_buffer.committed') {
+      const commit = this.unacknowledged.shift()
+      if (commit) commit.itemId = String(event.item_id)
     } else if (
-      pending &&
+      pending?.commit.itemId !== undefined &&
       event.type === 'conversation.item.input_audio_transcription.completed' &&
-      (!pending.itemId || event.item_id === pending.itemId)
+      event.item_id === pending.commit.itemId
     ) {
       this.settle(String(event.transcript ?? '').trim())
     }

@@ -1,3 +1,5 @@
+import type { Mark } from './beats'
+
 // IPC contract between the main process and the sandboxed windows. Preload
 // exposes only these channels, so renderers cannot reach arbitrary IPC.
 
@@ -23,7 +25,13 @@ export interface OverlayRing {
   y: number
 }
 
-export type OverlayCommand = { kind: 'ring'; ring: OverlayRing } | { kind: 'clear' }
+export type OverlayCommand =
+  | { kind: 'ring'; ring: OverlayRing }
+  /** Draw marks (overlay CSS pixels), paced across `durationMs` of speech.
+   *  `from` is where a pointing buddy starts, usually the cursor. */
+  | { kind: 'beat'; marks: Mark[]; durationMs: number; from?: OverlayRing }
+  | { kind: 'fade' }
+  | { kind: 'clear' }
 
 export type SaveKeyResult = { ok: true } | { ok: false; reason: string }
 
@@ -32,7 +40,10 @@ export type VoiceCommand =
   /** `id` tags this recording so late audio from an earlier one is dropped. */
   | { kind: 'micStart'; id: number }
   | { kind: 'micStop' }
-  | { kind: 'play'; pcm: Uint8Array }
+  /** `line` numbers each spoken sentence so its start can be reported. */
+  | { kind: 'play'; line: number; pcm: Uint8Array }
+  /** A soft pencil sound while ink is drawn. */
+  | { kind: 'scribble'; durationMs: number }
   /** No more audio for this answer; report when it has finished playing. */
   | { kind: 'playEnd' }
   /** Stop speaking now, e.g. the user started talking again. */
@@ -45,6 +56,8 @@ export type VoiceEvent =
   | { kind: 'micStopped'; id: number }
   | { kind: 'micError'; message: string }
   | { kind: 'playbackStarted' }
+  /** When a sentence's first audio will reach the speaker. */
+  | { kind: 'lineScheduled'; line: number; startsInMs: number }
   | { kind: 'playbackDrained' }
 
 export const Channels = {

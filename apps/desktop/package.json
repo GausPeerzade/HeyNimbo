@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nimboguide/native": "workspace:*",
+    "perfect-freehand": "^1.2.3",
     "ws": "^8.22.0"
   },
   "devDependencies": {

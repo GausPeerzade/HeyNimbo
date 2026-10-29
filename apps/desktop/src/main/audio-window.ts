@@ -6,6 +6,8 @@ import { loadPage, secureWebPreferences } from './windows'
  *  audio stack (echo cancellation, noise suppression, resampling). */
 export class AudioWindow {
   private readonly window: BrowserWindow
+  /** Commands sent before the page is listening, delivered once it loads. */
+  private queued: VoiceCommand[] | undefined = []
 
   constructor(onEvent: (event: VoiceEvent) => void) {
     this.window = new BrowserWindow({
@@ -28,11 +30,17 @@ export class AudioWindow {
     ipcMain.on(Channels.voiceEvent, (event, payload: VoiceEvent) => {
       if (event.sender === contents) onEvent(payload)
     })
+    contents.once('did-finish-load', () => {
+      const queued = this.queued ?? []
+      this.queued = undefined
+      queued.forEach((command) => this.send(command))
+    })
     loadPage(this.window, 'voice')
   }
 
   send(command: VoiceCommand): void {
-    if (!this.window.isDestroyed()) this.window.webContents.send(Channels.voiceCommand, command)
+    if (this.queued) this.queued.push(command)
+    else if (!this.window.isDestroyed()) this.window.webContents.send(Channels.voiceCommand, command)
   }
 }
 

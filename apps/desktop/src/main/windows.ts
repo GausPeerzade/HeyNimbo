@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { BrowserWindow, screen, type Display, type WebPreferences } from 'electron'
+import type { Mark } from '../shared/beats'
 import { Channels, type NotchStatus, type OverlayCommand } from '../shared/ipc'
+import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { devFlag, devSetting } from './dev'
 
 const NOTCH_SIZE = { width: 240, height: 38 }
@@ -105,6 +107,7 @@ export class OverlayManager {
   private readonly windows = new Map<number, BrowserWindow>()
   /** The ring being shown, replayed if its display's page (re)loads. */
   private shown: { displayId: number; command: OverlayCommand } | undefined
+  private fadeTimer: NodeJS.Timeout | undefined
 
   /** Reconciles windows with the current displays; call on any display change. */
   sync(): void {
@@ -142,7 +145,30 @@ export class OverlayManager {
     this.send(display.id, command)
   }
 
+  /** Draws marks from a capture's screenshot pixels on the display it came from. */
+  drawBeat(marks: Mark[], durationMs: number, space: CaptureSpace): void {
+    const display = displayFor(space, screen.getAllDisplays())
+    if (!display) return
+    clearTimeout(this.fadeTimer)
+    const cursor = screen.getCursorScreenPoint()
+    this.send(display.id, {
+      kind: 'beat',
+      marks: toOverlaySpace(marks, space, display.bounds),
+      durationMs,
+      from: { x: cursor.x - display.bounds.x, y: cursor.y - display.bounds.y },
+    })
+  }
+
+  /** Lets the drawing linger after the answer, then fades it out. */
+  fadeSoon(delayMs = 6_000): void {
+    clearTimeout(this.fadeTimer)
+    this.fadeTimer = setTimeout(() => {
+      for (const id of this.windows.keys()) this.send(id, { kind: 'fade' })
+    }, delayMs)
+  }
+
   clear(): void {
+    clearTimeout(this.fadeTimer)
     this.shown = undefined
     for (const id of this.windows.keys()) this.send(id, { kind: 'clear' })
   }
