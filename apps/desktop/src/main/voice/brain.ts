@@ -1,7 +1,8 @@
 import { SseParser } from '../openai/sse'
 
-export const BRAIN_MODEL = 'gpt-6.1-sol'
-/** Medium gives the model room to plan drawings, cards and models well. */
+export const BRAIN_MODEL = 'gpt-6.1-terra'
+/** Terra at medium plans drawings, cards and models well, and is about three
+ *  times faster than Sol. */
 const BRAIN_EFFORT = 'medium'
 
 const INSTRUCTIONS = `You are NimboGuide, a friendly helper who lives on the user's computer.
