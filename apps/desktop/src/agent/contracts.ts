@@ -125,7 +125,7 @@ export type Resolver = (hostname: string) => Promise<ResolvedAddress[]>
 // Runtime composition (host side)
 
 /** Fetches a secret from main on demand; main answers only for configured names. */
-export type CredentialSource = (name: string) => Promise<string>
+export type CredentialSource = (name: string, binding?: { baseURL?: string }) => Promise<string>
 
 /** Builds the SDK model for a run. Production wraps the existing `sdkModel`; tests pass a mock. */
 export type ModelFactory = (selection: ModelSelection, credentials: CredentialSource) => Promise<LanguageModel>

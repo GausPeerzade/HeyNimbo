@@ -96,7 +96,12 @@ export interface AgentResults {
 }
 
 /** Folder access resolved by main from a native picker; only main and host see paths. */
-export interface FolderGrant { id: string; root: string; label: string }
+export interface FolderGrant {
+  id: string; root: string; label: string
+  /** `dev:ino` (bigint stat) of `root` when the owner picked it. Main always sets it;
+   *  tools deny when the root no longer resolves to the same directory. */
+  identity?: string
+}
 
 /** Main → host. */
 export type HostCommand =
@@ -127,7 +132,8 @@ export type HostState = 'idle' | 'starting' | 'ready' | 'crashed' | 'stopped'
 
 /** Main → Home pushes on `AgentChannels.events`. */
 export type AgentPush =
-  | { kind: 'events'; events: AgentEvent[]; runs: RunSummary[] }
+  /** `partials` lets main deliver durable events and streaming text in one push per frame. */
+  | { kind: 'events'; events: AgentEvent[]; runs: RunSummary[]; partials?: Array<{ runId: string; step: number; text: string }> }
   /** Transient streaming text for the current step; replaced by the persisted `text` event. */
   | { kind: 'partial'; runId: string; step: number; text: string }
   | { kind: 'host'; state: HostState; message?: string }
@@ -151,8 +157,9 @@ export type HostToMain =
   | { v: 1; kind: 'reply'; id: number; ok: true; result: unknown } | { v: 1; kind: 'reply'; id: number; ok: false; message: string }
   | { v: 1; kind: 'events'; events: AgentEvent[]; runs: RunSummary[] }
   | { v: 1; kind: 'partial'; runId: string; step: number; text: string }
-  /** `name` is a provider ID or 'brave-search'. Main answers only for the run's configured provider. */
-  | { v: 1; kind: 'credential.request'; id: number; name: string }
+  /** `name` is a provider ID or 'brave-search'. `baseURL` is the endpoint the key will be sent to;
+   *  main answers only when it equals the current connection's endpoint (keys are endpoint-bound). */
+  | { v: 1; kind: 'credential.request'; id: number; name: string; baseURL?: string }
 
 // ---------------------------------------------------------------------------
 // Validation. Strict: unknown fields, wrong types and oversized values throw.

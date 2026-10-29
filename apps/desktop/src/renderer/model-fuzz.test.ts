@@ -53,7 +53,9 @@ function answer(seed: number): string {
 const finite = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined) => !attribute || Array.from(attribute.array as ArrayLike<number>).every(Number.isFinite)
 
 describe('model fuzzing', () => {
-  it('never throws, never leaves a value unbounded, and never leaves an accepted part empty', () => {
+  // CPU-bound and deterministic (~2 s alone); the explicit timeout keeps it from
+  // failing when the agent load/perf files run in parallel workers.
+  it('never throws, never leaves a value unbounded, and never leaves an accepted part empty', { timeout: 20_000 }, () => {
     let accepted = 0
     for (let seed = 1; seed <= 160; seed++) {
       const text = answer(seed), parser = new BeatParser({ width: 1200, height: 800 })

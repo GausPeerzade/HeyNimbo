@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib'
+import { gzipSync, deflateSync, brotliCompressSync, constants as zlib } from 'node:zlib'
 import { isPublicAddress, safeFetch } from './net-policy'
 import type { Resolver } from './contracts'
 
@@ -55,8 +55,11 @@ it('stops a slow 50 MB response at the byte cap and closes the socket early', as
   expect(sent).toBeLessThan(total / 10)
 })
 
+// The property under test is the decompression cap, so compress quickly: brotli's
+// default maximum quality takes seconds on 100 MB and made this test time out.
+const fastBrotli = (input: Buffer) => brotliCompressSync(input, { params: { [zlib.BROTLI_PARAM_QUALITY]: 1 } })
 it.each([
-  ['gzip', gzipSync], ['deflate', deflateSync], ['br', brotliCompressSync],
+  ['gzip', (input: Buffer) => gzipSync(input, { level: 1 })], ['deflate', (input: Buffer) => deflateSync(input, { level: 1 })], ['br', fastBrotli],
 ] as const)('decodes %s with a decompressed-size cap against a 100 MB bomb', async (encoding, compress) => {
   const bomb = compress(Buffer.alloc(100 * 1024 * 1024))
   const url = await serve((_req, res) => {
