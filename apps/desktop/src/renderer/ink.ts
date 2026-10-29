@@ -8,7 +8,7 @@ export type Point = [number, number]
 
 export interface Stroke {
   points: Point[]
-  style: 'pen' | 'marker'
+  style: 'pen' | 'marker' | 'paper'
   /** Width override: markers are as thick as the area they highlight, dots as their radius. */
   size?: number
 }
@@ -69,7 +69,7 @@ export function smoothThrough(points: readonly Point[], samplesPerSegment = 10):
 }
 
 /** Strokes for a mark, or none for marks that are not ink. */
-export function strokesFor(mark: Mark): Stroke[] {
+export function strokesFor(mark: Mark, paper = false): Stroke[] {
   switch (mark.kind) {
     case 'circle': {
       const rand = random(mark.x * 31 + mark.y * 17 + mark.r)
@@ -105,8 +105,8 @@ export function strokesFor(mark: Mark): Stroke[] {
       const tip: Point = [mark.x2, mark.y2]
       const angle = Math.atan2(mark.y2 - mark.y1, mark.x2 - mark.x1)
       const head = (side: number): Point => [
-        tip[0] - Math.cos(angle + side * 0.5) * 20,
-        tip[1] - Math.sin(angle + side * 0.5) * 20,
+        tip[0] - Math.cos(angle + side * 0.5) * (paper ? 9 : 20),
+        tip[1] - Math.sin(angle + side * 0.5) * (paper ? 9 : 20),
       ]
       const rand = random(mark.x1 * 3 + mark.y2)
       return [
@@ -125,6 +125,11 @@ export function strokesFor(mark: Mark): Stroke[] {
     case 'dot':
       // One small loop with a pen as wide as the radius fills the whole disc.
       return [{ points: arcPoints(mark.x, mark.y, mark.r / 2, -90, 360), style: 'pen', size: mark.r }]
+    case 'card':
+    case 'heading':
+    case 'step':
+    case 'note':
+    case 'label':
     case 'point':
     case 'text':
     case 'clear':
@@ -176,10 +181,11 @@ export function samplePath(path: MeasuredPath, progress: number): { point: Point
 }
 
 export function geometryFor(stroke: Stroke): StrokeGeometry {
-  const width = stroke.size ?? (stroke.style === 'pen' ? 3.5 : 24)
+  const width = stroke.size ?? (stroke.style === 'paper' ? 2.4 : stroke.style === 'pen' ? 3.5 : 24)
   const options: StrokeOptions = {
     size: width, thinning: 0, smoothing: 0, streamline: 0,
     simulatePressure: false, last: true,
+    ...(stroke.style === 'paper' && { start: { taper: 10 }, end: { taper: 10 } }),
   }
   const polygon = getStroke(stroke.points, options)
   const coordinates = (points: number[][]): string => points.map(([x, y]) => `${x} ${y}`).join('L')

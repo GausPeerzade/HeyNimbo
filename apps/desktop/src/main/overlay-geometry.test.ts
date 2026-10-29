@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
+import { parseMark } from '../shared/beats'
+import { CardScene, CARD_PADDING, layoutFlow } from '../renderer/card-scene'
 
 // A 1440x900-point display left of the primary, captured at 1280x800 pixels.
 const left = { id: 2, bounds: { x: -1440, y: 0, width: 1440, height: 900 } }
@@ -40,4 +42,36 @@ describe('toOverlaySpace', () => {
       { kind: 'clear' },
     ])
   })
+})
+
+it('maps card outer bounds and both leader anchors, leaving flow intent unchanged', () => {
+  const capture = { frame: { x: -1000, y: 100, width: 1000, height: 600 }, pixelWidth: 2000, pixelHeight: 1200 }
+  const bounds = { x: -1000, y: 0, width: 1000, height: 800 }
+  expect(toOverlaySpace([
+    { kind: 'card', id: 'a', x: 100, y: 200, w: 600, h: 400, title: 'A', board: 'plain' },
+    { kind: 'label', x: 200, y: 400, lx: 600, ly: 800, text: 'Here' },
+    { kind: 'step', id: 'a', text: 'Go', direction: 'up', color: 'blue' },
+  ], capture, bounds)).toEqual([
+    { kind: 'card', id: 'a', x: 50, y: 200, w: 320, h: 200, title: 'A', board: 'plain' },
+    { kind: 'label', x: 100, y: 300, lx: 300, ly: 500, text: 'Here' },
+    { kind: 'step', id: 'a', text: 'Go', direction: 'up', color: 'blue' },
+  ])
+})
+
+it('keeps a minimum-size card readable and on display through 2× parse → geometry → row layout', () => {
+  const bounds = { x: -1440, y: 100, width: 1440, height: 900 }
+  const image = { width: 2880, height: 1800 }
+  const parsed = parseMark('@card water 2800 1000 1 1 "Water"', image)!
+  expect(parsed).toMatchObject({ kind: 'card', w: 240 })
+  const [mapped] = toOverlaySpace([parsed], { frame: bounds, pixelWidth: image.width, pixelHeight: image.height }, bounds)
+  if (mapped?.kind !== 'card') throw new Error('Expected a mapped card')
+  expect(mapped.x + mapped.w).toBeLessThanOrEqual(bounds.width)
+  expect(mapped.x).toBeGreaterThanOrEqual(0)
+  const card = new CardScene().open(mapped)!
+  const row = layoutFlow(card, 'step', 'Evaporation', (text) => text.length * 10, bounds.height)!
+  const wordWidth = card.x + card.w - CARD_PADDING - row.words[0]
+  expect(wordWidth).toBeGreaterThanOrEqual(160)
+  expect(row.writing.lines.map((line) => line.text)).toEqual(['Evaporation'])
+  expect(row.writing.shortened).toBe(false)
+  expect(row.words[0] + row.writing.lines[0]!.width).toBeLessThanOrEqual(bounds.width - CARD_PADDING)
 })

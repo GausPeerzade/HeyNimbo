@@ -6,30 +6,48 @@ import type { OverlayManager } from './windows'
 /** A last-resort process deadline, installed before waiting for app readiness. */
 export function limitDrawDemoRuntime(): void {
   if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return
-  setTimeout(() => app.exit(0), Math.max(0, 20_000 - process.uptime() * 1000))
+  setTimeout(() => app.exit(0), Math.max(0, 40_000 - process.uptime() * 1000))
 }
 
-/** Eight seconds of silent beats; main must return before creating audio or
- *  starting gestures, credentials, microphone capture or OpenAI connections. */
+/** Silent teaching beats; main returns before starting audio, gestures,
+ *  credentials, microphone capture or OpenAI connections. */
 export function scheduleDrawDemo(overlays: OverlayManager): boolean {
   if (!devFlag('NIMBO_DEBUG_DRAW_DEMO')) return false
   setTimeout(() => {
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     const space = { frame: bounds, pixelWidth: bounds.width, pixelHeight: bounds.height }
-    const x = bounds.width * 0.25
-    const y = bounds.height * 0.35
+    const x = Math.round(bounds.width * 0.06)
+    const y = Math.round(bounds.height * 0.12)
+    const w = Math.round(bounds.width * 0.41)
+    const right = Math.round(bounds.width * 0.55)
+    const cloudX = x + w * 0.59
+    const cloudY = y + 195
+    const sunX = x + 78
+    const sunY = y + 153
     const beats: Array<{ durationMs: number; marks: Mark[] }> = [
-      { durationMs: 1200, marks: [{ kind: 'circle', x, y, r: 65 }] },
-      { durationMs: 1300, marks: [{ kind: 'arrow', x1: x + 90, y1: y, x2: x + 300, y2: y + 55 }] },
-      { durationMs: 1200, marks: [{ kind: 'box', x: x + 320, y: y - 55, w: 145, h: 110 }] },
-      { durationMs: 800, marks: [{ kind: 'highlight', x: x - 60, y: y + 130, w: 210, h: 26 }] },
-      { durationMs: 800, marks: [{ kind: 'line', x1: x - 60, y1: y + 190, x2: x + 150, y2: y + 190 }] },
-      { durationMs: 900, marks: [{ kind: 'text', x: x + 200, y: y + 180, text: 'Follow the pen' }] },
-      { durationMs: 900, marks: [{ kind: 'point', x: x + 400, y: y + 170, label: 'Start here' }] },
-      { durationMs: 900, marks: [{ kind: 'point', x: bounds.width - 24, y: y + 230, label: 'Then here' }] },
+      { durationMs: 1800, marks: [
+        { kind: 'card', id: 'sky', x, y, w, h: 370, title: 'A drop’s round trip', board: 'plain' },
+        { kind: 'heading', id: 'sky', text: 'From sea to sky' },
+      ] },
+      { durationMs: 2700, marks: [
+        { kind: 'arc', x: sunX, y: sunY, r: 28, start: -90, sweep: 360 },
+        { kind: 'curve', points: [[cloudX - 82, cloudY + 20], [cloudX - 100, cloudY - 1], [cloudX - 83, cloudY - 22], [cloudX - 57, cloudY - 21], [cloudX - 43, cloudY - 50], [cloudX - 13, cloudY - 48], [cloudX + 10, cloudY - 28], [cloudX + 42, cloudY - 30], [cloudX + 67, cloudY - 10], [cloudX + 66, cloudY + 16], [cloudX + 42, cloudY + 23], [cloudX - 82, cloudY + 20]] },
+      ] },
+      { durationMs: 2000, marks: [
+        { kind: 'card', id: 'cycle', x: right, y: y + 30, w: Math.round(bounds.width * 0.37), h: 180, title: 'The water cycle', board: 'grid' },
+        { kind: 'heading', id: 'cycle', text: 'One continuous journey' },
+      ] },
+      { durationMs: 2600, marks: [{ kind: 'step', id: 'cycle', text: 'Evaporation', direction: 'up', color: 'orange' }] },
+      { durationMs: 2200, marks: [{ kind: 'label', x: sunX + 20, y: sunY + 15, lx: x + 22, ly: y + 285, text: 'Warmth lifts water' }] },
+      { durationMs: 2600, marks: [{ kind: 'step', id: 'cycle', text: 'Condensation', direction: 'right', color: 'purple' }] },
+      { durationMs: 2200, marks: [{ kind: 'label', x: cloudX + 20, y: cloudY, lx: cloudX - 32, ly: y + 320, text: 'Tiny drops gather' }] },
+      { durationMs: 2600, marks: [{ kind: 'step', id: 'cycle', text: 'Precipitation', direction: 'down', color: 'blue' }] },
+      { durationMs: 2600, marks: [{ kind: 'step', id: 'cycle', text: 'Collection', direction: 'left', color: 'green' }] },
+      { durationMs: 1700, marks: [{ kind: 'note', id: 'cycle', text: 'Then the journey begins again.' }] },
+      { durationMs: 1600, marks: [{ kind: 'point', x: x + w / 2, y: y + 410, label: 'Powered by the sun' }] },
     ]
     overlays.clear()
-    console.info('[draw-demo] start')
+    console.info('[draw-demo] start: water cycle')
     let delay = 0
     for (const beat of beats) {
       setTimeout(() => overlays.drawBeat(beat.marks, beat.durationMs, space), delay)
@@ -37,8 +55,8 @@ export function scheduleDrawDemo(overlays: OverlayManager): boolean {
     }
     setTimeout(() => {
       console.info('[draw-demo] complete')
-      overlays.fadeSoon(0)
-      setTimeout(() => app.quit(), 3000)
+      overlays.answerDone(4500)
+      setTimeout(() => app.quit(), 6500)
     }, delay)
   }, 3000)
   return true

@@ -21,8 +21,14 @@ You can also draw on their screen to show what you mean. Write each drawing comm
 @arc X Y R START SWEEP  part of a circle; angles in degrees, 0 is three o'clock, positive turns clockwise (-90 is straight up)
 @curve X1 Y1 X2 Y2 ...  a smooth freehand line through 2 to 24 points
 @dot X Y R            a small filled dot
+@card ID X Y W H "title" [grid|dots|plain]  paper window (outer box)
+@heading ID "words"   handwritten card heading
+@step ID "words" [up|down|left|right] [blue|red|orange|green|purple|grey]  next numbered row; positions automatic
+@note ID "words"      wrapped card note
+@label X Y LX LY "words"  leader from feature X Y to handwriting at LX LY
 @clear                erase your earlier drawings
-Use drawings to point things out, and also to sketch when they ask you to draw something. Sketch it as a simple line drawing in an empty area or where they point, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twelve commands per answer, and don't draw without a screenshot.`
+For processes or concepts use a card with steps, in empty screen space, not over the subject. IDs: lowercase a-z, digits or hyphens, 1–16 characters; open before referring, up to 3 cards and 8 steps each. Card/leader words at most 60 characters; keep them short. Size H for content: about 80px per step plus header, heading and padding; place it where that full height fits.
+Use drawings to point things out, and also to sketch when they ask you to draw something. Sketch it as a simple line drawing in an empty area or where they point, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twenty commands per answer, and don't draw without a screenshot.`
 
 export interface Exchange {
   question: string

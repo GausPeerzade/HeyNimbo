@@ -1,4 +1,4 @@
-import type { Mark } from '../shared/beats'
+import { CARD_MIN_OVERLAY_WIDTH, type Mark } from '../shared/beats'
 
 export interface Rect {
   x: number
@@ -44,12 +44,22 @@ export function toOverlaySpace(marks: readonly Mark[], capture: CaptureSpace, di
         return { ...mark, x: x(mark.x), y: y(mark.y), r: mark.r * sx }
       case 'curve':
         return { ...mark, points: mark.points.map(([px, py]): [number, number] => [x(px), y(py)]) }
+      case 'card': {
+        const w = Math.min(displayBounds.width, Math.max(CARD_MIN_OVERLAY_WIDTH, mark.w * sx))
+        const h = Math.min(displayBounds.height, mark.h * sy)
+        return { ...mark, x: Math.max(0, Math.min(displayBounds.width - w, x(mark.x))), y: Math.max(0, Math.min(displayBounds.height - h, y(mark.y))), w, h }
+      }
       case 'box':
       case 'highlight':
         return { ...mark, x: x(mark.x), y: y(mark.y), w: mark.w * sx, h: mark.h * sy }
       case 'arrow':
       case 'line':
         return { ...mark, x1: x(mark.x1), y1: y(mark.y1), x2: x(mark.x2), y2: y(mark.y2) }
+      case 'label':
+        return { ...mark, x: x(mark.x), y: y(mark.y), lx: x(mark.lx), ly: y(mark.ly) }
+      case 'heading':
+      case 'step':
+      case 'note':
       case 'clear':
         return mark
     }

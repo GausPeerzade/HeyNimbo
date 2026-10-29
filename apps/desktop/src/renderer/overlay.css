@@ -1,31 +1,69 @@
+@font-face {
+  font-family: "Caveat"; src: url('./fonts/Caveat.ttf') format('truetype');
+  font-weight: 400 700; font-display: block;
+}
+/* Provisional drawing palette; replace the brand in this one place. */
+:root {
+  --ink: #283d40; --paper: #faf7ef; --paper-header: #dce8e2;
+  --grid-line: #587e7920; --grey: #6d797f;
+  --blue: #286f9d; --red: #b54e62; --orange: #bd742e;
+  --green: #38816b; --purple: #7a60a5;
+  --buddy: #ca4d89; --gloss: #fffffff0; --shadow: #172e32;
+  --ui-surface: #1c2c30; --ui-text: #f4faf5;
+}
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
 #stage { width: 100%; height: 100%; }
 
-.ring { fill: none; stroke: #5ac8fa; stroke-width: 4; animation: breathe 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ring { fill: none; stroke: var(--blue); stroke-width: 4; animation: breathe 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes breathe { 50% { transform: scale(1.25); opacity: 0.55; } }
 
 /* Constant-width screen ink, with a soft same-color bloom. */
-.pen { fill: #2f6bff; filter: drop-shadow(0 0 4px rgb(47 107 255 / 0.45)); }
+.pen { fill: var(--blue); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--blue) 45%, transparent)); }
 .wash { mix-blend-mode: multiply; }
-.marker { fill: #ffd84d; opacity: 0.45; }
-.note { fill: #2f6bff; font: 24px "Chalkboard SE", "Marker Felt", "Segoe Print", "Comic Sans MS", cursive; }
+.marker { fill: var(--orange); opacity: 0.45; }
+.note { fill: var(--blue); font: 500 26px "Caveat", cursive; }
 
 /* The buddy has its own color, apart from the ink it draws. Its origin is the
    pen's tip, so transforms cannot detach it from ink. */
-.buddy { color: #f43f8e; }
+.buddy { color: var(--buddy); }
 .buddy-body { fill: currentColor; stroke-linejoin: round; filter: drop-shadow(0 0 var(--glow, 8px) currentColor); }
-.buddy-fold { fill: none; stroke: rgb(255 255 255 / 0.92); stroke-width: 1.6; stroke-linecap: round; }
-.label rect { fill: #2f6bff; filter: drop-shadow(0 0 4px rgb(47 107 255 / 0.3)); }
-.label text { fill: #fff; font: 500 13px -apple-system, "Segoe UI", sans-serif; }
+.buddy-fold { fill: none; stroke: var(--gloss); stroke-width: 1.6; stroke-linecap: round; }
+.label .gel-rim { stroke: var(--blue); stroke-width: 1; filter: drop-shadow(0 3px 4px color-mix(in srgb, var(--shadow) 20%, transparent)); }
+.gel-top { stop-color: color-mix(in srgb, var(--paper) 85%, var(--blue)); }
+.gel-middle { stop-color: color-mix(in srgb, var(--paper) 60%, var(--blue)); }
+.gel-bottom { stop-color: color-mix(in srgb, var(--paper) 45%, var(--blue)); }
+.label text { fill: var(--ink); font: 600 13px -apple-system, "Segoe UI", sans-serif; }
 
-/* The one clickable thing on the overlay: a small pill to clear the drawing. */
+/* Interactive regions alone receive input; the native surface stays non-focusing. */
 #clear {
   position: absolute; pointer-events: auto; display: flex; align-items: center; gap: 6px;
   padding: 5px 11px 5px 9px; border: 0; border-radius: 999px;
-  background: rgb(20 20 24 / 0.88); color: #f5f5f7; font: 600 12px -apple-system, "Segoe UI", sans-serif;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28); cursor: pointer; animation: chip-in 180ms ease-out;
+  background: color-mix(in srgb, var(--ui-surface) 88%, transparent); color: var(--ui-text); font: 600 12px -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 28%, transparent); cursor: pointer; animation: chip-in 180ms ease-out;
 }
 #clear[hidden] { display: none; }
-#clear:hover { background: rgb(10 10 12 / 0.96); }
+#clear:hover { background: color-mix(in srgb, var(--ui-surface) 96%, transparent); }
 #clear span { font-size: 11px; opacity: 0.8; }
 @keyframes chip-in { from { opacity: 0; transform: scale(0.85); } }
+
+.card-surface { fill: var(--paper); stroke: color-mix(in srgb, var(--ink) 25%, transparent); stroke-width: 1; filter: drop-shadow(0 7px 12px color-mix(in srgb, var(--shadow) 15%, transparent)); }
+.card-header { fill: var(--paper-header); }
+.card-title { fill: var(--ink); font: 500 12px -apple-system, "Segoe UI", sans-serif; }
+.grid-line { stroke: var(--grid-line); stroke-width: 1; }
+.grid-dot { fill: var(--grid-line); }
+.paper { fill: var(--ink); }
+.note { fill: var(--ink); stroke: var(--paper); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; }
+.badge-disc { fill: color-mix(in srgb, var(--blue) 27%, var(--paper)); stroke: var(--blue); stroke-width: 1; filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--shadow) 15%, transparent)); }
+.gel-gloss { fill: var(--gloss); opacity: 0.7; }
+.badge text { fill: var(--ink); font: 700 12px -apple-system, "Segoe UI", sans-serif; }
+.leader-dot { fill: var(--ink); stroke: var(--paper); stroke-width: 1; }
+
+.paper-card { pointer-events: auto; }
+/* Opacity alone does not disable SVG hit-testing, including explicit child controls. */
+.paper-card[data-interactive="false"], .paper-card[data-interactive="false"] * { pointer-events: none; }
+.card-drag { fill: transparent; cursor: grab; pointer-events: all; touch-action: none; }
+.card-drag:active { cursor: grabbing; }
+.card-close { opacity: 0; cursor: pointer; pointer-events: all; }
+.paper-card:hover .card-close { opacity: 1; }
+.card-close rect { fill: color-mix(in srgb, var(--paper) 75%, var(--red)); }
+.card-close text { fill: var(--ink); font: 18px -apple-system, "Segoe UI", sans-serif; pointer-events: none; }

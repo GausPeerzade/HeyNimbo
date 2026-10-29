@@ -65,3 +65,27 @@ describe('BeatParser', () => {
     expect(parser.push('The menu is on the left. And the')).toEqual([{ marks: [], sentence: 'The menu is on the left.' }])
   })
 })
+
+describe('card protocol', () => {
+  it('validates every new command, defaults and outer bounds', () => {
+    expect(parseMark('@card water -20 790 10 20 "Water cycle" dots', IMAGE)).toEqual({ kind: 'card', id: 'water', x: 0, y: 620, w: 240, h: 180, title: 'Water cycle', board: 'dots' })
+    expect(parseMark('@heading water "A journey"', IMAGE)).toEqual({ kind: 'heading', id: 'water', text: 'A journey' })
+    expect(parseMark('@note water "Clouds form"', IMAGE)).toEqual({ kind: 'note', id: 'water', text: 'Clouds form' })
+    expect(parseMark('@step water "Rise"', IMAGE)).toEqual({ kind: 'step', id: 'water', text: 'Rise', direction: 'down', color: 'blue' })
+    for (const direction of ['up', 'down', 'left', 'right']) for (const color of ['blue', 'red', 'orange', 'green', 'purple', 'grey'])
+      expect(parseMark(`@step water "Move" ${direction} ${color}`, IMAGE)).toMatchObject({ direction, color })
+    expect(parseMark('@label -1 900 120 160 "Cloud"', IMAGE)).toEqual({ kind: 'label', x: 0, y: 800, lx: 120, ly: 160, text: 'Cloud' })
+    for (const bad of ['@card Bad 0 0 300 200 "Bad"', '@card abcdefghijklmnopq 0 0 300 200 "Bad"', '@card a 0 0 0 200 "Bad"', '@card a 0 0 300 200 "Bad" stripes', '@heading a ""', '@step a "a" north blue', '@step a "a" up cyan', '@note a "x" up', `@label 1 2 3 4 "${'a'.repeat(61)}"`, `@card a 1 2 300 200 "${'b'.repeat(61)}"`, `@heading a "${'x'.repeat(61)}"`, `@step a "${'x'.repeat(61)}"`, `@note a "${'x'.repeat(61)}"`]) expect(parseMark(bad, IMAGE), bad).toBeUndefined()
+  })
+
+  it('retains references across sentences, bounds cards/steps, drops unknown and cleared refs', () => {
+    const answer = ['@step missing "Drop"', '@card a 0 0 300 200 "A"', 'First.', ...Array.from({ length: 9 }, (_, i) => `@step a "Step ${i}" up green\nNext.`), '@card b 0 0 300 200 "B"', '@card c 0 0 300 200 "C"', '@card d 0 0 300 200 "D"', '@heading missing "Drop"', '@note missing "Drop"', '@clear', '@note a "Drop"'].join('\n')
+    for (const chunk of [1, 17, answer.length]) {
+      const marks = stream(answer, chunk).flatMap((beat) => beat.marks)
+      expect(marks.filter((mark) => mark.kind === 'step')).toHaveLength(8)
+      expect(marks.filter((mark) => mark.kind === 'card')).toHaveLength(3)
+      expect(marks.some((mark) => 'text' in mark && mark.text === 'Drop')).toBe(false)
+    }
+    expect(stream('@dot 1 2 1\n'.repeat(25), 5).flatMap((beat) => beat.marks)).toHaveLength(20)
+  })
+})

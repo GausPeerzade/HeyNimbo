@@ -10,6 +10,9 @@
 
 import { SentenceSplitter } from './sentences'
 
+export type SemanticColor = 'blue' | 'red' | 'orange' | 'green' | 'purple' | 'grey'
+export type StepDirection = 'up' | 'down' | 'left' | 'right'
+
 export type Mark =
   | { kind: 'point'; x: number; y: number; label?: string }
   | { kind: 'circle'; x: number; y: number; r: number }
@@ -23,6 +26,11 @@ export type Mark =
   /** A smooth freehand line through its points, for sketches and icons. */
   | { kind: 'curve'; points: Array<[number, number]> }
   | { kind: 'dot'; x: number; y: number; r: number }
+  | { kind: 'card'; id: string; x: number; y: number; w: number; h: number; title: string; board: 'grid' | 'dots' | 'plain' }
+  | { kind: 'heading'; id: string; text: string }
+  | { kind: 'note'; id: string; text: string }
+  | { kind: 'step'; id: string; text: string; direction: StepDirection; color: SemanticColor }
+  | { kind: 'label'; x: number; y: number; lx: number; ly: number; text: string }
   | { kind: 'clear' }
 
 /** A sentence to speak, with the marks to draw as it starts. A final beat may
@@ -43,10 +51,13 @@ const MAX_DOT_RADIUS = 30
 
 /** Parses one "@command args" line, clamped to the image; undefined if invalid. */
 export function parseMark(line: string, image: ImageSize): Mark | undefined {
+  const cardMark = parseCardMark(line.trim(), image)
+  if (cardMark) return cardMark
   const match = /^@(\w+)((?:\s+-?\d+(?:\.\d+)?)*)\s*(?:"([^"]*)")?\s*$/.exec(line.trim())
   if (!match) return undefined
   const [, command = '', numbers = '', quoted] = match
   const n = numbers.trim() ? numbers.trim().split(/\s+/).map(Number) : []
+  if (n.some((value) => !Number.isFinite(value))) return undefined
   const x = (value: number): number => clamp(value, 0, image.width)
   const y = (value: number): number => clamp(value, 0, image.height)
   const label = quoted?.trim().slice(0, MAX_TEXT) || undefined
@@ -90,6 +101,37 @@ export function parseMark(line: string, image: ImageSize): Mark | undefined {
   }
 }
 
+export const CARD_ID_PATTERN = '[a-z0-9-]{1,16}'
+/** CSS-pixel floor after screenshot scaling: room for columns and readable words. */
+export const CARD_MIN_OVERLAY_WIDTH = 320
+const NUMBER = '-?\\d+(?:\\.\\d+)?'
+
+function parseCardMark(line: string, image: ImageSize): Mark | undefined {
+  const textOK = (text: string): boolean => text.trim().length > 0 && Array.from(text).length <= 60
+  const card = new RegExp(`^@card (${CARD_ID_PATTERN}) (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"(?: (grid|dots|plain))?$`).exec(line)
+  if (card) {
+    const [, id, ax, ay, aw, ah, title, board] = card
+    const [x, y, w, h] = [ax, ay, aw, ah].map(Number) as [number, number, number, number]
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0 || !textOK(title!)) return undefined
+    const width = clamp(w, Math.min(240, image.width), image.width)
+    const height = clamp(h, Math.min(180, image.height), image.height)
+    return { kind: 'card', id: id!, x: clamp(x, 0, image.width - width), y: clamp(y, 0, image.height - height), w: width, h: height, title: title!.trim(), board: (board ?? 'grid') as 'grid' | 'dots' | 'plain' }
+  }
+  const flow = new RegExp(`^@(heading|note|step) (${CARD_ID_PATTERN}) "([^"\\n]*)"(?: (up|down|left|right))?(?: (blue|red|orange|green|purple|grey))?$`).exec(line)
+  if (flow) {
+    const [, kind, id, text, direction, color] = flow
+    if (!textOK(text!) || (kind !== 'step' && (direction || color))) return undefined
+    return kind === 'step'
+      ? { kind, id: id!, text: text!.trim(), direction: (direction ?? 'down') as StepDirection, color: (color ?? 'blue') as SemanticColor }
+      : { kind: kind as 'heading' | 'note', id: id!, text: text!.trim() }
+  }
+  const label = new RegExp(`^@label (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"$`).exec(line)
+  if (!label || !textOK(label[5]!)) return undefined
+  const [x, y, lx, ly] = label.slice(1, 5).map(Number) as [number, number, number, number]
+  if (![x, y, lx, ly].every(Number.isFinite)) return undefined
+  return { kind: 'label', x: clamp(x, 0, image.width), y: clamp(y, 0, image.height), lx: clamp(lx, 0, image.width), ly: clamp(ly, 0, image.height), text: label[5]!.trim() }
+}
+
 function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value))
 }
@@ -99,6 +141,9 @@ function clamp(value: number, low: number, high: number): number {
 export class BeatParser {
   private readonly splitter = new SentenceSplitter()
   private pendingMarks: Mark[] = []
+  private readonly cards = new Map<string, number>()
+  private cardCount = 0
+  private commandCount = 0
   private atLineStart = true
   private markLine: string | undefined
 
@@ -144,7 +189,18 @@ export class BeatParser {
 
   private endMarkLine(): void {
     const mark = parseMark(this.markLine ?? '', this.image)
-    if (mark) this.pendingMarks.push(mark)
+    if (mark && this.commandCount < 20) {
+      let valid = true
+      if (mark.kind === 'card') {
+        valid = this.cardCount < 3 && !this.cards.has(mark.id)
+        if (valid) { this.cards.set(mark.id, 0); this.cardCount++ }
+      } else if (mark.kind === 'step' || mark.kind === 'heading' || mark.kind === 'note') {
+        const steps = this.cards.get(mark.id)
+        valid = steps !== undefined && (mark.kind !== 'step' || steps < 8)
+        if (valid && mark.kind === 'step') this.cards.set(mark.id, steps! + 1)
+      } else if (mark.kind === 'clear') this.cards.clear()
+      if (valid) { this.pendingMarks.push(mark); this.commandCount++ }
+    }
     this.markLine = undefined
   }
 

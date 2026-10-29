@@ -51,3 +51,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Caveat handwriting family
+
+Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat).
+Bundled unmodified variable TrueType family from google/fonts `ofl/caveat/Caveat[wght].ttf`.
+Licensed under the SIL Open Font License 1.1; the full license accompanies the font in
+`apps/desktop/src/renderer/fonts/OFL.txt`.
+SHA-256: `0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988`.

@@ -127,7 +127,7 @@ describe('OverlayManager cursor following', () => {
 
     const [left, right] = state.windows
     const button = (payload: unknown): void => state.overlayEvent!({ sender: left!.webContents }, payload)
-    button({ kind: 'clearHover', over: true })
+    button({ kind: 'interactiveRegion', id: 'clear', over: true, captured: false })
     expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
     expect(right!.setIgnoreMouseEvents).not.toHaveBeenCalledWith(false, { forward: true })
 
@@ -144,4 +144,70 @@ describe('OverlayManager cursor following', () => {
     expect(sent(0).at(-1)?.kind).toBe('fade')
     overlays.stopFollowing()
   })
+  it('ignores malformed region payloads without ever enabling capture', () => {
+    const overlays = setup()
+    const left = state.windows[0]!
+    const malformed = [
+      null, undefined, 'interactiveRegion',
+      { id: { value: 'clear' }, over: true, captured: false },
+      { id: 'clear', over: 'true', captured: false },
+      { id: 'clear', over: true, captured: 1 },
+      { id: 'clear', over: false, captured: 'false' },
+      { id: 'clear', over: true },
+      { id: 'unknown', over: true, captured: true },
+      { id: 'card:', over: true, captured: true },
+      { id: 'card:Bad', over: true, captured: true },
+      { id: `card:${'a'.repeat(17)}`, over: true, captured: true },
+      { id: 'clear\n', over: true, captured: true },
+    ]
+    for (const payload of malformed) {
+      const event = payload && typeof payload === 'object' ? { kind: 'interactiveRegion', ...payload } : payload
+      expect(() => state.overlayEvent!({ sender: left.webContents }, event)).not.toThrow()
+      expect(left.setIgnoreMouseEvents).not.toHaveBeenCalledWith(false, { forward: true })
+      expect(left.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    }
+    overlays.stopFollowing()
+  })
+
+  it('caps regions per display without retaining excess regions after valid ones release', () => {
+    const overlays = setup()
+    const left = state.windows[0]!
+    const region = (id: string, over: boolean): void => state.overlayEvent!({ sender: left.webContents }, { kind: 'interactiveRegion', id, over, captured: false })
+    const ids = ['clear', 'card:a', 'card:b', `card:${'a'.repeat(16)}`]
+    for (const id of ids) region(id, true)
+    expect(left.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    region('card:excess', true)
+    for (const id of ids) region(id, false)
+    expect(left.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    region('card:excess', false)
+    expect(left.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    overlays.stopFollowing()
+  })
+
+  it('keeps capture through region leave, combines regions per display, and resets on clear/reload/fade', () => {
+    const overlays = setup()
+    const [left, right] = state.windows
+    const event = (id: string, over: boolean, captured = false): void => state.overlayEvent!({ sender: left!.webContents }, { kind: 'interactiveRegion', id, over, captured })
+    event('card:a', true, true)
+    event('card:a', false, true)
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    event('clear', true)
+    event('card:a', false)
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true })
+    event('clear', false)
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    expect(right!.setIgnoreMouseEvents).not.toHaveBeenCalledWith(false, { forward: true })
+    event('card:a', true, true)
+    overlays.clear()
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    event('card:b', true)
+    overlays.fadeSoon(0)
+    vi.advanceTimersByTime(0)
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    event('clear', true)
+    ;(left!.webContents as unknown as { emit: (name: string) => void }).emit('did-finish-load')
+    expect(left!.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true })
+    overlays.stopFollowing()
+  })
+
 })

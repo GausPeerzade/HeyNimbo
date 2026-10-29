@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
   quit: vi.fn(), exit: vi.fn(),
-  overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
+  overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
 }))
 
 vi.mock('electron', () => ({
@@ -39,8 +39,8 @@ it('boots the real demo branch without constructing audio, starting talk or acce
   vi.spyOn(process, 'uptime').mockReturnValue(0)
   vi.spyOn(console, 'info').mockImplementation(() => {})
   await import('./index')
-  await vi.advanceTimersByTimeAsync(14000)
-  expect(mocks.overlays.drawBeat).toHaveBeenCalledTimes(8)
+  await vi.advanceTimersByTimeAsync(34100)
+  expect(mocks.overlays.drawBeat).toHaveBeenCalledTimes(11)
   expect(mocks.overlays.onStrokeStarted).toBeUndefined()
   for (const dependency of [mocks.audio, mocks.ears, mocks.mouth, mocks.talk, mocks.gestures, mocks.key, mocks.setup]) {
     expect(dependency).not.toHaveBeenCalled()

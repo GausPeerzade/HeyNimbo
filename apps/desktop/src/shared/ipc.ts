@@ -48,8 +48,8 @@ export type OverlayEvent =
   | { kind: 'strokeStarted'; durationMs: number; epoch: number }
   /** The buddy finished its work and is following the cursor again. */
   | { kind: 'buddyIdle' }
-  /** The pointer entered or left the Clear button, so clicks there must land. */
-  | { kind: 'clearHover'; over: boolean }
+  /** A narrowly scoped region owns hover and, while dragging, pointer capture. */
+  | { kind: 'interactiveRegion'; id: string; over: boolean; captured: boolean }
   | { kind: 'clearClicked' }
   | { kind: 'frameTrace'; deltas: number[] }
 

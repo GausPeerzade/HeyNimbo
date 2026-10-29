@@ -1,4 +1,6 @@
 import type { Mark } from '../shared/beats'
+import { CardScene, layoutFlow, markCenter, objectPoint, BADGE_RADIUS, type CardState, type SceneObject } from './card-scene'
+import { sampleWriting, wrapWriting, writingDuration, type WritingLayout } from './handwriting'
 import { FrameTrace } from './frame-trace'
 import type { OverlayCommand, OverlayRing } from '../shared/ipc'
 import { geometryFor, samplePath, strokesFor, type Point, type StrokeGeometry } from './ink'
@@ -9,18 +11,28 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 const stage = document.getElementById('stage') as unknown as SVGSVGElement
 const clearButton = document.getElementById('clear') as HTMLButtonElement
 const scene = layer('scene')
+const cardsLayer = layer('cards', scene)
+const cardScene = new CardScene()
+const pillBoxes: Array<{ x: number; y: number; w: number; h: number; node: SVGGElement }> = []
+const objectNodes = new Map<SceneObject, SVGGElement>()
+const cardViews = new Map<CardState, { root: SVGGElement; surface: SVGRectElement; board: SVGRectElement; body: SVGGElement; layers: Record<'wash' | 'ink' | 'words', SVGGElement> }>()
 const ringLayer = layer('rings', scene)
 const washLayer = layer('wash', scene)
 const inkLayer = layer('ink', scene)
 const wordsLayer = layer('words', scene)
 const buddyLayer = layer('buddy-layer')
 const FADE_MS = 240
+const regions = new Map<string, { over: boolean; captured: boolean }>()
+const warnedOmissions = new Set<CardState>()
+const releaseDrags = new Map<CardState, () => void>()
 
 interface Action extends Gesture {
+  owner?: SceneObject
   begin: (durationMs: number) => (progress: number) => void
 }
 
 interface Animation {
+  owner?: SceneObject
   start: number
   durationMs: number
   begin: (durationMs: number) => (progress: number) => void
@@ -87,6 +99,7 @@ function tick(now: number): void {
   framePending = false
   while (animations.length) {
     const animation = animations[0]!
+    if (animation.owner?.removed) { animations.shift(); continue }
     if (now < animation.start) break
     animation.frame ??= animation.begin(Math.max(0, animation.start + animation.durationMs - now))
     const progress = animation.durationMs > 0 ? Math.min(1, (now - animation.start) / animation.durationMs) : 1
@@ -174,14 +187,14 @@ function flyHome(at: number): void {
   })
 }
 
-function strokeAction(geometry: StrokeGeometry, group: number): Action {
+function strokeAction(geometry: StrokeGeometry, group: number, owner?: SceneObject, color?: string): Action {
   const padding = geometry.width + 8
   const left = Math.min(...geometry.points.map(([x]) => x)) - padding
   const top = Math.min(...geometry.points.map(([, y]) => y)) - padding
   const right = Math.max(...geometry.points.map(([x]) => x)) + padding
   const bottom = Math.max(...geometry.points.map(([, y]) => y)) + padding
   return {
-    group, from: geometry.points[0]!, to: geometry.points.at(-1)!,
+    group, owner, from: geometry.points[0]!, to: geometry.points.at(-1)!,
     seconds: strokeDuration(geometry.length),
     begin: (durationMs) => {
       const id = `ink-reveal-${nextId++}`
@@ -193,7 +206,8 @@ function strokeAction(geometry: StrokeGeometry, group: number): Action {
       })
       mask.append(reveal)
       const path = element('path', { class: geometry.style, d: geometry.outline, mask: `url(#${id})`, opacity: 0 })
-      const target = geometry.style === 'marker' ? washLayer : inkLayer
+      if (color) path.style.fill = color
+      const target = owner ? objectNodes.get(owner)! : geometry.style === 'marker' ? washLayer : inkLayer
       target.append(mask, path)
       window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       // Progressive reveal/pen presence adapted from Jason Kneen's MIT overlay;
@@ -203,35 +217,157 @@ function strokeAction(geometry: StrokeGeometry, group: number): Action {
         reveal.setAttribute('stroke-dashoffset', String(1 - progress))
         reveal.setAttribute('stroke-linecap', progress === 1 ? 'round' : 'butt')
         const tip = samplePath(geometry, progress)
-        moveBuddy(tip.point, tip.angle)
+        moveBuddy(objectPoint(owner, tip.point), tip.angle)
       }
     },
   }
 }
 
-function textAction(mark: Extract<Mark, { kind: 'text' }>, group: number): Action {
-  const text = element('text', { x: mark.x, y: mark.y, class: 'note' })
-  text.textContent = mark.text
-  wordsLayer.append(text)
-  const width = text.getComputedTextLength() + 8
-  text.remove()
+function measureWriting(size: number): (text: string) => number {
+  const context = document.createElement('canvas').getContext('2d')!
+  context.font = `500 ${size}px Caveat`
+  return (text) => context.measureText(text).width
+}
+
+function writingAction(layout: WritingLayout, at: Point, group: number, owner: SceneObject): Action {
+  const target = objectNodes.get(owner)!
+  const end = sampleWriting(layout, at, 1).tip
   return {
-    group, from: [mark.x, mark.y - 6], to: [mark.x + width, mark.y - 6],
-    seconds: Math.min(1.4, 0.4 + 0.015 * mark.text.length),
+    group, owner, from: sampleWriting(layout, at, 0).tip, to: end,
+    seconds: writingDuration(layout.lines.map((line) => line.text).join('\n')),
     begin: (durationMs) => {
-      const id = `text-reveal-${nextId++}`
-      const clip = element('clipPath', { id })
-      const reveal = element('rect', { x: mark.x - 4, y: mark.y - 40, width: 0, height: 60 })
-      clip.append(reveal)
-      text.setAttribute('clip-path', `url(#${id})`)
-      wordsLayer.append(clip, text)
+      const parts = layout.lines.map((line, i) => {
+        const id = `writing-${nextId++}`
+        const y = at[1] + i * layout.lineHeight
+        const gradient = element('linearGradient', { id: `${id}-edge`, x1: line.rtl ? 1 : 0, x2: line.rtl ? 0 : 1, y1: 0, y2: 0 })
+        gradient.append(element('stop', { offset: 0, 'stop-color': 'white' }), element('stop', { offset: 1, 'stop-color': 'white', 'stop-opacity': 0 }))
+        const mask = element('mask', { id, maskUnits: 'userSpaceOnUse', x: at[0] - 4, y: y - layout.size, width: line.width + 12, height: layout.lineHeight + 8 })
+        const solid = element('rect', { x: at[0] - 3, y: y - layout.size, width: 0, height: layout.lineHeight + 8, fill: 'white' })
+        const edge = element('rect', { x: at[0], y: y - layout.size, width: 5, height: layout.lineHeight + 8, fill: `url(#${id}-edge)` })
+        mask.append(solid, edge)
+        const text = element('text', { x: at[0] + (line.rtl ? line.width : 0), y, direction: line.rtl ? 'rtl' : 'ltr', 'unicode-bidi': 'plaintext', class: 'note', mask: `url(#${id})`, opacity: 0 })
+        text.style.fontSize = `${layout.size}px`
+        text.textContent = line.text
+        target.append(gradient, mask, text)
+        return { solid, edge, text }
+      })
       window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       return (progress) => {
-        reveal.setAttribute('width', String(width * progress))
-        moveBuddy([mark.x + width * progress, mark.y - 6], 90)
+        const sample = sampleWriting(layout, at, progress)
+        for (const [i, part] of parts.entries()) {
+          const width = sample.widths[i]!
+          const line = layout.lines[i]!
+          const complete = width >= line.width
+          part.text.setAttribute('opacity', width > 0 ? '1' : '0')
+          part.solid.setAttribute('width', String(Math.max(0, width - 2 + (complete ? 8 : 0))))
+          part.solid.setAttribute('x', String(line.rtl ? at[0] + line.width - width + (complete ? -4 : 2) : at[0] - 3))
+          part.edge.setAttribute('x', String(line.rtl ? at[0] + line.width - width : at[0] + width - 5))
+        }
+        moveBuddy(objectPoint(owner, sample.tip), 90)
       }
     },
   }
+}
+
+function retainObject(center: Point, card?: CardState, kind: 'wash' | 'ink' | 'words' = 'words'): SceneObject {
+  const owner = cardScene.retain(center, card)
+  const parent = owner.card ? cardViews.get(owner.card)!.layers[kind] : kind === 'wash' ? washLayer : kind === 'ink' ? inkLayer : wordsLayer
+  const node = layer('scene-object', parent)
+  node.setAttribute('data-layer', kind)
+  node.setAttribute('transform', `translate(${-owner.originOffset[0]} ${-owner.originOffset[1]})`)
+  objectNodes.set(owner, node)
+  return owner
+}
+
+function cardAction(mark: Extract<Mark, { kind: 'card' }>, group: number): Action[] {
+  const card = cardScene.open(mark)
+  if (!card) return []
+  const root = layer('paper-card', cardsLayer)
+  root.setAttribute('opacity', '0')
+  root.setAttribute('data-interactive', 'false')
+  const surface = element('rect', { class: 'card-surface', x: card.x, y: card.y, width: card.w, height: card.h, rx: 10 })
+  const header = element('path', { class: 'card-header', d: `M${card.x + 10} ${card.y}H${card.x + card.w - 10}Q${card.x + card.w} ${card.y} ${card.x + card.w} ${card.y + 10}V${card.y + 28}H${card.x}V${card.y + 10}Q${card.x} ${card.y} ${card.x + 10} ${card.y}` })
+  const patternId = `board-${nextId++}`
+  const pattern = element('pattern', { id: patternId, width: 20, height: 20, patternUnits: 'userSpaceOnUse', x: card.x, y: card.y + 28 })
+  if (mark.board === 'grid') pattern.append(element('path', { class: 'grid-line', d: 'M20 0H0V20', fill: 'none' }))
+  if (mark.board === 'dots') pattern.append(element('circle', { class: 'grid-dot', cx: 1, cy: 1, r: 1 }))
+  const board = element('rect', { x: card.x + 1, y: card.y + 28, width: card.w - 2, height: card.h - 29, rx: 8, fill: `url(#${patternId})` })
+  const title = element('text', { class: 'card-title', x: card.x + 14, y: card.y + 19 })
+  title.textContent = mark.title
+  root.append(pattern, surface, board, header, title)
+  const body = layer('card-body', root)
+  const layers = { wash: layer('wash', body), ink: layer('ink', body), words: layer('words', body) }
+  cardViews.set(card, { root, surface, board, body, layers })
+  while (title.getComputedTextLength() > card.w - 56 && title.textContent!.length > 1) title.textContent = title.textContent!.slice(0, -2) + '…'
+  // Marks already on the paper acquire the same explicit parent once.
+  for (const [object, node] of objectNodes) if (object.card === card) layers[node.getAttribute('data-layer') as 'wash' | 'ink' | 'words'].append(node)
+  const owner = retainObject([card.x + card.w / 2, card.y + 14], card)
+  return [{ group, owner, from: owner.center, to: owner.center, seconds: 0.45,
+    begin: () => {
+      root.setAttribute('data-interactive', 'true')
+      wireCard(card, root)
+      return (progress) => root.setAttribute('opacity', String(progress))
+    },
+  }]
+}
+
+function flowActions(mark: Extract<Mark, { kind: 'step' | 'heading' | 'note' }>, group: number): Action[] {
+  const card = cardScene.cards.get(mark.id)
+  if (!card || card.closed) return []
+  const layout = layoutFlow(card, mark.kind, mark.text, measureWriting(mark.kind === 'heading' ? 30 : 26), innerHeight)
+  if (!layout) return []
+  const view = cardViews.get(card)!
+  const owner = retainObject(layout.words, card)
+  const writing = writingAction(layout.writing, layout.words, group, owner)
+  // Resize on the owning beat, not when a later beat is merely queued.
+  const height = card.h
+  const grow = (action: Action): Action => ({ ...action, begin: (duration) => {
+    view.surface.setAttribute('height', String(Math.max(Number(view.surface.getAttribute('height')), height)))
+    view.board.setAttribute('height', String(Math.max(Number(view.board.getAttribute('height')), height - 29)))
+    return action.begin(duration)
+  } })
+  if (mark.kind !== 'step') return [grow(writing)]
+  const badge = badgeAction(layout.badge, layout.number, group, owner)
+  const [cx, cy] = layout.arrow
+  const delta: Point = mark.direction === 'up' ? [0, -15] : mark.direction === 'down' ? [0, 15] : mark.direction === 'left' ? [-15, 0] : [15, 0]
+  const arrow: Mark = { kind: 'arrow', x1: cx - delta[0], y1: cy - delta[1], x2: cx + delta[0], y2: cy + delta[1] }
+  const strokes = strokesFor(arrow, true).map((stroke) => strokeAction(geometryFor({ ...stroke, style: 'paper', size: 2.2 }), group, owner, `var(--${mark.color})`))
+  return [grow(badge), ...strokes, writing]
+}
+
+function badgeAction(at: Point, number: number, group: number, owner: SceneObject): Action {
+  return { group, owner, from: at, to: at, seconds: 0.22, begin: () => {
+    const disc = layer('badge', objectNodes.get(owner)!)
+    disc.append(element('circle', { class: 'badge-disc', r: BADGE_RADIUS }), element('ellipse', { class: 'gel-gloss', cy: -4, rx: 7, ry: 3 }))
+    const digit = element('text', { y: 4, 'text-anchor': 'middle' })
+    digit.textContent = String(number)
+    disc.append(digit)
+    return (progress) => {
+      disc.setAttribute('opacity', String(Math.min(1, progress * 3)))
+      disc.setAttribute('transform', `translate(${at[0]} ${at[1]}) scale(${progress === 1 ? 1 : 0.65 + 0.35 * progress + 0.12 * Math.sin(Math.PI * progress)})`)
+      moveBuddy(objectPoint(owner, at), IDLE_ANGLE)
+    }
+  } }
+}
+
+function leaderActions(mark: Extract<Mark, { kind: 'label' }>, group: number, owner: SceneObject): Action[] {
+  const writing = wrapWriting(mark.text, Math.min(250, innerWidth - 16), 26, measureWriting(26), 2)
+  const width = Math.max(...writing.lines.map((line) => line.width))
+  const left = Math.max(8, Math.min(innerWidth - width - 8, mark.lx))
+  const baseline = Math.max(32, Math.min(innerHeight - writing.lines.length * writing.lineHeight, mark.ly))
+  const dot: Point = [mark.x, mark.y]
+  const near: Point = [mark.x < left + width / 2 ? left - 5 : left + width + 5, baseline - 8]
+  // Dot first establishes the feature; drawing back to the words leaves the pen
+  // beside its next writing start, without an arrowhead or a second label pill.
+  return [
+    { group, owner, from: dot, to: dot, seconds: 0.18, begin: () => {
+      const circle = element('circle', { class: 'leader-dot', cx: dot[0], cy: dot[1], r: 0 })
+      objectNodes.get(owner)!.append(circle)
+      return (progress) => { circle.setAttribute('r', String(3 * progress)); moveBuddy(objectPoint(owner, dot), IDLE_ANGLE) }
+    } },
+    strokeAction(geometryFor({ points: [dot, near], style: 'paper', size: 1.4 }), group, owner, 'var(--ink)'),
+    writingAction(writing, [left, baseline], group, owner),
+  ]
 }
 
 function buddy(): SVGGElement {
@@ -290,25 +426,31 @@ function flight(from: Point, to: Point): (progress: number) => void {
   }
 }
 
-function showLabel(x: number, y: number, label: string): SVGGElement {
+function showLabel(x: number, y: number, label: string, parent: SVGGElement): SVGGElement {
   const group = element('g', { class: 'label', opacity: 0 })
-  const text = element('text', { x: 7, y: 17 })
+  const text = element('text', { x: 11, y: 19 })
   text.textContent = label
-  const background = element('rect', { rx: 5, height: 24, width: 0 })
-  group.append(background, text)
-  wordsLayer.append(group)
-  const measured = text.getComputedTextLength()
-  const width = Math.min(innerWidth - 16, measured + 14)
-  background.setAttribute('width', String(width))
-  if (width < measured + 14) {
-    text.setAttribute('textLength', String(width - 14))
-    text.setAttribute('lengthAdjust', 'spacingAndGlyphs')
+  const id = `gel-${nextId++}`
+  const gradient = element('linearGradient', { id, x1: 0, y1: 0, x2: 0, y2: 1 })
+  gradient.append(element('stop', { class: 'gel-top', offset: 0 }), element('stop', { class: 'gel-middle', offset: 0.52 }), element('stop', { class: 'gel-bottom', offset: 1 }))
+  const background = element('rect', { class: 'gel-rim', rx: 14, height: 28, width: 0, fill: `url(#${id})` })
+  const gloss = element('rect', { class: 'gel-gloss', x: 3, y: 2, rx: 10, height: 10, width: 0 })
+  group.append(gradient, background, gloss, text)
+  parent.append(group)
+  // Measure the system face in place, shortening only if wider than the display.
+  while (text.getComputedTextLength() > innerWidth - 38 && label.length > 1) {
+    label = Array.from(label).slice(0, -1).join('')
+    text.textContent = label + '…'
   }
-  // Jason Kneen's MIT right-edge flip/clamp, using measured SVG text instead
-  // of a character estimate; also flip above at the bottom edge.
-  const left = x + 12 + width > innerWidth - 8 ? x - width - 12 : x + 12
-  const top = y + 12 + 24 > innerHeight - 8 ? y - 24 - 12 : y + 12
-  group.setAttribute('transform', `translate(${Math.max(8, Math.min(innerWidth - width - 8, left))} ${Math.max(8, Math.min(innerHeight - 32, top))})`)
+  const width = text.getComputedTextLength() + 22
+  background.setAttribute('width', String(width))
+  gloss.setAttribute('width', String(Math.max(0, width - 6)))
+  const height = 28
+  const candidates = [[x - width / 2, y - height - 12], [x - width / 2, y + 14], [x + 14, y - height / 2], [x - width - 14, y - height / 2]]
+    .map(([left, top]) => ({ x: Math.max(8, Math.min(innerWidth - width - 8, left!)), y: Math.max(8, Math.min(innerHeight - height - 8, top!)), w: width, h: height }))
+  const chosen = candidates.find((box) => !pillBoxes.some((other) => other.node.isConnected && box.x < other.x + other.w + 4 && box.x + box.w + 4 > other.x && box.y < other.y + other.h + 4 && box.y + box.h + 4 > other.y)) ?? candidates[0]!
+  group.setAttribute('transform', `translate(${chosen.x} ${chosen.y})`)
+  pillBoxes.push({ ...chosen, node: group })
   return group
 }
 
@@ -326,21 +468,29 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   const actions: Action[] = []
   for (const [group, mark] of marks.entries()) {
     if (mark.kind === 'clear') {
-      const at = actions.at(-1)?.to ?? origin
-      actions.push({ group, from: at, to: at, seconds: 0, begin: () => () => clearScene() })
-    } else if (mark.kind === 'point') {
-      actions.push({
-        group, from: [mark.x, mark.y], to: [mark.x, mark.y], seconds: 0.14,
-        begin: () => {
-          const label = mark.label ? showLabel(mark.x, mark.y, mark.label) : undefined
-          return (progress) => {
-            moveBuddy([mark.x, mark.y], IDLE_ANGLE)
-            label?.setAttribute('opacity', String(progress))
-          }
-        },
-      })
-    } else if (mark.kind === 'text') actions.push(textAction(mark, group))
-    else for (const stroke of strokesFor(mark)) actions.push(strokeAction(geometryFor(stroke), group))
+      clearScene()
+      animations.length = 0
+      actions.length = 0
+    } else if (mark.kind === 'card') actions.push(...cardAction(mark, group))
+    else if (mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') actions.push(...flowActions(mark, group))
+    else {
+      const owner = retainObject(markCenter(mark)!, undefined, mark.kind === 'highlight' ? 'wash' : ['text', 'label', 'point'].includes(mark.kind) ? 'words' : 'ink')
+      if (mark.kind === 'point') {
+        actions.push({
+          group, owner, from: [mark.x, mark.y], to: [mark.x, mark.y], seconds: 0.18,
+          begin: () => {
+            const label = mark.label ? showLabel(mark.x, mark.y, mark.label, objectNodes.get(owner)!) : undefined
+            return (progress) => { moveBuddy(objectPoint(owner, [mark.x, mark.y]), IDLE_ANGLE); label?.setAttribute('opacity', String(progress)) }
+          },
+        })
+      } else if (mark.kind === 'text') {
+        const size = 26
+        const left = Math.max(8, Math.min(innerWidth - 80, mark.x))
+        const writing = wrapWriting(mark.text, Math.max(60, Math.min(360, innerWidth - left - 8)), size, measureWriting(size), Math.max(1, Math.floor((innerHeight - mark.y) / (size * 1.3)) + 1))
+        actions.push(writingAction(writing, [left, Math.max(size, mark.y)], group, owner))
+      } else if (mark.kind === 'label') actions.push(...leaderActions(mark, group, owner))
+      else for (const stroke of strokesFor(mark, !!owner.card)) actions.push(strokeAction(geometryFor(owner.card && stroke.style === 'pen' ? { ...stroke, style: 'paper' } : stroke), group, owner))
+    }
   }
   const now = performance.now()
   const start = Math.max(now, animations.length ? plannedEnd : 0)
@@ -348,9 +498,15 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   const timeline = scheduleBeat(actions, origin, beatBudget(durationMs, start - now))
   for (const entry of timeline) {
     if (entry.kind === 'gesture') {
-      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: actions[entry.index]!.begin })
+      const action = actions[entry.index]!
+      animations.push({ owner: action.owner, start: start + entry.startMs, durationMs: entry.durationMs, begin: action.begin })
     } else {
-      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: () => flight(entry.from, entry.to) })
+      const next = timeline[timeline.indexOf(entry) + 1]
+      const owner = next?.kind === 'gesture' ? actions[next.index]!.owner : undefined
+      animations.push({ owner, start: start + entry.startMs, durationMs: entry.durationMs, begin: () => {
+        const from = buddyAt ?? entry.from
+        return (progress) => flight(from, objectPoint(owner, entry.to))(progress)
+      } })
     }
   }
   const end = timeline.at(-1)
@@ -360,13 +516,29 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   wake()
 }
 
+function warnOmissions(card: CardState): void {
+  if (!card.omittedSteps || warnedOmissions.has(card)) return
+  warnedOmissions.add(card)
+  console.warn(`[drawing] card ${card.id}: omitted ${card.omittedSteps} step(s); no readable slot fits the display.`)
+}
+
 function clearScene(): void {
-  for (const group of [ringLayer, washLayer, inkLayer, wordsLayer]) group.replaceChildren()
+  for (const card of cardScene.cards.values()) warnOmissions(card)
+  warnedOmissions.clear()
+  for (const release of releaseDrags.values()) release()
+  releaseDrags.clear()
+  for (const id of [...regions.keys()]) reportRegion(id, false, false)
+  cardScene.clear()
+  pillBoxes.length = 0
+  objectNodes.clear()
+  cardViews.clear()
+  for (const group of [cardsLayer, ringLayer, washLayer, inkLayer, wordsLayer]) group.replaceChildren()
 }
 
 /** Shows the Clear button at the drawing's top-right corner, kept on screen. */
 function offerClear(): void {
-  const box = [washLayer, inkLayer, wordsLayer]
+  for (const card of cardScene.cards.values()) warnOmissions(card)
+  const box = [cardsLayer, washLayer, inkLayer, wordsLayer]
     .map((group) => group.getBBox())
     .filter((rect) => rect.width > 0 || rect.height > 0)
   if (!box.length) return
@@ -378,14 +550,83 @@ function offerClear(): void {
   clearButton.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, top - height - 10))}px`
 }
 
+function reportRegion(id: string, over: boolean, captured: boolean): void {
+  if (over || captured) regions.set(id, { over, captured })
+  else regions.delete(id)
+  window.nimbo.sendOverlayEvent({ kind: 'interactiveRegion', id, over, captured })
+}
+
+function wireRegion(node: Element, id: string): void {
+  node.addEventListener('pointerenter', () => reportRegion(id, true, regions.get(id)?.captured ?? false))
+  node.addEventListener('pointerleave', () => reportRegion(id, false, regions.get(id)?.captured ?? false))
+}
+
+function wireCard(card: CardState, root: SVGGElement): void {
+  const id = `card:${card.id}`
+  wireRegion(root, id)
+  const handle = element('rect', { class: 'card-drag', x: card.x, y: card.y, width: card.w - 32, height: 28, rx: 10 })
+  const close = element('g', { class: 'card-close' })
+  const closeHit = element('rect', { x: card.x + card.w - 29, y: card.y + 3, width: 24, height: 22, rx: 7 })
+  const cross = element('text', { x: card.x + card.w - 17, y: card.y + 19, 'text-anchor': 'middle' })
+  cross.textContent = '×'
+  close.append(closeHit, cross)
+  root.append(handle, close)
+  let drag: { pointer: number; x: number; y: number; offset: Point } | undefined
+  const release = (): void => {
+    const pointer = drag?.pointer
+    drag = undefined
+    if (pointer !== undefined && handle.hasPointerCapture(pointer)) handle.releasePointerCapture(pointer)
+  }
+  releaseDrags.set(card, release)
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    drag = { pointer: event.pointerId, x: event.clientX, y: event.clientY, offset: [...card.offset] }
+    handle.setPointerCapture(event.pointerId)
+    reportRegion(id, true, true)
+  })
+  handle.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.pointer) return
+    card.offset = [
+      Math.max(2 - card.x, Math.min(innerWidth - card.x - card.w - 2, drag.offset[0] + event.clientX - drag.x)),
+      Math.max(2 - card.y, Math.min(innerHeight - card.y - card.h - 2, drag.offset[1] + event.clientY - drag.y)),
+    ]
+    root.setAttribute('transform', `translate(${card.offset[0]} ${card.offset[1]})`)
+  })
+  const finish = (event: PointerEvent): void => {
+    if (!drag || event.pointerId !== drag.pointer) return
+    release()
+    const over = event.clientX >= card.x + card.offset[0] && event.clientX <= card.x + card.offset[0] + card.w && event.clientY >= card.y + card.offset[1] && event.clientY <= card.y + card.offset[1] + card.h
+    reportRegion(id, over, false)
+  }
+  handle.addEventListener('pointerup', finish)
+  handle.addEventListener('pointercancel', () => { release(); reportRegion(id, false, false) })
+  handle.addEventListener('lostpointercapture', () => { if (drag) { drag = undefined; reportRegion(id, false, false) } })
+  close.addEventListener('pointerdown', (event) => { event.preventDefault(); event.stopPropagation() })
+  close.addEventListener('click', () => {
+    release()
+    releaseDrags.delete(card)
+    warnOmissions(card)
+    cardScene.close(card.id)
+    root.remove()
+    cardViews.delete(card)
+    for (const [object, node] of objectNodes) if (object.removed) { node.remove(); objectNodes.delete(object) }
+    for (let i = animations.length - 1; i >= 0; i--) if (animations[i]!.owner?.removed) animations.splice(i, 1)
+    plannedTip = undefined
+    reportRegion(id, false, false)
+    hideClear()
+    offerClear()
+    wake()
+  })
+}
+
 function hideClear(): void {
   if (clearButton.hidden) return
   clearButton.hidden = true
-  window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: false })
+  reportRegion('clear', false, false)
 }
 
-clearButton.addEventListener('mouseenter', () => window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: true }))
-clearButton.addEventListener('mouseleave', () => window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: false }))
+wireRegion(clearButton, 'clear')
 clearButton.addEventListener('click', () => {
   hideClear()
   window.nimbo.sendOverlayEvent({ kind: 'clearClicked' })
@@ -452,4 +693,11 @@ function apply(command: OverlayCommand): void {
   }
 }
 
-window.nimbo.onOverlayCommand(apply)
+let fontsReady = false
+const waitingCommands: OverlayCommand[] = []
+window.nimbo.onOverlayCommand((command) => fontsReady ? apply(command) : waitingCommands.push(command))
+void document.fonts.load('500 26px Caveat').then(() => document.fonts.ready).then(() => {
+  fontsReady = true
+  for (const command of waitingCommands) apply(command)
+  waitingCommands.length = 0
+})

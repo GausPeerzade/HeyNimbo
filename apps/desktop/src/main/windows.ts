@@ -1,11 +1,21 @@
 import { join } from 'node:path'
 import { BrowserWindow, ipcMain, screen, type Display, type WebPreferences } from 'electron'
-import type { Mark } from '../shared/beats'
+import { CARD_ID_PATTERN, type Mark } from '../shared/beats'
 import { Channels, type NotchStatus, type OverlayCommand, type OverlayEvent } from '../shared/ipc'
 import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { devFlag, devSetting } from './dev'
 
 const NOTCH_SIZE = { width: 240, height: 38 }
+const INTERACTIVE_REGION_ID = new RegExp(`^(?:clear|card:${CARD_ID_PATTERN})$`)
+/** Three card regions and the Clear button per display. */
+const MAX_INTERACTIVE_REGIONS = 4
+
+function isInteractiveRegionEvent(payload: unknown): payload is Extract<OverlayEvent, { kind: 'interactiveRegion' }> {
+  if (!payload || typeof payload !== 'object') return false
+  const region = payload as Record<string, unknown>
+  return region.kind === 'interactiveRegion' && typeof region.id === 'string' && region.id.length <= 21
+    && INTERACTIVE_REGION_ID.exec(region.id)?.[0] === region.id && typeof region.over === 'boolean' && typeof region.captured === 'boolean'
+}
 
 /** Latest notch state, replayed whenever the notch page (re)loads. */
 let notchStatus: NotchStatus = { kind: 'idle' }
@@ -113,7 +123,7 @@ function createOverlayWindow(display: Display): BrowserWindow {
     webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   })
   // Click-through, but mouse moves still reach the page so it can tell when
-  // the pointer is over its one interactive part, the Clear button.
+  // the pointer is over a card or the Clear button.
   window.setIgnoreMouseEvents(true, { forward: true })
   floatAboveEverything(window)
   showPassivePage(window, 'overlay')
@@ -134,20 +144,27 @@ export class OverlayManager {
   private epoch = 0
   private followTimer: NodeJS.Timeout | undefined
   private lastCursor: Electron.Point | undefined
+  private readonly interactiveRegions = new Map<number, Map<string, { over: boolean; captured: boolean }>>()
 
   onStrokeStarted?: (durationMs: number) => void
 
   constructor() {
     ipcMain.on(Channels.overlayEvent, (event, payload: OverlayEvent) => {
       const sender = [...this.windows].find(([, window]) => window.webContents === event.sender)
-      if (!sender) return
+      if (!sender || !payload || typeof payload !== 'object') return
       if (payload.kind === 'strokeStarted') {
         if (payload.epoch === this.epoch) this.onStrokeStarted?.(payload.durationMs)
       } else if (payload.kind === 'buddyIdle') {
         if (sender[0] === this.buddyDisplayId) this.buddyBusy = false
-      } else if (payload.kind === 'clearHover') {
-        // Clicks land only while the pointer is over the button.
-        sender[1].setIgnoreMouseEvents(!payload.over, { forward: true })
+      } else if (payload.kind === 'interactiveRegion') {
+        if (!isInteractiveRegionEvent(payload)) return
+        const regions = this.interactiveRegions.get(sender[0]) ?? new Map()
+        if (payload.over || payload.captured) {
+          if (!regions.has(payload.id) && regions.size >= MAX_INTERACTIVE_REGIONS) return
+          regions.set(payload.id, { over: payload.over, captured: payload.captured })
+        } else regions.delete(payload.id)
+        this.interactiveRegions.set(sender[0], regions)
+        sender[1].setIgnoreMouseEvents(!regions.size, { forward: true })
       } else if (payload.kind === 'clearClicked') {
         sender[1].setIgnoreMouseEvents(true, { forward: true })
         this.clear()
@@ -174,6 +191,7 @@ export class OverlayManager {
       if (!live.has(id)) {
         window.destroy()
         this.windows.delete(id)
+        this.interactiveRegions.delete(id)
       }
     }
     for (const display of displays) {
@@ -184,6 +202,8 @@ export class OverlayManager {
       }
       const window = createOverlayWindow(display)
       window.webContents.on('did-finish-load', () => {
+        this.interactiveRegions.delete(display.id)
+        window.setIgnoreMouseEvents(true, { forward: true })
         if (devFlag('NIMBO_DEBUG_DRAW_TRACE')) this.send(display.id, { kind: 'debug', frameTrace: true })
         if (this.shown?.displayId === display.id) this.send(display.id, this.shown.command)
       })
@@ -266,7 +286,11 @@ export class OverlayManager {
   fadeSoon(delayMs = 6_000): void {
     clearTimeout(this.fadeTimer)
     this.fadeTimer = setTimeout(() => {
-      for (const id of this.windows.keys()) this.send(id, { kind: 'fade', from: this.cursorOnDisplay(id) })
+      this.interactiveRegions.clear()
+      for (const [id, window] of this.windows) {
+        window.setIgnoreMouseEvents(true, { forward: true })
+        this.send(id, { kind: 'fade', from: this.cursorOnDisplay(id) })
+      }
     }, delayMs)
   }
 
@@ -274,7 +298,11 @@ export class OverlayManager {
     clearTimeout(this.fadeTimer)
     this.epoch++
     this.shown = undefined
-    for (const id of this.windows.keys()) this.send(id, { kind: 'clear', from: this.cursorOnDisplay(id) })
+    this.interactiveRegions.clear()
+    for (const [id, window] of this.windows) {
+      window.setIgnoreMouseEvents(true, { forward: true })
+      this.send(id, { kind: 'clear', from: this.cursorOnDisplay(id) })
+    }
   }
 
   private cursorOnDisplay(id: number): { x: number; y: number } | undefined {
