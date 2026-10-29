@@ -45,7 +45,6 @@ export class AppShell {
     if (!preview) {
       this.installMenu()
       this.updateTray()
-      app.setLoginItemSettings({ openAtLogin: this.settings.get().openAtLogin })
       app.on('activate', () => this.openHome())
       app.on('second-instance', () => this.openHome())
     }
@@ -172,7 +171,9 @@ export class AppShell {
         }
         this.settings.set(next)
         if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset() }
-        if (!this.preview) app.setLoginItemSettings({ openAtLogin: next.openAtLogin })
+        // Only a packaged app can own a login item, and only an actual change
+        // should touch it, so a choice made in System Settings is left alone.
+        if (!this.preview && app.isPackaged && next.openAtLogin !== previous.openAtLogin) app.setLoginItemSettings({ openAtLogin: next.openAtLogin })
         this.updateTray(); this.actions.settingsChanged(next, previous)
         this.conversations.history.prune(next.retention); this.publish(); return
       }
