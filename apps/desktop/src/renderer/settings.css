@@ -10,9 +10,8 @@ nav button:hover { background: var(--selection); }
 nav button[aria-current="true"] { background: var(--canvas); font-weight: var(--weight-medium); }
 nav button[aria-current="true"]::before { content: ''; position: absolute; width: var(--focus-width); background: var(--accent); top: var(--space-2); bottom: var(--space-2); left: 0; border-radius: var(--radius-small); }
 main { padding: var(--space-16) var(--space-8) var(--space-8); flex: 1; overflow: auto; min-width: 0; }
-h1 { margin: 0 0 var(--space-2); font-size: var(--text-heading); letter-spacing: var(--tracking-tight); }
+h1 { margin: 0 0 var(--space-6); font-size: var(--text-heading); letter-spacing: var(--tracking-tight); }
 h2 { margin: var(--space-6) 0 var(--space-3); font-size: var(--text-body); }
-.category-intro { color: var(--secondary); font-size: var(--text-ui); margin: 0 0 var(--space-6); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); padding: var(--space-4); border-bottom: var(--line) solid var(--separator); min-height: var(--row-height); background: var(--raised); user-select: none; }
 .row:first-of-type { border-radius: var(--radius-artifact) var(--radius-artifact) 0 0; }
 .row:last-of-type { border-bottom: 0; border-radius: 0 0 var(--radius-artifact) var(--radius-artifact); }

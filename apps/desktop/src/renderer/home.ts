@@ -60,10 +60,10 @@ function renderTranscript(s: AppSnapshot): void {
     const picture = element('picture'), source = element('source'), image = element('img')
     source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
     image.src = logo; image.alt = ''; image.width = 80; image.height = 80; picture.append(source, image)
-    empty.append(picture, element('h2', '', 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Find a button, understand a warning or get a drawn explanation. Type below to begin.' : 'Connect OpenAI to ask about your screen and get a drawn explanation.'))
+    empty.append(picture, element('h2', '', 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Describe what you want to find or understand.' : 'Connect OpenAI to ask about your screen and get a drawn explanation.'))
     if (!s.keyPresent) {
       empty.append(button('Connect OpenAI', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
-      empty.append(element('p', 'privacy-summary', 'Your question and screen capture go to OpenAI. Only text and generated drawings are saved in local history, not screen images or audio.'))
+      empty.append(element('p', 'privacy-summary', 'When you ask, your question and a screen capture go to OpenAI. Local history saves text and generated drawings, not screen images or audio.'))
     }
     transcript.append(empty)
   }

@@ -8,7 +8,7 @@
   --grid-line: #62626220; --grey: #626262;
   --blue: #70415f; --red: #a62f46; --orange: #d9bc61;
   --green: #276344; --purple: #70415f;
-  --buddy: #986180; --gloss: #fffffff0; --shadow: #282828;
+  --buddy: #70415f; --gloss: #fffffff0; --shadow: #282828;
   --ui-surface: #282828; --ui-text: #f8f8f8;
 }
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }

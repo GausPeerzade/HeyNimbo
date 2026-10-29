@@ -14,7 +14,8 @@
   <div id="transcript" tabindex="0" aria-label="Conversation transcript"></div>
   <div class="composer-area">
     <p id="feedback" role="status" aria-live="polite"></p>
-    <form id="composer"><label class="sr-only" for="question">Ask NimboGuide</label><textarea id="question" name="question" rows="1" maxlength="16000" placeholder="Ask about your screen…" autocomplete="off" autofocus></textarea><div class="composer-controls"><span id="screen-context">Screen shared for this question</span><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
+    <form id="composer"><label class="sr-only" for="question">Ask NimboGuide</label><textarea id="question" name="question" rows="1" maxlength="16000" placeholder="Ask about your screen…" aria-describedby="screen-context" autocomplete="off" autofocus></textarea><div class="composer-controls"><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
+    <p id="screen-context">Includes a screen capture when you ask</p>
     <div class="composer-note"><span>Hold Control + Option to speak</span><span id="saving">Saved locally for 30 days</span></div>
   </div>
 </main><script type="module" src="./home.ts"></script></body></html>

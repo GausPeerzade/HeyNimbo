@@ -32,8 +32,7 @@ function render(): void {
   const focused = document.activeElement?.id
   document.getElementById('heading')!.textContent = category
   nav.querySelectorAll('button').forEach(node => node.setAttribute('aria-current', String(node.dataset.category === category)))
-  const introductions: Record<string, string> = { General: 'Make room for your guide.', Voice: 'Speak, listen and interrupt.', 'History & privacy': 'Choose what stays on this Mac.', Connection: 'Bring your own OpenAI key.', About: 'A guide that points things out.' }
-  fields.replaceChildren(element('p', 'category-intro', introductions[category]))
+  fields.replaceChildren()
   switch (category) {
     case 'General':
       toggle('openAtLogin', 'Open at login', 'Start quietly in the background when you sign in.')
@@ -63,9 +62,9 @@ function render(): void {
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
       source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
-      image.src = logo; image.alt = 'NimboGuide pen-corner mark'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
+      image.src = logo; image.alt = 'NimboGuide pen buddy and ink trail'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
       fields.append(picture, element('h2', '', `NimboGuide ${snapshot.version}`))
-      explanation('A quiet guide for the screen in front of you.')
+      explanation('Explains your screen with speech and drawings.')
       fields.append(element('h2', '', 'macOS permissions'))
       for (const [key, label] of [['microphone', 'Microphone'], ['screen', 'Screen Recording'], ['input', 'Input Monitoring']] as const) {
         const row = element('div', 'permission'), text = element('span')

@@ -19,3 +19,8 @@ for (const [index, mode] of ['light', 'dark'].entries()) it(`${mode} Pen margin 
   expect(contrast(tokens['drawing-ink']!, tokens['drawing-paper']!)).toBeGreaterThanOrEqual(4.5)
   expect(tokens.canvas).toBe(WINDOW_PALETTE[mode as keyof typeof WINDOW_PALETTE])
 })
+it('keeps the live pen buddy paired with the light brand mark', () => {
+  const overlay = readFileSync(new URL('./overlay.css', import.meta.url), 'utf8')
+  const buddy = overlay.match(/--buddy:\s*(#[\da-f]{6})/i)?.[1]
+  expect(buddy?.toLowerCase()).toBe(blocks[0]!.accent!.toLowerCase())
+})

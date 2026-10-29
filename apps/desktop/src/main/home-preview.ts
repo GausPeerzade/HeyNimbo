@@ -33,6 +33,12 @@ export async function runHomePreview(): Promise<void> {
     await window.webContents.executeJavaScript("Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode().catch(() => {}))])")
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     if (name.startsWith('home-unconnected') && !await window.webContents.executeJavaScript("Boolean(document.querySelector('.connection-needed'))")) throw new Error(`Wrong preview state: ${name}`)
+    if (name.startsWith('home-') && !await window.webContents.executeJavaScript("document.getElementById('screen-context').textContent === 'Includes a screen capture when you ask'")) throw new Error(`Misleading capture copy: ${name}`)
+    if (name.startsWith('home-empty')) {
+      const gap = await window.webContents.executeJavaScript("document.getElementById('composer').getBoundingClientRect().top - document.querySelector('.empty').getBoundingClientRect().bottom") as number
+      if (gap < 0 || gap > 32) throw new Error(`Empty instruction detached from composer: ${gap}`)
+      diagnostics[`empty-gap-${name}`] = gap
+    }
     diagnostics[name] = await window.webContents.executeJavaScript(`({ visible: ${window.isVisible()}, overflowX: document.documentElement.scrollWidth > innerWidth, overflowY: document.body.scrollHeight > innerHeight, fonts: document.fonts.status, peekBottom: document.getElementById('peek')?.getBoundingClientRect().bottom, height: innerHeight })`)
     writeFileSync(`${output}/${name}.png`, (await window.webContents.capturePage()).toPNG())
   }
@@ -51,6 +57,12 @@ export async function runHomePreview(): Promise<void> {
     await capture(home, `home-unconnected-${theme}`)
     shell.keyPresent = true; shell.publish(true); await pause()
     await capture(home, `home-empty-${theme}`)
+    home.setSize(720, 520); await pause(); await capture(home, `home-empty-narrow-${theme}`); home.setSize(960, 680)
+    notch.webContents.send(Channels.notchStatus, { kind: 'idle' })
+    notch.webContents.send(AppChannels.snapshot, shell.snapshot())
+    await notch.webContents.executeJavaScript("window.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: 400 })); window.dispatchEvent(new MouseEvent('mousemove', { clientX: 192, clientY: 20 }))")
+    await pause(); await pause(); await capture(notch, `peek-empty-${theme}`)
+    notch.webContents.send('nimbo:peek-dismiss')
     const first = shell.conversations.newConversation()
     const turn = shell.conversations.begin('Where can I export this chart?', 'voice')
     shell.conversations.update(turn, 'Choose Export in the upper-right corner. The download menu lets you save the chart as a PDF.', { version: 1, beats: [{ sentence: 'Choose Export in the upper-right corner.', marks: [{ kind: 'box', x: 700, y: 90, w: 160, h: 50 }, { kind: 'arrow', x1: 500, y1: 240, x2: 720, y2: 130 }, { kind: 'text', x: 480, y: 280, text: 'Export your chart' }], space: { frame: { x: 0, y: 0, width: 960, height: 600 }, pixelWidth: 960, pixelHeight: 600 } }] }, true)
@@ -73,7 +85,20 @@ export async function runHomePreview(): Promise<void> {
       settings.webContents.send(AppChannels.navigate, { category }); await pause()
       await capture(settings, `settings-${category.split(' ')[0]!.toLowerCase()}-${theme}`)
     }
-    home.setSize(720, 520); await pause(); await capture(home, `home-narrow-${theme}`); home.setSize(960, 680)
+    home.setSize(720, 520); await pause(); await capture(home, `home-narrow-${theme}`)
+    for (const draft of ['wrapped', 'overflow'] as const) {
+      await home.webContents.executeJavaScript(`{ const question = document.getElementById('question'); question.value = 'Could you point me to the export menu and explain whether choosing PDF will keep the chart labels readable? I want to send this chart to a colleague without changing the original file. '.repeat(${draft === 'wrapped' ? 1 : 8}); question.dispatchEvent(new Event('input')); question.focus() }`)
+      await pause(); await capture(home, `home-draft-${draft}-${theme}`)
+      const metrics = await home.webContents.executeJavaScript(`(() => { const q = document.getElementById('question'), style = getComputedStyle(q); return { lines: (q.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight), scrolling: q.scrollHeight > q.clientHeight + 1, composerBottom: document.querySelector('.composer-area').getBoundingClientRect().bottom, viewport: innerHeight, intrinsicSizing: CSS.supports('field-sizing', 'content') } })()`) as { lines: number; scrolling: boolean; composerBottom: number; viewport: number; intrinsicSizing: boolean }
+      diagnostics[`draft-${draft}-${theme}`] = metrics
+      if (!metrics.intrinsicSizing || metrics.lines > 5.1 || metrics.composerBottom > metrics.viewport || (draft === 'wrapped' ? metrics.lines <= 1.1 || metrics.scrolling : metrics.lines < 4.9 || !metrics.scrolling)) throw new Error(`Textarea sizing failed: ${JSON.stringify(metrics)}`)
+    }
+    await home.webContents.executeJavaScript("document.getElementById('question').value = ''; document.getElementById('question').dispatchEvent(new Event('input'))")
+    await pause()
+    const resetLines = await home.webContents.executeJavaScript("(() => { const q = document.getElementById('question'), s = getComputedStyle(q); return (q.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)) / parseFloat(s.lineHeight) })()") as number
+    if (resetLines > 1.1) throw new Error(`Textarea did not shrink: ${resetLines}`)
+    diagnostics[`draft-reset-${theme}`] = resetLines
+    home.setSize(960, 680)
     await capture(setup, `setup-${theme}`)
     notch.webContents.send('nimbo:peek-dismiss')
     notch.webContents.send(Channels.notchStatus, { kind: 'idle' })

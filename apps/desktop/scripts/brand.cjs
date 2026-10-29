@@ -1,5 +1,5 @@
 const { app, BrowserWindow, session } = require('electron')
-const { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } = require('node:fs')
+const { readFileSync, writeFileSync, copyFileSync, mkdirSync, mkdtempSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
 const { execFileSync } = require('node:child_process')
 const root = join(__dirname, '../build/brand')
@@ -15,13 +15,13 @@ app.whenReady().then(async () => {
   const mark = readFileSync(join(root, 'logo.svg'), 'utf8')
   const page = join(root, 'raster.html')
   const window = new BrowserWindow({ width: 1024, height: 1024, show: false, transparent: true, webPreferences: { offscreen: true, nodeIntegration: false, contextIsolation: true, sandbox: true } })
-  async function render(name, size, icon = false, color = brand.field) {
+  async function render(name, size, icon = false, color = brand.field, destination = root, backing = 'transparent') {
     const svg = mark.replace('<svg ', `<svg style="color:${color};width:${icon ? '76%' : '100%'};height:${icon ? '76%' : '100%'}" `)
-    writeFileSync(page, `<html><body style="margin:0;background:transparent;width:100vw;height:100vh;display:grid;place-items:center">${icon ? `<div style="width:80.5%;height:80.5%;border-radius:22.5%;background:${brand.field};display:grid;place-items:center">${svg}</div>` : svg}</body></html>`)
+    writeFileSync(page, `<html><body style="margin:0;background:${backing};width:100vw;height:100vh;display:grid;place-items:center">${icon ? `<div style="width:80.5%;height:80.5%;border-radius:22.5%;background:${brand.field};display:grid;place-items:center">${svg}</div>` : svg}</body></html>`)
     window.setContentSize(size, size)
     await window.loadFile(page)
     await new Promise(resolve => setTimeout(resolve, 80))
-    writeFileSync(join(root, name), (await window.webContents.capturePage()).toPNG())
+    writeFileSync(join(destination, name), (await window.webContents.capturePage()).toPNG())
   }
   const iconset = join(root, 'NimboGuide.iconset')
   mkdirSync(iconset, { recursive: true })
@@ -32,6 +32,11 @@ app.whenReady().then(async () => {
   for (const [name, size] of [['NimboGuideTemplate.png', 22], ['NimboGuideTemplate@2x.png', 44]]) await render(name, size, false, '#000000')
   await render('logo.png', 256)
   await render('logo-dark.png', 256, false, brand.darkMark)
+  const validation = '/tmp/nimbo-ui-validation'
+  mkdirSync(validation, { recursive: true })
+  copyFileSync(join(iconset, 'icon_512x512@2x.png'), join(validation, 'icon-1024.png'))
+  copyFileSync(join(iconset, 'icon_32x32.png'), join(validation, 'icon-32.png'))
+  await render('template-16-proof.png', 16, false, '#000000', validation, '#FFFFFF')
   execFileSync('iconutil', ['-c', 'icns', iconset, '-o', join(root, 'NimboGuide.icns')])
   rmSync(page)
   window.destroy()

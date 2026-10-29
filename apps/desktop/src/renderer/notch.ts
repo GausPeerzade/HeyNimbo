@@ -37,6 +37,8 @@ function renderPeek(snapshot: AppSnapshot): void {
   document.getElementById('stop')!.hidden = !snapshot.busy
   document.getElementById('privacy')!.textContent = snapshot.saved ? 'Local text & drawing history' : 'Not saved'
   const recent = document.getElementById('recent')!; recent.replaceChildren()
+  document.getElementById('recent-empty')!.hidden = snapshot.conversations.length > 0
+  recent.hidden = snapshot.conversations.length === 0
   for (const c of [...snapshot.conversations].sort((a,b) => b.updated - a.updated).slice(0,3)) {
     const button = document.createElement('button'); button.className = 'recent'; button.textContent = c.title
     button.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home', id: c.id }); recent.append(button)
