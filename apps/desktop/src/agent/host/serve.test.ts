@@ -13,6 +13,19 @@ afterEach(() => vi.useRealTimers())
 it('fails closed until the integrator supplies the real runtime composition', async () => {
   await expect(composeRuntime({ dataDir: '/data', credentials: async () => '', sink: { events: () => {}, partial: () => {} } })).rejects.toThrow('Agent runtime not available yet.')
 })
+it('delivers a 600-event flush completely and in order through bounded transport messages', async () => {
+  const port = new Port()
+  let sink!: RuntimeSink
+  const host = serveHost(port, async init => { sink = init.sink; return { handle: async () => ({}), shutdown: async () => {} } })
+  port.emit('message', { v: 1, kind: 'init', dataDir: '/data' }); await Promise.resolve()
+  const events = Array.from({ length: 600 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `event${i}`, at: 0, payload: { type: 'text' as const, step: 0, text: `${i}` } }))
+  sink.events(events, [])
+  const batches = port.sent.map(parseHostToMain).filter(m => m.kind === 'events')
+  expect(batches.flatMap(m => m.events)).toEqual(events)
+  expect(batches.map(m => m.events.length)).toEqual([256, 256, 88])
+  expect(host.invalidMessages).toBe(0)
+  await host.dispose()
+})
 it('rejects authority-bearing budget extras in created events before either port forwards them', async () => {
   const port = new Port()
   let sink!: RuntimeSink
@@ -51,6 +64,7 @@ const localStart: HostCommand = { kind: 'start', requestId: 'req', goal: 'Read f
 it.each([
   localStart, { ...localStart, search: { provider: 'brave' } },
   { kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' } },
+  { kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'model' }, search: { provider: 'searxng', baseURL: 'https://search.invalid' } },
   { kind: 'deleteConversation', conversationId: 'conversation' },
   { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' },
   { kind: 'answer', runId: 'run', questionId: 'q', text: 'answer' },

@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { SqliteAgentStore } from '../agent/store'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentSupervisor } from './agent-supervisor'
 import { DEFAULT_BUDGET, type AgentEvent, type AgentPush, type HostCommand, type MainToHost, type RunSummary } from '../shared/agent-protocol'
@@ -26,6 +30,23 @@ function setup() {
   return { supervisor, children, pushes, credentials }
 }
 afterEach(() => vi.useRealTimers())
+it('loads retained interrupted tasks on idle list only when an agent database exists', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-supervisor-'))
+  const child = new Child()
+  const supervisor = new AgentSupervisor({ spawn: () => child, credentials: async () => '', onPush: () => {}, dataDir: dir })
+  try {
+    await expect(supervisor.request({ kind: 'list', limit: 10 })).resolves.toEqual({ runs: [] })
+    expect(child.sent).toEqual([])
+    const store = new SqliteAgentStore(join(dir, 'agent.sqlite'))
+    store.createRun({ id: 'old', requestId: 'old-request', goal: 'Resume me', mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: 0 })
+    store.interruptUnfinished(1)
+    const runs = store.listRuns(10); store.close()
+    const list = supervisor.request({ kind: 'list', limit: 10 })
+    expect(child.sent).toEqual([{ v: 1, kind: 'init', dataDir: dir }])
+    child.ready(); child.reply({ runs })
+    await expect(list).resolves.toMatchObject({ runs: [{ id: 'old', status: 'interrupted' }] })
+  } finally { supervisor.dispose(); rmSync(dir, { recursive: true, force: true }) }
+})
 it('reaps a real SIGSTOP-frozen child with the production SIGKILL fallback', async () => {
   const processChild = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'ignore'] })
   const exited = once(processChild, 'exit')
@@ -100,15 +121,33 @@ it('never dispatches a queued start after Stop-all revokes work during host init
   expect(child.killed).toBe(false)
   supervisor.dispose()
 })
-it('bounds a valid event flood instead of buffering unlimited renderer data', async () => {
-  const { supervisor, children } = setup()
+it('flushes healthy bursts at the threshold without dropping events or killing the host', async () => {
+  const { supervisor, children, pushes } = setup()
   const started = supervisor.request(start), child = children[0]!
   child.ready(); child.reply({ runId: 'run' }); await started
   const events = Array.from({ length: 256 }, (_, n) => ({ runId: 'run', seq: n + 1, id: `e${n}`, at: 0, payload: { type: 'text', step: 0, text: 'x' } }))
   for (let n = 0; n < 3; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  expect(supervisor.state).toBe('ready')
+  expect(pushes.flatMap(p => p.kind === 'events' ? p.events : [])).toHaveLength(768)
+  supervisor.dispose()
+})
+it('kills abusive volumes above 10000 events in one frame even across threshold flushes', async () => {
+  vi.useFakeTimers()
+  const { supervisor, children } = setup()
+  const started = supervisor.request(start), child = children[0]!
+  child.ready(); child.reply(); await started
+  const events = Array.from({ length: 256 }, (_, i) => ({ runId: 'run', seq: i + 1, id: `e${i}`, at: 0, payload: { type: 'text', step: 0, text: 'x' } }))
+  for (let n = 0; n < 39; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  await vi.advanceTimersByTimeAsync(16)
+  child.emit('message', { v: 1, kind: 'events', events, runs: [] })
+  expect(child.killed).toBe(false)
+  for (let n = 0; n < 39; n++) child.emit('message', { v: 1, kind: 'events', events, runs: [] })
   expect(child.killed).toBe(true)
   expect(supervisor.state).toBe('crashed')
   supervisor.dispose()
+  expect(vi.getTimerCount()).toBe(0)
 })
 it('escalates a frozen host to SIGKILL even when graceful kill reports successful delivery', async () => {
   vi.useFakeTimers()

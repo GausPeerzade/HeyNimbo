@@ -1,4 +1,6 @@
 import { parseHostToMain } from '../agent/host/serve'
+import { existsSync } from 'node:fs'
+import { agentPaths } from '../agent/paths'
 import { isTerminal, type AgentEvent, type AgentPush, type HostCommand, type HostState, type HostToMain, type MainToHost, type RunSummary, type SearchConfig } from '../shared/agent-protocol'
 
 export interface ChildLike {
@@ -44,6 +46,8 @@ export class AgentSupervisor {
   private runs = new Map<string, RunSummary>()
   private partials = new Map<string, Extract<AgentPush, { kind: 'partial' }>>()
   private flushTimer?: NodeJS.Timeout
+  private volumeTimer?: NodeJS.Timeout
+  private volume = 0
 
   constructor(private readonly deps: SupervisorDeps) {}
   private setState(state: HostState, message?: string): void {
@@ -54,7 +58,7 @@ export class AgentSupervisor {
   private submit(command: HostCommand, timeoutMs: number): Promise<unknown> {
     if (this.disposed) return Promise.reject(new Error(STOPPED))
     if (this.stopping && command.kind !== 'cancelAll') return Promise.reject(new Error('Agent host is stopping.'))
-    if (command.kind === 'list' && this.state === 'idle') return Promise.resolve({ runs: [] })
+    if (command.kind === 'list' && this.state === 'idle' && !existsSync(agentPaths(this.deps.dataDir).db)) return Promise.resolve({ runs: [] })
     if (this.pending.size >= 256) return Promise.reject(new Error('Too many agent requests. Try again.'))
     if (command.kind === 'start' || command.kind === 'continue') {
       this.authority++
@@ -107,12 +111,14 @@ export class AgentSupervisor {
       if (m.ok) pending.resolve(m.result)
       else pending.reject(new Error('Agent request failed.'))
     } else if (m.kind === 'events') {
+      this.volumeTimer ??= setTimeout(() => { this.volume = 0; this.volumeTimer = undefined }, 16)
+      this.volume += m.events.length + m.runs.length
+      if (this.volume > 10_000) { this.clearOutput(); this.fail(CRASHED, true); return }
       this.events.push(...m.events)
       for (const run of m.runs) this.runs.set(run.id, run)
-      if (this.events.length > 512 || this.runs.size > 256) { this.clearOutput(); this.fail(CRASHED, true); return }
       for (const event of m.events) if (event.payload.type === 'text' || (event.payload.type === 'status' && isTerminal(event.payload.status))) this.partials.delete(event.runId)
       const urgent = m.events.some(event => event.payload.type === 'approval.requested' || event.payload.type === 'approval.decided' || event.payload.type === 'question' || (event.payload.type === 'status' && isTerminal(event.payload.status)))
-      if (urgent) this.flush()
+      if (urgent || this.events.length >= 256 || this.runs.size >= 256) this.flush()
       else this.scheduleFlush()
     } else {
       this.partials.set(m.runId, { kind: 'partial', runId: m.runId, step: m.step, text: m.text })
@@ -138,6 +144,7 @@ export class AgentSupervisor {
     this.pending.clear()
   }
   private fail(message: string, kill: boolean): void {
+    clearTimeout(this.volumeTimer); this.volumeTimer = undefined; this.volume = 0
     const child = this.child
     this.child = undefined; this.allowed = []; this.authority++
     if (kill) this.terminate(child)
@@ -187,6 +194,7 @@ export class AgentSupervisor {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    clearTimeout(this.volumeTimer); this.volumeTimer = undefined
     const child = this.child
     this.child = undefined; this.allowed = []; this.authority++
     this.terminate(child); this.rejectPending(STOPPED); this.clearOutput()

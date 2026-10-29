@@ -14,6 +14,7 @@ type Running = Binding & {
   approval?: Wait<Decision>
   question?: Wait<string>
   wallTimer?: ReturnType<typeof setTimeout>
+  deadline: number
   outputBytes: number
   outputExhausted: boolean
   partialTimer?: ReturnType<typeof setTimeout>
@@ -83,7 +84,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   }
   function checkpoint(state: Running) {
     state.controller.signal.throwIfAborted()
-    if (now() - state.run.created >= state.run.budget.maxWallMs) {
+    if (now() >= state.deadline) {
       fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' })
       state.controller.signal.throwIfAborted()
     }
@@ -139,7 +140,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   }
   async function execute(state: Running, command: Pick<Extract<HostCommand, { kind: 'start' }>, 'model' | 'search'>, resume?: StepCheckpoint) {
     const id = state.run.id
-    state.wallTimer = setTimeout(() => fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' }), Math.max(0, state.run.budget.maxWallMs - (now() - state.run.created)))
+    // Wall time is per activation; persisted step/token/output budgets remain cumulative.
+    state.wallTimer = setTimeout(() => fail(state, { code: 'budget', message: 'The run wall-time budget was exhausted.' }), Math.max(0, state.deadline - now()))
     try {
       checkpoint(state)
       if (state.run.usage.outputTokens >= state.run.budget.maxOutputTokens) throw new BudgetError('The output-token budget was exhausted.')
@@ -296,7 +298,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const created = store.createRun({ id: randomUUID(), requestId: command.requestId, goal: command.goal, mode: command.mode, persistence: command.persistence, grants: command.mode === 'local' ? command.grants : [], budget: command.budget, created: now(), ...(command.conversationId ? { conversationId: command.conversationId } : {}) })
           const run = created.run
           if (created.created) {
-            const state: Running = { run, store, artifacts, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
+            const state: Running = { run, store, artifacts, deadline: now() + run.budget.maxWallMs, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
             active.set(run.id, state)
             emit(state, run.id, { type: 'run.created', goal: run.goal, mode: run.mode, persistence: run.persistence, budget: run.budget })
             status(state, 'running')
@@ -308,7 +310,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const binding = find(command.runId)
           const run = binding.store.getRun(command.runId)!
           if (active.has(run.id) || !(run.status === 'interrupted' || (run.status === 'failed' && run.error?.code === 'provider'))) throw new Error('Only an interrupted or provider-failed run can continue.')
-          const state: Running = { ...binding, run, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
+          const state: Running = { ...binding, run, deadline: now() + run.budget.maxWallMs, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
           active.set(run.id, state)
           status(state, 'running')
           state.task = execute(state, command, binding.store.latestCheckpoint(run.id))

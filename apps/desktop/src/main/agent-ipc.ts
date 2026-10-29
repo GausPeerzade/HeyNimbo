@@ -58,10 +58,14 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
       } catch { throw new Error('Could not grant folder access.') }
     }
     if (request.kind === 'start') {
+      const labels = new Set<string>()
       const resolved = (request.grantIds ?? []).map(id => {
         const grant = grants.get(id)
         if (!grant) throw new Error('Folder access expired. Choose the folder again.')
-        return grant
+        let label = grant.label
+        for (let suffix = 2; labels.has(label); suffix++) label = `${grant.label} (${suffix})`
+        labels.add(label)
+        return { ...grant, label }
       })
       const { grantIds: _grantIds, ...start } = request
       const { provider, model, effort, baseURL } = deps.connections.answer()
@@ -70,7 +74,8 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
     }
     if (request.kind === 'continue') {
       const { provider, model, effort, baseURL } = deps.connections.answer()
-      return deps.supervisor.request({ ...request, model: { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) } })
+      const search = deps.settings().agent?.search
+      return deps.supervisor.request({ ...request, model: { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }, ...(search ? { search } : {}) })
     }
     if (request.kind === 'stopAll') return deps.supervisor.stopAll()
     return deps.supervisor.request(request)

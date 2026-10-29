@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { MemoryAgentStore, SqliteAgentStore } from './store'
+import { MemoryArtifactStore } from './artifacts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UnsupportedFunctionalityError } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import type { AgentTool, RuntimeDeps, ToolContext, ToolOutcome } from './contracts'
 import { DEFAULT_BUDGET, isTerminal, parseAgentEvent, type AgentEvent, type AgentEventPayload, type HostCommand } from '../shared/agent-protocol'
 import { FakeArtifacts, FakeStore } from './test-fakes'
+import { DO_INSTRUCTIONS } from './prompt'
 import { createAgentRuntime } from './runtime'
 
 type Chunk = Awaited<ReturnType<MockLanguageModelV4['doStream']>>['stream'] extends ReadableStream<infer C> ? C : never
@@ -50,6 +56,25 @@ function setup(model = scripted([{ text: 'done' }]), tools: AgentTool[] = [], ov
 }
 
 describe('agent coordinator', () => {
+  it('instructs file tools to address grants by label rather than opaque picker IDs', () => {
+    expect(DO_INSTRUCTIONS).toContain('folder-grant labels')
+    expect(DO_INSTRUCTIONS).not.toContain('Use opaque folder-grant IDs')
+  })
+  it('gives Continue a fresh activation wall budget after downtime exceeds the original budget', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'heynimbo-wall-'))
+    const store = new SqliteAgentStore(join(dir, 'agent.sqlite'))
+    let time = 10_000_000
+    store.createRun({ id: 'old', requestId: 'old-request', goal: 'Finish', mode: 'web', persistence: 'retained', grants: [], budget: { ...DEFAULT_BUDGET, maxWallMs: 100 }, created: 0 })
+    store.interruptUnfinished(time)
+    const model = scripted([{ text: 'finished after restart' }])
+    const h = setup(model, [], { store, memoryStore: new MemoryAgentStore(), artifacts: new MemoryArtifactStore(), memoryArtifacts: new MemoryArtifactStore(), clock: { now: () => time } })
+    try {
+      await h.runtime.handle({ kind: 'continue', runId: 'old', model: { provider: 'mock', model: 'mock' } })
+      expect((await h.terminal('old')).status).toBe('succeeded')
+      expect(model.doStreamCalls).toHaveLength(1)
+      time++
+    } finally { await h.runtime.shutdown(); store.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
   it('cancel-all stops both persistence partitions and list pagination returns only public summaries', async () => {
     let time = 1000
     const h = setup(scripted([

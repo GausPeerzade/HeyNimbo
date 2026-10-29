@@ -33,6 +33,13 @@ function model(value: unknown): void {
   if (m.effort !== undefined) check(['low', 'medium', 'high'].includes(m.effort as string))
   if (m.baseURL !== undefined) string(m.baseURL, 2048)
 }
+function search(value: unknown): void {
+  if (value === undefined) return
+  const s = object(value)
+  check(s.provider === 'brave' || s.provider === 'searxng')
+  fields(s, s.provider === 'brave' ? ['provider'] : ['provider', 'baseURL'])
+  if (s.provider === 'searxng') string(s.baseURL, 2048)
+}
 function parseCommand(value: unknown): HostCommand {
   const c = object(value)
   if (c.kind === 'start') {
@@ -48,14 +55,9 @@ function parseCommand(value: unknown): HostCommand {
     }
     budget(c.budget)
     model(c.model)
-    if (c.search !== undefined) {
-      const s = object(c.search)
-      check(s.provider === 'brave' || s.provider === 'searxng')
-      fields(s, s.provider === 'brave' ? ['provider'] : ['provider', 'baseURL'])
-      if (s.provider === 'searxng') string(s.baseURL, 2048)
-    }
+    search(c.search)
   } else if (c.kind === 'continue') {
-    fields(c, ['kind', 'runId', 'model']); identifier(c.runId); model(c.model)
+    fields(c, ['kind', 'runId', 'model', 'search']); identifier(c.runId); model(c.model); search(c.search)
   } else if (c.kind === 'cancelAll') {
     fields(c, ['kind'])
   } else if (c.kind === 'deleteConversation') {
@@ -152,7 +154,9 @@ export function serveHost(port: HostPort, compose: (init: HostInit) => Promise<A
   const sink: RuntimeSink = {
     events(events, runs) {
       const valid = events.filter(value => { try { event(value); return true } catch { invalidMessages++; return false } })
-      try { const m = parseHostToMain({ v: 1, kind: 'events', events: valid, runs }); send(m) } catch { invalidMessages++ }
+      for (let offset = 0; offset < Math.max(valid.length, runs.length, 1); offset += 256) {
+        try { send(parseHostToMain({ v: 1, kind: 'events', events: valid.slice(offset, offset + 256), runs: runs.slice(offset, offset + 256) })) } catch { invalidMessages++ }
+      }
     },
     partial(runId, step, text) {
       try { send(parseHostToMain({ v: 1, kind: 'partial', runId, step, text })) } catch { invalidMessages++ }
