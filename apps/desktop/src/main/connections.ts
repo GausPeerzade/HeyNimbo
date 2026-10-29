@@ -1,7 +1,7 @@
 import { shell } from 'electron'
-import { PROVIDERS, PRESETS, defaultConnectionSettings, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type KeyProvider, type ModelInfo, type ProviderId } from '../shared/providers'
+import { PROVIDERS, PRESETS, defaultConnectionSettings, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type KeyProvider, type KeyHints, type ModelInfo, type ProviderId } from '../shared/providers'
 import { ChatGPTAuth } from './chatgpt-auth'
-import { loadSecret, removeSecret, saveSecret } from './secrets'
+import { loadSecret, removeSecret, saveSecret, secretSavedAt } from './secrets'
 import { validateBaseURL } from './provider-settings'
 import { listProviderModels } from './model-catalog'
 import type { AnswerConnection } from './answer-provider'
@@ -12,10 +12,13 @@ export class Connections {
   private keys = new Map<KeyProvider, string>()
   private compatibleKey?: { baseURL: string; key: string }
   private catalogs = new Map<string, ModelInfo[]>()
+  private savedAt = new Map<KeyProvider, number>()
   private mutating = false
   constructor(private readonly settings: Pick<SettingsStore, 'get' | 'set'>, private readonly changed: () => void, private readonly openSettings: () => void = () => {}) {}
   async load(): Promise<void> {
     for (const provider of PROVIDERS) if (provider !== 'chatgpt') {
+      const date = await secretSavedAt(`${provider}-key`)
+      if (date !== undefined) this.savedAt.set(provider, date)
       const key = await loadSecret(`${provider}-key`)
       if (provider === 'compatible') {
         this.compatibleKey = undefined
@@ -42,6 +45,14 @@ export class Connections {
       models, answerModel: selected.model, answerVision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision,
       voice: this.voiceKey ? 'OpenAI key' : 'unavailable',
     }
+  }
+  private keyHints(): KeyHints {
+    const hints: KeyHints = {}
+    for (const provider of PROVIDERS) if (provider !== 'chatgpt') {
+      const value = provider === 'compatible' ? (this.compatibleKey?.baseURL === this.config.baseURL ? this.compatibleKey.key : undefined) : this.keys.get(provider)
+      if (value) hints[provider] = { suffix: value.length > 4 ? value.slice(-4) : '', savedAt: this.savedAt.get(provider) }
+    }
+    return hints
   }
   get answerReady(): boolean {
     const config = this.config
@@ -98,6 +109,7 @@ export class Connections {
     }
   }
   async request(request: ConnectionRequest, options: { selectSavedProvider?: boolean } = {}): Promise<ConnectionResult> {
+    if (request.kind === 'details') return { ok: true, message: '', keyHints: this.keyHints() }
     if (request.kind === 'snapshot') return { ok: true, message: '', connection: this.snapshot() }
     if (this.mutating) return { ok: false, message: 'Finish the current connection action first.' }
     this.mutating = true
@@ -115,11 +127,13 @@ export class Connections {
             await saveSecret(`${request.provider}-key`, request.key)
             this.keys.set(request.provider, request.key)
           }
-          // Adding an auxiliary voice key must not change the answer's billing path.
+          this.savedAt.set(request.provider, await secretSavedAt(`${request.provider}-key`) ?? Date.now())
+          // Saving a key must not change the answer's billing path.
           if (options.selectSavedProvider) this.settings.set({ ...this.settings.get(), connection: { ...config, provider: request.provider } })
           message = 'Key tested and stored securely on this Mac.'; break
         }
-        case 'removeKey': await removeSecret(`${request.provider}-key`); if (request.provider === 'compatible') this.compatibleKey = undefined; this.keys.delete(request.provider); this.catalogs.delete(this.catalogKey(request.provider)); message = 'Key removed.'; break
+        case 'removeKey': await removeSecret(`${request.provider}-key`); if (request.provider === 'compatible') this.compatibleKey = undefined; this.keys.delete(request.provider); this.savedAt.delete(request.provider); this.catalogs.delete(this.catalogKey(request.provider)); message = 'Key removed.'; break
+        case 'useForAnswers': this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: request.provider } }); break
         case 'test': case 'models': await this.discover(request.provider); message = 'Connection tested; model list refreshed.'; break
         case 'signIn':
           await this.auth.signIn(request.accountId, request.newAccount)

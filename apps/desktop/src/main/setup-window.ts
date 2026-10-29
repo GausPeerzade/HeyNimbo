@@ -42,6 +42,7 @@ export function openSetupWindow(onSaved: (key: string) => void, connect?: (reque
     if (!isPageSender(event, window, 'setup')) return { ok: false, message: 'Not allowed.' }
     let request: ConnectionRequest
     try { request = parseConnectionRequest(value) } catch { return { ok: false, message: 'Invalid connection request.' } }
+    if (request.kind === 'details') return { ok: false, message: 'Not allowed.' }
     const result = await connect(request)
     if (result.ok && (request.kind === 'saveKey' || (request.kind === 'signIn' && result.connection?.providers.chatgpt))) setTimeout(() => { if (!window.isDestroyed()) window.close() }, 800)
     return result

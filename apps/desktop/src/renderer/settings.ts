@@ -1,15 +1,29 @@
 import { renderConnections } from './connections'
 import { button, element, isSnapshot, request } from './app-dom'
 import type { AppSettings, AppSnapshot } from '../shared/app'
+import type { ConnectionResult, KeyHints } from '../shared/providers'
 import logo from '../../build/brand/logo.png?url'
 import darkLogo from '../../build/brand/logo-dark.png?url'
 
 const categories = ['General', 'Voice', 'History & privacy', 'Connection', 'About']
 const fields = document.getElementById('fields')!
 let category = 'General', snapshot: AppSnapshot | undefined
+let keyHints: KeyHints = {}, detailsGeneration = 0
+async function refreshKeyHints(): Promise<void> {
+  if (category !== 'Connection') return
+  const generation = ++detailsGeneration
+  const result = await request({ kind: 'connection', request: { kind: 'details' } }) as ConnectionResult | undefined
+  if (category !== 'Connection' || generation !== detailsGeneration) return
+  keyHints = result?.keyHints ?? {}
+  if (!(document.activeElement instanceof HTMLInputElement)) render()
+}
+function navigate(name: string): void {
+  category = name; keyHints = {}; detailsGeneration++; render()
+  if (category === 'Connection') void refreshKeyHints()
+}
 const nav = document.getElementById('categories')!
 for (const name of categories) {
-  const node = button(name, () => { category = name; render() }); node.dataset.category = name; nav.append(node)
+  const node = button(name, () => { navigate(name) }); node.dataset.category = name; nav.append(node)
 }
 async function update(patch: Partial<AppSettings>): Promise<void> {
   if (snapshot) await request({ kind: 'updateSettings', settings: { ...snapshot.settings, ...patch } })
@@ -31,6 +45,7 @@ function explanation(text: string): void { fields.append(element('p', 'explanati
 function render(): void {
   if (!snapshot) return
   const focused = document.activeElement?.id
+  const connectionMessage = document.getElementById('connection-feedback')?.textContent
   document.getElementById('heading')!.textContent = category
   nav.querySelectorAll('button').forEach(node => node.setAttribute('aria-current', String(node.dataset.category === category)))
   fields.replaceChildren()
@@ -56,7 +71,7 @@ function render(): void {
       explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to providers.')
       break
     case 'Connection':
-      renderConnections(fields, snapshot, update)
+      renderConnections(fields, snapshot, update, keyHints, () => { void refreshKeyHints() })
       break
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
@@ -74,15 +89,15 @@ function render(): void {
       explanation('After changing a permission, return here to refresh its status. macOS may require an app restart for a new grant.')
     }
   }
+  const feedback = document.getElementById('connection-feedback'); if (feedback && connectionMessage) feedback.textContent = connectionMessage
   if (focused) document.getElementById(focused)?.focus()
 }
 window.nimboApp.onSnapshot(value => {
   snapshot = value
   if (category === 'Connection' && document.activeElement instanceof HTMLInputElement) return
-  const message = document.getElementById('connection-feedback')?.textContent
   render()
-  const feedback = document.getElementById('connection-feedback'); if (feedback && message) feedback.textContent = message
+  if (category === 'Connection') void refreshKeyHints()
 })
-window.nimboApp.onNavigate(value => { if (value.category && categories.includes(value.category)) { category = value.category; render() } })
+window.nimboApp.onNavigate(value => { if (value.category && categories.includes(value.category)) navigate(value.category) })
 document.onkeydown = event => { if (event.key === 'Escape') window.close() }
 void request({ kind: 'snapshot' }).then(value => { if (isSnapshot(value)) { snapshot = value; render() } })

@@ -37,3 +37,9 @@ it('allows a compatible endpoint to remain unselected while models are discovere
   expect(parseConnectionSettings(config).models.compatible.customModel).toBe('')
   expect(selectedModel(config).model).toBe('')
 })
+
+it('strictly accepts Connection details and Use for answers without credential fields', () => {
+  expect(parseConnectionRequest({ kind: 'details' })).toEqual({ kind: 'details' })
+  expect(parseConnectionRequest({ kind: 'useForAnswers', provider: 'anthropic' })).toEqual({ kind: 'useForAnswers', provider: 'anthropic' })
+  for (const request of [{ kind: 'details', key: 'secret' }, { kind: 'useForAnswers', provider: 'unknown' }, { kind: 'useForAnswers', provider: 'openai', key: 'secret' }]) expect(() => parseConnectionRequest(request)).toThrow()
+})

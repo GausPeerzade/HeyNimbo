@@ -39,6 +39,7 @@ it('authenticates and strictly parses the setup connection handler before any se
   const request = { kind: 'saveKey', provider: 'anthropic', key: 'synthetic-key' }
   expect(await mocks.handler?.({ ...event, senderFrame: { url } } as IpcMainInvokeEvent, request)).toMatchObject({ ok: false })
   expect(await mocks.handler?.(event, { ...request, access_token: 'synthetic' })).toMatchObject({ ok: false })
+  expect(await mocks.handler?.(event, { kind: 'details' })).toMatchObject({ ok: false, message: 'Not allowed.' })
   expect(connect).not.toHaveBeenCalled()
   expect(await mocks.handler?.(event, request)).toMatchObject({ ok: true })
   expect(connect).toHaveBeenCalledWith(request)

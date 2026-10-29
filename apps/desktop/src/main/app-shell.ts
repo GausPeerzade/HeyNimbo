@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from '../shared/app'
-import type { ConnectionRequest, ConnectionResult, ConnectionSnapshot } from '../shared/providers'
+import { PROVIDER_NAMES, type ConnectionRequest, type ConnectionResult, type ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
 import { clampHomeBounds } from './lifecycle'
@@ -57,7 +57,9 @@ export class AppShell {
   constructor(private readonly actions: ShellActions, private readonly preview = false) {
     ipcMain.handle(AppChannels.request, (event, request: unknown) => {
       if (!isPageSender(event, this.home, 'home') && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
-      return this.handle(parseAppRequest(request))
+      const parsed = parseAppRequest(request)
+      if (parsed.kind === 'connection' && parsed.request.kind === 'details' && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
+      return this.handle(parsed)
     })
     this.conversations.history.prune(this.settings.get().retention)
     this.pruneTimer = setInterval(() => { this.conversations.history.prune(this.settings.get().retention); this.publish() }, 86400000)
@@ -192,10 +194,16 @@ export class AppShell {
         this.conversations.history.prune(next.retention); this.publish(); return
       }
       case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) { this.actions.stop(); this.conversations.deleteAll() }; return
-      case 'connection':
-        if (this.preview || !this.actions.connectionRequest) return { ok: false, message: 'Connections are disabled in preview.' }
-        if (!['snapshot', 'usage', 'models', 'test'].includes(request.request.kind)) this.actions.stop()
-        return this.actions.connectionRequest(request.request)
+      case 'connection': {
+        const command = request.request
+        if ((this.preview && command.kind !== 'details') || !this.actions.connectionRequest) return { ok: false, message: 'Connections are disabled in preview.' }
+        if (command.kind === 'removeKey' || command.kind === 'signOut') {
+          const name = command.kind === 'removeKey' ? command.provider === 'openai' ? 'OpenAI' : PROVIDER_NAMES[command.provider] : 'ChatGPT'
+          if (!await this.confirm(command.kind === 'signOut' ? 'Sign out of ChatGPT?' : `Remove ${name} key?`, 'This disconnects it on this Mac and stops the current answer. You can connect again later.', command.kind === 'signOut' ? 'Sign out' : 'Remove')) return { ok: false, message: 'Nothing removed.' }
+        }
+        if (!['snapshot', 'details', 'usage', 'models', 'test'].includes(command.kind)) this.actions.stop()
+        return this.actions.connectionRequest(command)
+      }
       case 'replaceKey': if (!this.preview) this.actions.replaceKey(); return
       case 'permission': {
         const panes = { microphone: 'Privacy_Microphone', screen: 'Privacy_ScreenCapture', input: 'Privacy_ListenEvent' }

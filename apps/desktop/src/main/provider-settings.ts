@@ -32,13 +32,17 @@ export function parseConnectionSettings(value: unknown): ConnectionSettings {
 export function parseConnectionRequest(value: unknown): ConnectionRequest {
   const input = object(value)
   switch (input.kind) {
-    case 'snapshot': case 'signOut': case 'usage': case 'settings': shape(input, ['kind']); return { kind: input.kind }
+    case 'snapshot': case 'signOut': case 'usage': case 'details': case 'settings': shape(input, ['kind']); return { kind: input.kind }
     case 'signIn': case 'selectAccount': {
       shape(input, input.kind === 'signIn' ? ['kind', 'accountId', 'newAccount'] : ['kind', 'accountId'])
       if (input.newAccount !== undefined && (typeof input.newAccount !== 'boolean' || input.accountId !== undefined)) throw new Error('Invalid account choice.')
       if ((input.kind === 'selectAccount' || input.accountId !== undefined) && (typeof input.accountId !== 'string' || !input.accountId || input.accountId.length > 200)) throw new Error('Invalid account.')
       return input as unknown as ConnectionRequest
     }
+    case 'useForAnswers':
+      shape(input, ['kind', 'provider'])
+      if (!PROVIDERS.includes(input.provider as ProviderId)) throw new Error('Invalid answer provider.')
+      return { kind: 'useForAnswers', provider: input.provider as ProviderId }
     case 'saveKey': case 'removeKey': case 'test': case 'models':
       shape(input, input.kind === 'saveKey' ? ['kind', 'provider', 'key'] : ['kind', 'provider'])
       if ((!['test', 'models'].includes(String(input.kind)) && input.provider === 'chatgpt') || !PROVIDERS.includes(input.provider as ProviderId)) throw new Error('Invalid key provider.')
