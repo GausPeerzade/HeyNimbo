@@ -1,4 +1,5 @@
 import type { Mark } from './beats'
+import type { ConnectionSettings, ConnectionSnapshot, ConnectionRequest } from './providers'
 
 export type Retention = 0 | 7 | 30 | 90 | 'forever'
 export type SpeakingVoice = 'marin' | 'cedar' | 'alloy' | 'coral'
@@ -10,6 +11,7 @@ export interface AppSettings {
   muted: boolean
   saveHistory: boolean
   retention: Retention
+  connection?: ConnectionSettings
   homeBounds?: { x: number; y: number; width: number; height: number }
 }
 export interface DrawingScene {
@@ -25,12 +27,14 @@ export interface Conversation {
 }
 export interface HistoryTurn {
   id: string; conversationId: string; created: number; mode: 'voice' | 'text'; question: string; answer: string
+  provider?: string; model?: string
   state: 'complete' | 'interrupted' | 'error'; error: string | null; scene: DrawingScene; screenContextUsed: boolean
 }
 export interface SearchHit { conversationId: string; turnId: string; title: string; snippet: string; updated: number }
 export interface AppSnapshot {
   conversations: Conversation[]; currentId: string | null; turns: HistoryTurn[]; busy: boolean; activeTurnId: string | null
   status: string; settings: AppSettings; keyPresent: boolean; version: string; saved: boolean
+  connection?: ConnectionSnapshot
   permissions: Record<'microphone' | 'screen' | 'input', string>
 }
 export type AppRequest =
@@ -46,6 +50,7 @@ export type AppRequest =
   | { kind: 'updateSettings'; settings: AppSettings }
   | { kind: 'deleteAll' }
   | { kind: 'replaceKey' }
+  | { kind: 'connection'; request: ConnectionRequest }
   | { kind: 'permission'; permission: 'microphone' | 'screen' | 'input' }
 export const AppChannels = { request: 'nimbo:app-request', snapshot: 'nimbo:app-snapshot', navigate: 'nimbo:app-navigate', notch: 'nimbo:notch-event' } as const
 

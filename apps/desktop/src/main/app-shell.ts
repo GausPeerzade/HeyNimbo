@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from '../shared/app'
+import type { ConnectionRequest, ConnectionResult, ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
 import { clampHomeBounds, shouldShowDock } from './lifecycle'
@@ -16,6 +17,9 @@ export interface ShellActions {
   clear(): void
   replaceKey(): void
   settingsChanged(settings: AppSettings, previous: AppSettings): void
+  connectionRequest?(request: ConnectionRequest): Promise<ConnectionResult>
+  connectionSnapshot?(): ConnectionSnapshot
+  validateSettings?(settings: AppSettings): Promise<void>
   permissions(): AppSnapshot['permissions']
 }
 
@@ -55,6 +59,7 @@ export class AppShell {
     return {
       conversations: this.conversations.list(), currentId: this.conversations.currentId, turns: this.conversations.turns(),
       activeTurnId: this.conversations.activeTurnId, busy: this.busy, status: this.status, settings: this.settings.get(), keyPresent: this.keyPresent,
+      connection: this.actions.connectionSnapshot?.(),
       saved: this.conversations.saved, version: app.getVersion(), permissions: this.preview ? { microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' } : this.actions.permissions(),
     }
   }
@@ -149,7 +154,7 @@ export class AppShell {
       case 'new': this.newConversation(); return
       case 'open': this.openHome(request.id, request.turnId); return
       case 'ask':
-        if (!this.keyPresent) { this.status = 'Connect OpenAI in Settings to ask a question.'; this.publish(); return }
+        if (!this.keyPresent) { this.status = 'Choose an answer connection in Settings → Connection to ask a question.'; this.publish(); return }
         return this.actions.ask(request.question.trim())
       case 'stop': this.actions.stop(); return
       case 'settings': this.openSettings(request.category); return
@@ -170,6 +175,7 @@ export class AppShell {
         if (typeof next.retention === 'number' && next.retention > 0 && (previous.retention === 'forever' || previous.retention === 0 || next.retention < previous.retention)) {
           if (!await this.confirm('Apply shorter history retention?', 'Older conversations, including pinned ones, will be deleted.', 'Apply retention')) { this.publish(); return }
         }
+        await this.actions.validateSettings?.(next)
         this.settings.set(next)
         if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset() }
         // Only a packaged app can own a login item, and only an actual change
@@ -179,6 +185,10 @@ export class AppShell {
         this.conversations.history.prune(next.retention); this.publish(); return
       }
       case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) { this.actions.stop(); this.conversations.deleteAll() }; return
+      case 'connection':
+        if (this.preview || !this.actions.connectionRequest) return { ok: false, message: 'Connections are disabled in preview.' }
+        if (!['snapshot', 'usage', 'models', 'test'].includes(request.request.kind)) this.actions.stop()
+        return this.actions.connectionRequest(request.request)
       case 'replaceKey': if (!this.preview) this.actions.replaceKey(); return
       case 'permission': {
         const panes = { microphone: 'Privacy_Microphone', screen: 'Privacy_ScreenCapture', input: 'Privacy_ListenEvent' }

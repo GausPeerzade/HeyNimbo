@@ -8,11 +8,22 @@
   </head>
   <body>
     <form id="form">
-      <h1>Connect OpenAI</h1>
-      <p>Your key is encrypted with macOS Keychain and sent only to OpenAI. Requests are billed to your OpenAI account.</p>
-      <label for="key">OpenAI API key</label>
-      <input id="key" aria-label="OpenAI API key" name="api-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" autofocus />
-      <button id="save" type="submit" class="primary">Connect OpenAI</button>
+      <h1>Connect NimboGuide</h1>
+      <p>Choose how to power your answers. You can change this in Settings at any time.</p>
+      <label for="provider">Connection</label>
+      <select id="provider" aria-label="Connection">
+        <option value="chatgpt">ChatGPT plan · no API key</option>
+        <option value="openai">OpenAI API key · answers + voice</option>
+        <option value="anthropic">Anthropic API key · Claude answers</option>
+        <option value="google">Google Gemini API key</option>
+        <option value="deepseek">DeepSeek API key</option>
+        <option value="openrouter">OpenRouter API key</option>
+      </select>
+      <p id="features">Use your eligible Plus or Pro plan for answers at no charge from NimboGuide. Voice needs a separate OpenAI API key.</p>
+      <label id="key-label" for="key" hidden>API key</label>
+      <input id="key" aria-label="API key" name="api-key" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false" hidden />
+      <button id="save" type="submit" class="primary">Continue with ChatGPT</button>
+      <button id="more" type="button">More options / local models…</button>
       <p id="status" role="status"></p>
     </form>
     <script type="module" src="./setup.ts"></script>

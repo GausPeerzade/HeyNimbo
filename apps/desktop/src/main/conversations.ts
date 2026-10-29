@@ -35,11 +35,11 @@ export class ConversationController {
   context(): Exchange[] {
     return this.current ? this.repository.context(this.current, this.active?.id) : []
   }
-  begin(question: string, mode: HistoryTurn['mode']): string {
+  begin(question: string, mode: HistoryTurn['mode'], connection?: { provider: string; model: string }): string {
     const previous = this.current
     const conversationId = previous && this.repository.exists(previous) ? previous : this.repository.create()
     let id: string
-    try { id = this.repository.begin(conversationId, question, mode) }
+    try { id = this.repository.begin(conversationId, question, mode, Date.now(), connection) }
     catch (error) {
       if (conversationId !== previous) {
         try { this.repository.delete(conversationId) } catch { console.warn('[history] Could not remove an empty conversation.') }

@@ -17,7 +17,7 @@ export class HistoryRepository {
     this.db = new DatabaseSync(path)
     this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;')
     const version = Number((this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
-    if (version > 1) throw new Error('This history was created by a newer NimboGuide version.')
+    if (version > 2) throw new Error('This history was created by a newer NimboGuide version.')
     if (version < 1) this.db.exec(`
       BEGIN;
       CREATE TABLE conversations(id TEXT PRIMARY KEY, title TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0);
@@ -36,6 +36,13 @@ export class HistoryRepository {
       CREATE TRIGGER turn_delete AFTER DELETE ON turns BEGIN DELETE FROM turn_search WHERE turn_id=old.id; END;
       CREATE TRIGGER conversation_title AFTER UPDATE OF title ON conversations BEGIN UPDATE turn_search SET title=new.title WHERE conversation_id=new.id; END;
       PRAGMA user_version=1;
+      COMMIT;
+    `)
+    if (version < 2) this.db.exec(`
+      BEGIN;
+      ALTER TABLE turns ADD COLUMN provider TEXT NOT NULL DEFAULT 'openai';
+      ALTER TABLE turns ADD COLUMN model TEXT NOT NULL DEFAULT 'gpt-6.1-terra';
+      PRAGMA user_version=2;
       COMMIT;
     `)
   }
@@ -61,16 +68,17 @@ export class HistoryRepository {
     return this.db.prepare('SELECT * FROM turns WHERE conversation_id=? ORDER BY created,rowid').all(id).map(row => ({
       id: String(row.id), conversationId: String(row.conversation_id), created: Number(row.created), mode: row.mode,
       question: String(row.question), answer: String(row.answer), state: row.state, error: row.error,
+      provider: String(row.provider), model: String(row.model),
       scene: JSON.parse(String(row.scene)), screenContextUsed: Boolean(row.screen_context_used),
     })) as HistoryTurn[]
   }
-  begin(conversationId: string, question: string, mode: HistoryTurn['mode'], now = Date.now()): string {
+  begin(conversationId: string, question: string, mode: HistoryTurn['mode'], now = Date.now(), connection = { provider: 'openai', model: 'gpt-6.1-terra' }): string {
     const id = randomUUID()
     this.db.exec('BEGIN')
     try {
       const first = !this.db.prepare('SELECT 1 FROM turns WHERE conversation_id=? LIMIT 1').get(conversationId)
       if (first) this.rename(conversationId, question.trim().slice(0, 100))
-      this.db.prepare(`INSERT INTO turns(id,conversation_id,created,mode,question,state,scene) VALUES(?,?,?,?,?,'interrupted',?)`).run(id, conversationId, now, mode, question, JSON.stringify(EMPTY_SCENE))
+      this.db.prepare(`INSERT INTO turns(id,conversation_id,created,mode,question,state,scene,provider,model) VALUES(?,?,?,?,?,'interrupted',?,?,?)`).run(id, conversationId, now, mode, question, JSON.stringify(EMPTY_SCENE), connection.provider, connection.model)
       this.db.prepare('UPDATE conversations SET updated=? WHERE id=?').run(now, conversationId)
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); throw error }

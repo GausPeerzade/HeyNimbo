@@ -29,3 +29,8 @@ select { max-width: var(--settings-sidebar); min-height: var(--input-height); ba
 .permission strong { display: block; font-weight: var(--weight-medium); margin-bottom: var(--space-1); }
 .permission button { font-size: var(--text-meta); }
 .titlebar-drag { position: fixed; top: 0; left: var(--settings-sidebar); right: 0; height: var(--titlebar); -webkit-app-region: drag; user-select: none; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.connection-field { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-4) 0; font-size: var(--text-ui); }
+.connection-field input, #connection-preset, #connection-model-list { width: 100%; min-height: var(--input-height); }
+#connection-preset, #connection-model-list { max-width: 100%; }
+.connection-field button { align-self: flex-start; }

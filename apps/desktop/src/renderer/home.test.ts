@@ -40,7 +40,7 @@ let keydown: ((event: { key: string; metaKey?: boolean; ctrlKey?: boolean; preve
 beforeEach(() => {
   vi.resetModules(); mocks.request.mockReset(); mocks.request.mockResolvedValue(undefined); mocks.thumbnail.mockReset(); nodes.clear()
   mocks.element = (tag, className = '', text = '') => { const node = new TestNode(tag); node.className = className; node.textContent = text; return node }
-  for (const id of ['search', 'question', 'transcript', 'conversations', 'title', 'rename-form', 'rename', 'stop', 'send', 'feedback', 'saving', 'composer', 'new', 'new-top', 'toggle', 'settings']) { const node = new TestNode('div'); node.id = id; nodes.set(id, node) }
+  for (const id of ['search', 'question', 'transcript', 'conversations', 'title', 'rename-form', 'rename', 'stop', 'send', 'feedback', 'screen-context', 'saving', 'composer', 'new', 'new-top', 'toggle', 'settings']) { const node = new TestNode('div'); node.id = id; nodes.set(id, node) }
   nodes.get('rename-form')!.hidden = true
   vi.stubGlobal('document', { getElementById: (id: string) => nodes.get(id), activeElement: null, body: new TestNode('body'), set onkeydown(handler: typeof keydown) { keydown = handler } })
   vi.stubGlobal('window', { nimboApp: { onSnapshot: (handler: typeof mocks.snapshot) => { mocks.snapshot = handler }, onNavigate() {} } })
@@ -101,4 +101,10 @@ it('replaces the send action with Stop while a response is busy and restores it 
   mocks.snapshot!({ ...snapshot(), busy: false })
   expect(nodes.get('send')!.hidden).toBe(false)
   expect(nodes.get('stop')!.hidden).toBe(true)
+})
+
+it('explains that a non-vision model does not capture the screen or draw coordinates', async () => {
+  await import('./home')
+  mocks.snapshot!({ ...snapshot(), connection: { providers: { chatgpt: false, openai: false, anthropic: false, google: false, deepseek: false, openrouter: false, compatible: true }, accounts: [], models: [], answerModel: 'local-text', answerVision: false, voice: 'unavailable' } })
+  expect(nodes.get('screen-context')?.textContent).toBe('Text-only model · no screen capture or coordinate drawing')
 })

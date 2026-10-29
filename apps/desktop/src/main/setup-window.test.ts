@@ -29,3 +29,17 @@ it('never validates or stores a key from a subframe or a navigated setup documen
   expect(await mocks.handler?.(event, key)).toEqual({ ok: true })
   expect(mocks.save).toHaveBeenCalledWith(key); expect(saved).toHaveBeenCalledWith(key)
 })
+
+it('authenticates and strictly parses the setup connection handler before any secret-bearing operation', async () => {
+  vi.useFakeTimers()
+  const connect = vi.fn(async () => ({ ok: true, message: 'Synthetic connection' }))
+  openSetupWindow(vi.fn(), connect)
+  const contents = mocks.windows[0]!.webContents, frame = contents.mainFrame, url = frame.url
+  const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
+  const request = { kind: 'saveKey', provider: 'anthropic', key: 'synthetic-key' }
+  expect(await mocks.handler?.({ ...event, senderFrame: { url } } as IpcMainInvokeEvent, request)).toMatchObject({ ok: false })
+  expect(await mocks.handler?.(event, { ...request, access_token: 'synthetic' })).toMatchObject({ ok: false })
+  expect(connect).not.toHaveBeenCalled()
+  expect(await mocks.handler?.(event, request)).toMatchObject({ ok: true })
+  expect(connect).toHaveBeenCalledWith(request)
+})

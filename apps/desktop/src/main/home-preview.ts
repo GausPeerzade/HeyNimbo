@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { app, BrowserWindow, nativeTheme, session } from 'electron'
+import { defaultConnectionSettings, PRESETS, selectedModel, PROVIDERS, type ConnectionSnapshot } from '../shared/providers'
 import { AppChannels } from '../shared/app'
 import { Channels } from '../shared/ipc'
 import { AppShell } from './app-shell'
@@ -19,9 +20,12 @@ export function configureHomePreview(): void {
 export async function runHomePreview(): Promise<void> {
   app.dock?.hide()
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
-  const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
+  const shell = new AppShell({ ask() { return { accepted: true } }, stop() {}, clear() {}, replaceKey() {}, settingsChanged() {}, connectionSnapshot: (): ConnectionSnapshot => {
+    const config = shell.settings.get().connection ?? defaultConnectionSettings(), model = selectedModel(config)
+    return { providers: Object.fromEntries(PROVIDERS.map(p => [p, true])) as ConnectionSnapshot['providers'], accounts: [{ id: 'preview-account', name: 'Alex Example', email: 'alex@example.invalid', connected: true, sharing: true }], activeAccount: 'preview-account', models: [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()], answerModel: model.model, answerVision: model.vision, voice: config.provider === 'compatible' ? 'unavailable' : 'OpenAI key' }
+  }, permissions: () => ({ microphone: 'Preview only', screen: 'Preview only', input: 'Preview only' }) }, true)
   shell.keyPresent = true
-  const output = '/tmp/nimbo-ui-validation'
+  const output = '/tmp/nimbo-auth-validation'
   mkdirSync(output, { recursive: true })
   const pause = () => new Promise(resolve => setTimeout(resolve, 350))
   const diagnostics: Record<string, unknown> = {}
@@ -43,13 +47,14 @@ export async function runHomePreview(): Promise<void> {
     diagnostics[name] = await window.webContents.executeJavaScript(`({ visible: ${window.isVisible()}, overflowX: document.documentElement.scrollWidth > innerWidth, overflowY: document.body.scrollHeight > innerHeight, fonts: document.fonts.status, peekBottom: document.getElementById('peek')?.getBoundingClientRect().bottom, height: innerHeight })`)
     writeFileSync(`${output}/${name}.png`, (await window.webContents.capturePage()).toPNG())
   }
-  const setup = new BrowserWindow({ width: 460, height: 420, show: false, paintWhenInitiallyHidden: true, webPreferences: { ...secureWebPreferences('setup'), backgroundThrottling: false } })
+  const setup = new BrowserWindow({ width: 460, height: 560, show: false, paintWhenInitiallyHidden: true, webPreferences: { ...secureWebPreferences('setup'), backgroundThrottling: false } })
   const notch = new BrowserWindow({ width: 384, height: 420, frame: false, transparent: true, backgroundColor: '#00000000', show: false, paintWhenInitiallyHidden: true, webPreferences: { ...secureWebPreferences(), backgroundThrottling: false } })
   observe(setup); observe(notch)
   await Promise.all([loadPage(setup, 'setup'), loadPage(notch, 'notch')])
   for (const theme of ['light', 'dark'] as const) {
     nativeTheme.themeSource = theme
     shell.conversations.deleteAll()
+    shell.settings.set({ ...shell.settings.get(), connection: defaultConnectionSettings() })
     const home = shell.openHome(), settings = shell.openSettings()
     home.webContents.setBackgroundThrottling(false); settings.webContents.setBackgroundThrottling(false)
     if (theme === 'light') { observe(home); observe(settings) }
@@ -100,7 +105,34 @@ export async function runHomePreview(): Promise<void> {
     if (resetLines > 1.1) throw new Error(`Textarea did not shrink: ${resetLines}`)
     diagnostics[`draft-reset-${theme}`] = resetLines
     home.setSize(960, 680)
-    await capture(setup, `setup-${theme}`)
+    for (const provider of ['chatgpt', 'openai', 'anthropic'] as const) {
+      const config = shell.settings.get().connection ?? defaultConnectionSettings()
+      shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider } })
+      shell.publish(true); settings.webContents.send(AppChannels.navigate, { category: 'Connection' }); await pause()
+      await capture(settings, `connection-${provider}-${theme}`)
+      if (provider === 'chatgpt') {
+        await settings.webContents.executeJavaScript("{ const voice = document.querySelector('details'); voice.open = true; voice.scrollIntoView() }")
+        await pause(); await capture(settings, `connection-chatgpt-voice-${theme}`)
+        await settings.webContents.executeJavaScript("document.querySelector('details').open = false")
+      }
+      await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = document.querySelector('main').scrollHeight")
+      await pause(); await capture(settings, `connection-${provider}-models-${theme}`)
+      await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = 0")
+      await setup.webContents.executeJavaScript(`{ const provider = document.getElementById('provider'); provider.value = '${provider}'; provider.dispatchEvent(new Event('change')) }`)
+      await pause(); await capture(setup, `setup-${provider}-${theme}`)
+    }
+    {
+      const config = shell.settings.get().connection ?? defaultConnectionSettings()
+      shell.settings.set({ ...shell.settings.get(), connection: { ...config, provider: 'compatible', models: { ...config.models, compatible: { preset: 'custom', customModel: 'local-text' } } } })
+      shell.publish(true); settings.webContents.send(AppChannels.navigate, { category: 'Connection' }); await pause()
+      await capture(settings, `connection-local-${theme}`)
+      await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = document.querySelector('main').scrollHeight")
+      await pause(); await capture(settings, `connection-local-models-${theme}`)
+      settings.setSize(680, 520); await pause(); await capture(settings, `connection-local-narrow-${theme}`)
+      const overflow = await settings.webContents.executeJavaScript("document.documentElement.scrollWidth > innerWidth || document.getElementById('fields').scrollWidth > document.getElementById('fields').clientWidth")
+      if (overflow) throw new Error('Connection fields overflow their window.')
+      settings.setSize(760, 610); await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = 0")
+    }
     notch.webContents.send('nimbo:peek-dismiss')
     notch.webContents.send(Channels.notchStatus, { kind: 'idle' })
     notch.webContents.send(AppChannels.snapshot, shell.snapshot())
