@@ -42,7 +42,8 @@ function render(): void {
       explanation('Closing Home keeps voice available. Choose Quit NimboGuide to stop the app. Reopen it from the Dock or Applications.')
       break
     case 'Voice':
-      select('voice', 'Speaking voice', [['Marin', 'marin'], ['Cedar', 'cedar'], ['Alloy', 'alloy'], ['Coral', 'coral']])
+      if (snapshot.connection?.voice === 'OpenAI') select('voice', 'Speaking voice', [['Marin', 'marin'], ['Cedar', 'cedar'], ['Alloy', 'alloy'], ['Coral', 'coral']])
+      explanation('Voice is chosen automatically: OpenAI when an OpenAI key is saved, otherwise built into your Mac. Mac speech uses the best installed local voice for the answer’s language.')
       toggle('muted', 'Mute speech & drawing sounds', 'The written answer and drawings remain available.')
       explanation('Hold Control + Option to speak; release to ask. Press again to interrupt the current answer. Changing the voice stops the current response.')
       break
@@ -51,7 +52,7 @@ function render(): void {
       select('retention', 'Keep history', [['Off', 0], ['7 days', 7], ['30 days', 30], ['90 days', 90], ['Until deleted', 'forever']])
       explanation('Saved here: questions, answers, generated drawing text and marks, times, and whether screen context was used. No screenshots, microphone audio or API key. Pinned items use the same retention. Off stops saving new conversations.')
       fields.append(element('h2', '', 'What leaves this Mac'))
-      explanation('Your question and a capture of the display under your pointer go to the selected answer provider (or your local endpoint). Voice uses an OpenAI key and also sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
+      explanation('Your question and a capture of the display under your pointer go to the selected answer provider (or your local endpoint). Built-in speech is processed on this Mac; nothing is sent for voice. When an OpenAI key is saved, voice uses OpenAI and sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
       fields.append(button('Delete all history…', () => { void request({ kind: 'deleteAll' }) }, 'danger'))
       explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to providers.')
       break

@@ -18,6 +18,13 @@ export declare class GestureMonitor {
   stop(): void
 }
 
+export declare class SpeechSession {
+  constructor(locale?: string | undefined | null)
+  append(pcm: Buffer): void
+  finish(): Promise<string>
+  cancel(): void
+}
+
 export interface CaptureOptions {
   /** Longest image edge in pixels (default 1280). Frames are never upscaled. */
   maxLongEdge?: number
@@ -65,6 +72,9 @@ export declare function hasInputMonitoringAccess(): boolean
 /** Whether the screen may be recorded (macOS Screen Recording). */
 export declare function hasScreenCaptureAccess(): boolean
 
+/** Checks bundle metadata only, without contacting any protected-resource API. */
+export declare function hasVoiceUsageDescriptions(): boolean
+
 export interface ImagePoint {
   x: number
   y: number
@@ -77,6 +87,9 @@ export declare function requestInputMonitoringAccess(): boolean
 
 /** Prompts for Screen Recording once; returns whether access is granted. */
 export declare function requestScreenCaptureAccess(): boolean
+
+/** Call only from an explicit user action. Missing usage strings never reach TCC. */
+export declare function requestSpeechAuthorization(): Promise<string>
 
 export interface ScreenCaptures {
   displays: Array<DisplayCapture>
@@ -91,3 +104,13 @@ export interface ScreenRect {
   width: number
   height: number
 }
+
+export declare function speechAvailability(locale?: string | undefined | null): SpeechAvailability
+
+export interface SpeechAvailability {
+  available: boolean
+  authorization: string
+  reason?: string
+}
+
+export declare function speechLanguage(text: string): string | null

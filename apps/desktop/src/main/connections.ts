@@ -6,6 +6,7 @@ import { validateBaseURL } from './provider-settings'
 import { listProviderModels } from './model-catalog'
 import type { AnswerConnection } from './answer-provider'
 import type { SettingsStore } from './settings'
+import { allowSpeechRecognition, selectVoiceEngine } from './voice/engine'
 
 export class Connections {
   readonly auth = new ChatGPTAuth(url => shell.openExternal(url))
@@ -30,9 +31,10 @@ export class Connections {
   }
   get config(): ConnectionSettings { return this.settings.get().connection ?? defaultConnectionSettings() }
   get voiceKey(): string | undefined { return this.keys.get('openai') }
+  get voiceEngine(): ReturnType<typeof selectVoiceEngine> { return selectVoiceEngine(this.voiceKey) }
   private catalogKey(provider: ProviderId, config = this.config): string { return provider === 'compatible' ? `${provider}:${config.baseURL}` : provider === 'chatgpt' ? `${provider}:${this.auth.active?.id}` : provider }
   snapshot(): ConnectionSnapshot {
-    const config = this.config, selected = selectedModel(config)
+    const config = this.config, selected = selectedModel(config), voice = this.voiceEngine
     const catalog = this.catalogs.get(this.catalogKey(config.provider))
     const models = catalog ?? [...new Map(Object.values(PRESETS[config.provider]).filter(p => p.model).map(p => [p.model, { id: p.model, name: p.model, vision: p.vision, tested: false }])).values()]
     return {
@@ -40,7 +42,8 @@ export class Connections {
       accounts: this.auth.profiles.map(p => ({ id: p.id, name: p.identity?.name ?? 'Finish sign-in', email: p.identity?.email ?? '', connected: Boolean(p.tokens), sharing: Boolean(p.tokens?.scopes.includes('chatgpt.tokens.use.direct')) })), activeAccount: this.auth.active?.id,
       compatibleKeyPresent: Boolean(this.compatibleKey?.baseURL === config.baseURL),
       models, answerModel: selected.model, answerVision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision,
-      voice: this.voiceKey ? 'OpenAI key' : 'unavailable',
+      voice: voice.engine === 'openai' ? 'OpenAI' : voice.engine === 'builtin' ? 'Built into your Mac' : 'unavailable',
+      ...(voice.engine === 'unavailable' ? { voiceReason: voice.reason, needsSpeechPermission: voice.needsPermission } : {}),
     }
   }
   get answerReady(): boolean {
@@ -113,11 +116,12 @@ export class Connections {
           await this.auth.signIn(request.accountId, request.newAccount)
           if (this.auth.active?.tokens?.scopes.includes('chatgpt.tokens.use.direct')) {
             this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } })
-            await this.discover('chatgpt'); message = 'Using ChatGPT plan. Voice still needs a separate OpenAI key.'
+            await this.discover('chatgpt'); message = 'Using ChatGPT plan. Voice is selected automatically.'
           } else message = 'Signed in, but ChatGPT plan usage is disabled. Enable it with Continue with ChatGPT, or use an API key. An eligible Plus or Pro plan is required.'
           break
         case 'selectAccount': await this.auth.select(request.accountId); this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: 'chatgpt' } }); if (this.auth.active?.tokens) await this.discover('chatgpt'); break
         case 'signOut': message = await this.auth.signOut(); break
+        case 'allowSpeechRecognition': await allowSpeechRecognition(); message = this.voiceEngine.engine === 'builtin' ? 'Built-in speech recognition is ready.' : 'Speech recognition is not available. See the voice summary.'; break
         case 'settings': this.openSettings(); message = 'Choose a connection in Settings.'; break
         case 'usage': await shell.openExternal('https://chatgpt.com/settings/usage'); message = 'Opened ChatGPT usage settings.'; break
       }

@@ -78,7 +78,7 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   const modelLabel = element('label', 'connection-field'); modelLabel.append(picker); model.append(modelLabel)
   const modelId = state?.answerModel ?? selectedModel(config).model, vision = state?.answerVision ?? selectedModel(config).vision
   const capabilities = vision ? 'Sees your screen · Draws on screen' : 'Text only · Does not see or draw on your screen'
-  const summary = element('p', 'explanation', modelId ? `${modelId} · ${capabilities}${state?.voice === 'OpenAI key' ? ' · Reads answers aloud' : ''} · ${state?.models.find(entry => entry.id === modelId)?.tested ? 'Tested' : 'Experimental'}` : 'Choose a model to start.')
+  const summary = element('p', 'explanation', modelId ? `${modelId} · ${capabilities}${state && state.voice !== 'unavailable' ? ' · Reads answers aloud' : ''} · ${state?.models.find(entry => entry.id === modelId)?.tested ? 'Tested' : 'Experimental'}` : 'Choose a model to start.')
   summary.id = 'connection-model-summary'; model.append(summary, button(state?.models.length ? 'Refresh models' : 'Find models', () => { void run({ kind: 'models', provider }) }))
   fields.append(model)
 
@@ -98,15 +98,8 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   fields.append(advanced)
 
   const voice = element('details', 'connection-section'); voice.id = 'connection-voice'
-  voice.append(element('summary', '', 'Voice (optional)'))
-  voice.append(element('p', 'explanation', `${state?.voice === 'OpenAI key' ? 'On: reads answers aloud and lets you ask by speaking.' : 'Off: add an OpenAI API key to read answers aloud and ask by speaking.'} ChatGPT plan sign-in powers answers only.`))
-  if (provider !== 'openai') {
-    const voiceKey = element('input'); voiceKey.id = 'voice-key'; voiceKey.type = 'password'; voiceKey.autocomplete = 'off'; voiceKey.spellcheck = false; voiceKey.setAttribute('aria-label', 'OpenAI API key for voice')
-    const label = element('label', 'connection-field', 'OpenAI API key'); label.append(voiceKey)
-    const actions = element('div', 'connection-actions')
-    actions.append(button('Test & save voice key', () => { const key = voiceKey.value; voiceKey.value = ''; void run({ kind: 'saveKey', provider: 'openai', key }) }, 'primary'))
-    if (state?.providers.openai) actions.append(button('Remove voice key', () => { void run({ kind: 'removeKey', provider: 'openai' }) }))
-    voice.append(label, actions, element('p', 'explanation', 'This does not change your answer provider. OpenAI bills audio usage to this API key.'))
-  } else voice.append(element('p', 'explanation', 'The OpenAI key above also powers voice.'))
+  voice.append(element('summary', '', `Voice: ${state?.voice === 'unavailable' || !state ? 'Unavailable' : state.voice}`))
+  voice.append(element('p', 'explanation', state?.voice === 'unavailable' ? state.voiceReason ?? 'Built-in listening is unavailable on this Mac.' : 'Reads answers aloud and lets you ask by speaking. Uses OpenAI when an OpenAI key is saved; otherwise uses built-in Mac speech automatically.'))
+  if (state?.needsSpeechPermission) voice.append(button('Allow speech recognition', () => { void run({ kind: 'allowSpeechRecognition' }) }, 'primary'))
   fields.append(voice, feedback)
 }

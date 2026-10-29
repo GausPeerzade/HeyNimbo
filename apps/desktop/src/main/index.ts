@@ -1,11 +1,11 @@
 import { app, screen, systemPreferences, type BrowserWindow } from 'electron'
-import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
+import { hasVoiceUsageDescriptions, hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
 import { AppShell } from './app-shell'
 import { NotchPeek } from './notch-peek'
 import { configureHomePreview, runHomePreview } from './home-preview'
 import { devFlag } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
-import { AudioWindow, ensureMicrophoneAccess } from './audio-window'
+import { AudioWindow } from './audio-window'
 import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
 import { Connections } from './connections'
@@ -14,6 +14,8 @@ import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './dra
 import { configureModelGallery, runModelGallery } from './model-gallery'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
+import { BuiltInEars } from './voice/builtin-ears'
+import { BuiltInMouth } from './voice/builtin-mouth'
 import { TalkSession } from './voice/talk'
 import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus, setNotchVisibility } from './windows'
 
@@ -43,7 +45,7 @@ function createGesturePresenter(
     console.info(`[gesture] ${message.action} ${message.phase}`)
     if (message.action === 'talk') {
       const session = talk()
-      if (!session || session.voiceAvailable === false) return show({ kind: 'active', label: 'Voice needs an OpenAI key. Add one in Settings → Connection; ChatGPT plans power answers only.' })
+      if (!session || session.voiceAvailable === false) return show({ kind: 'active', label: session?.voiceUnavailableReason ?? 'Voice unavailable. Open Settings → Connection.' })
       if (message.phase === 'started') {
         // A new question replaces whatever the last answer was still drawing.
         overlays.clear()
@@ -67,16 +69,17 @@ function createGesturePresenter(
   }
 }
 
-/** Builds answers; only the API key enables realtime ears and mouth. */
+/** Voice follows saved credentials and local permission, independently of answers. */
 function startTalking(key: string | undefined, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell, connections: Connections): TalkSession {
-  if (key) void ensureMicrophoneAccess()
-  const ears = key ? new Ears(key) : undefined
-  const mouth = key ? new Mouth(key, shell.settings.get().voice) : undefined
+  const voice = connections.voiceEngine
+  const ears = voice.engine === 'openai' && key ? new Ears(key) : voice.engine === 'builtin' ? new BuiltInEars() : undefined
+  const mouth = voice.engine === 'openai' && key ? new Mouth(key, shell.settings.get().voice) : voice.engine === 'builtin' ? new BuiltInMouth(audio) : undefined
   const session = new TalkSession({
     key, answer: () => connections.answer(),
     conversations: shell.conversations,
     ears,
     mouth,
+    voiceUnavailableReason: voice.engine === 'unavailable' ? voice.reason : undefined,
     audio,
     capture: captureCursorDisplay,
     onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
@@ -125,7 +128,7 @@ if (ownsInstance) app.whenReady().then(async () => {
       overlays.clear(); return talk.askText(question)
     },
     stop: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
-    clear: () => overlays.clear(),
+    clear: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
     replaceKey: () => openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true })),
     connectionRequest: request => connections.request(request),
     connectionSnapshot: () => connections.snapshot(),
@@ -136,7 +139,7 @@ if (ownsInstance) app.whenReady().then(async () => {
       if (settings.voice !== previous.voice || JSON.stringify(settings.connection) !== JSON.stringify(previous.connection)) reconnect()
     },
     permissions: () => ({
-      microphone: systemPreferences.getMediaAccessStatus('microphone'),
+      microphone: hasVoiceUsageDescriptions() ? systemPreferences.getMediaAccessStatus('microphone') : 'unavailable: missing usage descriptions',
       screen: hasScreenCaptureAccess() ? 'granted' : 'not granted',
       input: hasInputMonitoringAccess() ? 'granted' : 'not granted',
     }),

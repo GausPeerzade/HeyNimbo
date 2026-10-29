@@ -33,7 +33,7 @@ function snapshot(provider: ProviderId = 'compatible'): AppSnapshot {
   const config = defaultConnectionSettings(); config.provider = provider
   if (provider === 'compatible') config.models.compatible = { preset: 'custom', customModel: 'model-a' }
   const model = selectedModel(config)
-  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, false])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI key' } }
+  return { conversations: [], currentId: null, turns: [], activeTurnId: null, busy: false, status: '', settings: { ...DEFAULT_SETTINGS, connection: config }, keyPresent: true, saved: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' }, connection: { providers: Object.fromEntries(PROVIDERS.map(p => [p, false])) as Record<ProviderId, boolean>, accounts: [], models: [{ id: 'discovered-model', name: 'Discovered model', vision: false, tested: false }], answerModel: model.model, answerVision: model.vision, voice: 'OpenAI' } }
 }
 it.each(PROVIDERS)('keeps %s connections ordered, with one Model picker and collapsed Advanced/Voice sections', provider => {
   renderConnections(fields as unknown as HTMLElement, snapshot(provider), vi.fn())
@@ -41,7 +41,7 @@ it.each(PROVIDERS)('keeps %s connections ordered, with one Model picker and coll
   expect(byId('connection-model-section').querySelectorAll('select')).toHaveLength(1)
   expect(byId('connection-advanced')).toMatchObject({ tag: 'details', open: false })
   expect(byId('connection-voice')).toMatchObject({ tag: 'details', open: false })
-  expect(text(byId('connection-voice'))).toMatch(/reads? answers aloud/)
+  expect(text(byId('connection-voice'))).toMatch(/[Rr]eads? answers aloud/)
   for (const section of fields.children) expect(section.querySelectorAll('button').filter(button => button.className === 'primary').length).toBeLessThanOrEqual(1)
   const groups = byId('connection-model-picker').children.filter(node => node.tag === 'optgroup')
   expect(groups.map(group => group.label)).toEqual(provider === 'compatible' ? ['Available models'] : ['Recommended', 'Available models'])
@@ -67,11 +67,26 @@ it.each([['Save endpoint', 'https://b.example.invalid/v1'], ['Ollama', 'http://1
   nodes(fields).find(node => node.tag === 'button' && node.textContent === action)!.onclick!()
   expect(update.mock.calls[0]?.[0].connection).toMatchObject({ baseURL: endpoint, models: { compatible: { preset: 'custom', customModel: '' } } })
 })
-it('clears entered keys after submission without changing the selected answer provider', async () => {
-  renderConnections(fields as unknown as HTMLElement, snapshot('anthropic'), vi.fn())
-  byId('voice-key').value = 'synthetic-voice'
-  nodes(byId('connection-voice')).find(node => node.tag === 'button' && node.textContent === 'Test & save voice key')!.onclick!()
-  expect(byId('voice-key').value).toBe('')
-  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'saveKey', provider: 'openai', key: 'synthetic-voice' } })
+it('shows one user-click speech permission action, with no separate voice key settings', async () => {
+  const state = snapshot('anthropic'); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Allow speech recognition.', needsSpeechPermission: true }
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(mocks.request).not.toHaveBeenCalled()
+  const voice = byId('connection-voice'), actions = voice.querySelectorAll('button')
+  expect(actions).toHaveLength(1); expect(actions[0]!.textContent).toBe('Allow speech recognition')
+  expect(voice.querySelectorAll('input')).toHaveLength(0)
+  actions[0]!.onclick!()
+  expect(mocks.request).toHaveBeenCalledWith({ kind: 'connection', request: { kind: 'allowSpeechRecognition' } })
   await Promise.resolve()
+})
+it.each(['OpenAI', 'Built into your Mac'] as const)('shows Voice: %s without configuration actions', voice => {
+  const state = snapshot(); state.connection!.voice = voice
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(text(byId('connection-voice'))).toContain(`Voice: ${voice}`)
+  expect(byId('connection-voice').querySelectorAll('button')).toHaveLength(0)
+})
+it('shows the unavailable reason without a permission action when usage strings are missing', () => {
+  const state = snapshot(); state.connection = { ...state.connection!, voice: 'unavailable', voiceReason: 'Missing usage descriptions.' }
+  renderConnections(fields as unknown as HTMLElement, state, vi.fn())
+  expect(text(byId('connection-voice'))).toContain('Missing usage descriptions.')
+  expect(byId('connection-voice').querySelectorAll('button')).toHaveLength(0)
 })

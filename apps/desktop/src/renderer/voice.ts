@@ -1,5 +1,6 @@
 import type { NimboVoiceApi } from '../preload/voice'
 import type { VoiceCommand } from '../shared/ipc'
+import { SystemSpeech } from './system-speech'
 import workletUrl from './pcm-capture-worklet.js?url'
 
 declare global {
@@ -10,6 +11,9 @@ declare global {
 
 const RATE = 24_000
 const send = window.nimboVoice.send
+const systemSpeech = new SystemSpeech(window.speechSynthesis, send)
+// Prime Chromium's asynchronous installed-voice discovery before the first answer.
+window.speechSynthesis.getVoices()
 
 interface Mic {
   id: number
@@ -158,6 +162,7 @@ function handle(command: VoiceCommand): void {
   switch (command.kind) {
     case 'mute':
       output.gain.value = command.muted ? 0 : 1
+      systemSpeech.mute(command.muted)
       return
     case 'micStart':
       return queueMic(() => startMic(command.id))
@@ -166,10 +171,13 @@ function handle(command: VoiceCommand): void {
     case 'play':
       void speaker.resume()
       return play(command.line, command.pcm)
+    case 'systemSpeak':
+      return systemSpeech.speak(command)
     case 'scribble':
       void speaker.resume()
       return scribble(command.durationMs)
     case 'playEnd':
+      if (systemSpeech.hasAnswer) return systemSpeech.end()
       ending = true
       if (playing.size === 0) {
         resetPlayback()
@@ -177,6 +185,7 @@ function handle(command: VoiceCommand): void {
       }
       return
     case 'playCancel':
+      systemSpeech.cancel()
       scribbling.forEach((source) => source.stop())
       scribbling.clear()
       playing.forEach((source) => {
