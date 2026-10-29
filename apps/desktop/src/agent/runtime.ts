@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { UnsupportedFunctionalityError, isStepCount, modelMessageSchema, jsonSchema, streamText, tool, type ModelMessage, type ToolSet } from 'ai'
+import { UnsupportedFunctionalityError, isStepCount, modelMessageSchema, jsonSchema, streamText, tool, wrapLanguageModel, type ModelMessage, type ToolSet } from 'ai'
 import { isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError } from '../shared/agent-protocol'
 import type { AgentRuntime, AgentTool, AgentStore, ArtifactStore, RunRecord, RuntimeDeps, StepCheckpoint } from './contracts'
 import { DO_INSTRUCTIONS } from './prompt'
 import { PlanAccessError } from './model-policy'
+import { retryArtifactCleanup } from './artifacts'
 
 type Binding = { store: AgentStore; artifacts: ArtifactStore; eventCallIds?: Map<string, string> }
 type Decision = 'approved' | 'denied'
@@ -12,6 +13,7 @@ type Running = Binding & {
   run: RunRecord
   controller: AbortController
   task: Promise<void>
+  toolFlights?: Set<Promise<unknown>>
   approval?: Wait<Decision>
   question?: Wait<string>
   wallTimer?: ReturnType<typeof setTimeout>
@@ -27,6 +29,24 @@ function canonical(value: unknown): string {
 }
 
 class BudgetError extends Error {}
+const INPUT_BYTES = 16 * 1024
+const STREAM_BYTES = 1024 * 1024
+const CHECKPOINT_BYTES = 4 * 1024 * 1024
+const TRANSCRIPT_ERROR = 'The task transcript grew too large.'
+function transcript(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map(message => message.role !== 'assistant' || typeof message.content === 'string' ? message : {
+    ...message, content: message.content.flatMap(part => {
+      if (part.type === 'reasoning' && Buffer.byteLength(JSON.stringify(part)) > 64 * 1024) return []
+      if (part.type === 'tool-call' && Buffer.byteLength(JSON.stringify(part.input)) > INPUT_BYTES) return [{ ...part, input: { omitted: 'Oversized tool input omitted.' } }]
+      return [part]
+    }),
+  })
+}
+function serializedTranscript(messages: ModelMessage[]): string {
+  const serialized = JSON.stringify(messages)
+  if (Buffer.byteLength(serialized) > CHECKPOINT_BYTES) throw new BudgetError(TRANSCRIPT_ERROR)
+  return serialized
+}
 const PROVIDER_ERROR = 'The model provider could not complete this run. Check the connection and selected model, then Continue.'
 function boundedText(text: string, bytes: number): string {
   const buffer = Buffer.from(text.slice(0, bytes))
@@ -38,6 +58,14 @@ function boundedText(text: string, bytes: number): string {
 export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   const now = () => deps.clock?.now() ?? Date.now()
   const active = new Map<string, Running>()
+  // Cancellation releases authority immediately, not the reservation for work
+  // that ignores abort. Otherwise start/cancel could accumulate paid requests.
+  const reservations = new Map<string, Running>()
+  const maxActiveRuns = deps.maxActiveRuns ?? 3
+  if (!Number.isSafeInteger(maxActiveRuns) || maxActiveRuns < 1) throw new Error('Invalid active-run limit.')
+  function admit() {
+    if (reservations.size >= maxActiveRuns) throw new Error('The agent is at capacity. Stop a task or wait for it to finish.')
+  }
   const flights = new Set<Promise<unknown>>()
   let closing = false
   let pending: AgentEvent[] = []
@@ -78,10 +106,12 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
   function activate(state: Running, created = false) {
     const run = state.run
     active.set(run.id, state)
+    reservations.set(run.id, state)
     try {
       if (created) emit(state, run.id, { type: 'run.created', goal: run.goal, mode: run.mode, persistence: run.persistence, budget: run.budget })
-      status(state, 'running')
-    } catch (error) { active.delete(run.id); throw error }
+      if (created) status(state, 'running')
+      else emit(state, run.id, { type: 'status', status: 'running' })
+    } catch (error) { active.delete(run.id); reservations.delete(run.id); throw error }
   }
   function find(id: string): Binding {
     const cached = active.get(id)
@@ -110,6 +140,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     if (state.controller.signal.aborted || isTerminal(state.run.status)) return
     emit(state, state.run.id, { type: 'error', ...error })
     status(state, 'failed', error)
+    active.delete(state.run.id)
     clearTimeout(state.partialTimer)
     clearTimeout(state.wallTimer)
     state.controller.abort()
@@ -128,6 +159,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     state.question?.reject(new Error('Run cancelled.'))
     state.question = undefined
     status(state, outcome)
+    active.delete(state.run.id)
   }
   function scopedArtifacts(state: Running): ArtifactStore {
     const check = (id: string) => { checkpoint(state); if (id !== state.run.id) throw new Error('Artifact access denied.') }
@@ -135,12 +167,15 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
       async save(runId, name, mediaType, content) {
         check(runId)
         const meta = await state.artifacts.save(runId, name, mediaType, content)
-        try { checkpoint(state) } catch (error) {
+        try {
+          checkpoint(state)
+          emit(state, runId, { type: 'artifact', artifactId: meta.id, name: meta.name, mediaType: meta.mediaType, bytes: meta.bytes })
+        } catch (error) {
           // A cancelled save has no event/reference for deleteRun to discover.
-          await state.artifacts.delete([meta.id])
+          state.store.enqueueCleanup(meta.id)
+          await retryArtifactCleanup(state.store, state.artifacts)
           throw error
         }
-        emit(state, runId, { type: 'artifact', artifactId: meta.id, name: meta.name, mediaType: meta.mediaType, bytes: meta.bytes })
         return meta
       },
       async read(runId, id) { check(runId); return state.artifacts.read(runId, id) },
@@ -173,15 +208,45 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
         },
       }
       const available = [...deps.tools({ search: command.search, credentials: deps.credentials }), askUser]
-      let messages: ModelMessage[] = resume ? modelMessageSchema.array().parse(JSON.parse(resume.messages)) : [{ role: 'user', content: state.run.goal }]
+      let messages: ModelMessage[] = transcript(resume ? modelMessageSchema.array().parse(JSON.parse(resume.messages)) : [{ role: 'user', content: state.run.goal }])
+      serializedTranscript(messages)
       // Only completed results in the durable transcript are replayed. The MVP
       // has no external writes; an unfinished read may be retried after a crash.
       state.outputBytes = messages.reduce((sum, message) => sum + (message.role === 'tool' ? message.content.reduce((bytes, part) => bytes + (part.type === 'tool-result' && part.output.type === 'text' ? Buffer.byteLength(part.output.value) : 0), 0) : 0), 0)
       const seenCalls = new Set(messages.flatMap(message => message.role === 'tool' ? message.content.flatMap(part => part.type === 'tool-result' ? [part.toolCallId] : []) : []))
       state.outputExhausted = state.outputBytes >= state.run.budget.maxToolOutputBytes
       if (state.outputExhausted) throw new BudgetError('The tool-output byte budget was exhausted.')
-      const model = await deps.models(command.model, deps.credentials)
+      const selected = await deps.models(command.model, deps.credentials)
       checkpoint(state)
+      if (typeof selected === 'string') throw new Error('An explicit model connection is required.')
+      const model = wrapLanguageModel({ model: selected, middleware: {
+        // Bound raw chunks before the SDK accumulates/parses tool JSON. A single
+        // provider chunk already exists, but cannot trigger an effect or a write.
+        wrapStream: async ({ doStream }) => {
+          const flight = Promise.resolve(doStream()).then(async response => {
+            try { checkpoint(state) } catch (error) {
+              // A provider can return a new body after abort. Close it before
+              // releasing the reservation, even if its cancellation also waits.
+              await response.stream.cancel().catch(() => {})
+              throw error
+            }
+            return response
+          })
+          const owned = state.toolFlights ??= new Set()
+          flights.add(flight)
+          owned.add(flight)
+          const response = await flight.finally(() => { flights.delete(flight); owned.delete(flight) })
+          let bytes = 0, completeBytes = 0
+          return { ...response, stream: response.stream.pipeThrough(new TransformStream({ transform(part, controller) {
+            if (part.type === 'tool-input-delta' || part.type === 'reasoning-delta') bytes += Buffer.byteLength(part.delta)
+            // Complete calls may be supplied without deltas. Count them in a
+            // separate envelope so providers that send both are not double counted.
+            if (part.type === 'tool-call') completeBytes += Buffer.byteLength(part.input)
+            if (bytes > STREAM_BYTES || completeBytes > STREAM_BYTES) throw new BudgetError(TRANSCRIPT_ERROR)
+            controller.enqueue(part)
+          } })) }
+        },
+      } })
       const artifacts = scopedArtifacts(state)
       for (let step = (resume?.step ?? 0) + 1; step <= state.run.budget.maxSteps; step++) {
         // An owner decision changes exposure only at the next step boundary.
@@ -223,7 +288,9 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
               emit(state, id, { type: 'tool.call', step, callId: options.toolCallId, tool: entry.name, input: JSON.stringify(normalized).slice(0, 8000) })
               const flight = entry.execute(normalized, { runId: id, grants: state.run.grants, signal: state.controller.signal, checkpoint: () => checkpoint(state), artifacts, outputBudget: Math.max(0, state.run.budget.maxToolOutputBytes - state.outputBytes) })
               flights.add(flight)
-              const outcome = await flight.finally(() => { flights.delete(flight) })
+              const owned = state.toolFlights ??= new Set()
+              owned.add(flight)
+              const outcome = await flight.finally(() => { flights.delete(flight); owned.delete(flight) })
               checkpoint(state)
               emit(state, id, { type: 'tool.result', callId: options.toolCallId, ok: outcome.ok, summary: outcome.summary.slice(0, 8000), ...(outcome.artifactId ? { artifactId: outcome.artifactId } : {}) })
               return consume(state, outcome.content)
@@ -241,9 +308,13 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
         let text = ''
         let wireTextUnits = 2
         let calls = 0
+        let streamedBytes = 0
         const rejected = new Map<string, string>()
         for await (const part of result.fullStream) {
           checkpoint(state)
+          if (part.type === 'tool-input-delta') streamedBytes += Buffer.byteLength(part.delta)
+          if (part.type === 'reasoning-delta') streamedBytes += Buffer.byteLength(part.text)
+          if (streamedBytes > STREAM_BYTES) throw new BudgetError(TRANSCRIPT_ERROR)
           if (part.type === 'tool-call' && ++calls > 128) throw new BudgetError('The per-step tool-call budget was exhausted.')
           if (part.type === 'tool-call' && part.invalid) {
             const entry = available.find(entry => entry.name === part.toolName)
@@ -273,8 +344,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
         state.store.addUsage(id, counted, now())
         emit(state, id, { type: 'usage', ...counted })
         const response = (await result.responseMessages).map(message => message.role !== 'tool' ? message : { ...message, content: message.content.map(part => part.type === 'tool-result' && rejected.has(part.toolCallId) ? { ...part, output: { type: 'text' as const, value: consume(state, rejected.get(part.toolCallId)!) } } : part) })
-        messages = [...messages, ...response]
-        state.store.saveCheckpoint({ runId: id, step, messages: JSON.stringify(messages), at: now() })
+        messages = transcript([...messages, ...response])
+        state.store.saveCheckpoint({ runId: id, step, messages: serializedTranscript(messages), at: now() })
         if (state.outputExhausted) throw new BudgetError('The tool-output byte budget was exhausted.')
         if (state.store.getRun(id)!.usage.outputTokens >= state.run.budget.maxOutputTokens || await result.finishReason === 'length') throw new BudgetError('The output-token budget was exhausted.')
         const reason = await result.finishReason
@@ -292,6 +363,8 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
       clearTimeout(state.partialTimer)
       if (active.get(id) === state) active.delete(id)
       flush()
+      await Promise.allSettled(state.toolFlights ?? [])
+      reservations.delete(id)
     }
   }
   return {
@@ -303,6 +376,19 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           if (!command.budget || !keys.every(key => Number.isSafeInteger(command.budget[key]) && command.budget[key] > 0) || command.budget.maxSteps > 10000 || command.budget.maxWallMs > 2147483647) throw new Error('Invalid run budget.')
           const store = command.persistence === 'temporary' ? deps.memoryStore : deps.store
           const artifacts = command.persistence === 'temporary' ? deps.memoryArtifacts : deps.artifacts
+          const existing = store.getRunByRequest(command.requestId)
+          if (existing) return { runId: existing.id }
+          admit()
+          if (command.persistence === 'temporary') {
+            // This partition is bounded to fifty entries; never scan disk
+            // history or evict a live task just to admit a new one.
+            const runs = store.listRuns(200)
+            if (runs.length >= 50) {
+              const oldest = runs.filter(run => isTerminal(run.status)).sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : 1))[0]
+              if (!oldest) throw new Error('Temporary task storage is full. Stop a task before starting another.')
+              store.deleteRun(oldest.id)
+            }
+          }
           // Mixing can enable a local schema, never mint folder authority. Web
           // starts persist no grants, including when continued after a restart.
           const created = store.createRun({ id: randomUUID(), requestId: command.requestId, goal: command.goal, mode: command.mode, persistence: command.persistence, grants: command.mode === 'local' ? command.grants : [], budget: command.budget, created: now(), ...(command.conversationId ? { conversationId: command.conversationId } : {}) })
@@ -312,13 +398,19 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
             activate(state, true)
             state.task = execute(state, command)
           }
+          if (command.persistence === 'temporary') await retryArtifactCleanup(store, artifacts)
           return { runId: run.id }
         }
         case 'continue': {
           const binding = find(command.runId)
           const run = binding.store.getRun(command.runId)!
           if (active.has(run.id) || !(run.status === 'interrupted' || (run.status === 'failed' && run.error?.code === 'provider'))) throw new Error('Only an interrupted or provider-failed run can continue.')
+          if (reservations.has(run.id)) throw new Error('The agent is at capacity. Stop a task or wait for it to finish.')
+          admit()
           const state: Running = { ...binding, run, deadline: now() + run.budget.maxWallMs, controller: new AbortController(), task: Promise.resolve(), outputBytes: 0, outputExhausted: false }
+          binding.store.resume(run.id, now())
+          run.status = 'running'
+          delete run.error
           activate(state)
           state.task = execute(state, command, binding.store.latestCheckpoint(run.id))
           return { ok: true }
@@ -332,33 +424,37 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           return { name: value.meta.name, mediaType: value.meta.mediaType, bytes: value.meta.bytes, text: new TextDecoder().decode(value.content.subarray(0, end)) }
         }
         case 'delete': {
+          if (!deps.memoryStore.getRun(command.runId) && !deps.store.getRun(command.runId)) {
+            await Promise.all([retryArtifactCleanup(deps.store, deps.artifacts), retryArtifactCleanup(deps.memoryStore, deps.memoryArtifacts)])
+            return { ok: true }
+          }
           const binding = find(command.runId)
           const state = active.get(command.runId)
           if (state) cancel(state)
-          await binding.artifacts.delete(binding.store.deleteRun(command.runId))
+          binding.store.deleteRun(command.runId)
+          await retryArtifactCleanup(binding.store, binding.artifacts)
           return { ok: true }
         }
         case 'purge': {
           if (command.before !== undefined && (!Number.isSafeInteger(command.before) || command.before < 0)) throw new Error('Invalid retention cursor.')
-          const retained: string[] = [], temporary: string[] = []
           for (const state of active.values()) {
             const run = state.store.getRun(state.run.id)
             if (!run || (command.before !== undefined && run.updated >= command.before)) continue
             cancel(state)
             // Cancellation updates timestamps; delete selected active runs before the bulk cursor pass.
-            const ids = state.store.deleteRun(state.run.id)
+            state.store.deleteRun(state.run.id)
             active.delete(state.run.id)
-            const target = state.store === deps.store ? retained : temporary
-            target.push(...ids)
           }
-          retained.push(...deps.store.deleteBefore(command.before))
-          temporary.push(...deps.memoryStore.deleteBefore(command.before))
-          await Promise.all([deps.artifacts.delete(retained), deps.memoryArtifacts.delete(temporary)])
+          deps.store.deleteBefore(command.before)
+          deps.memoryStore.deleteBefore(command.before)
+          await Promise.all([retryArtifactCleanup(deps.store, deps.artifacts), retryArtifactCleanup(deps.memoryStore, deps.memoryArtifacts)])
           return { ok: true }
         }
         case 'deleteConversation': {
           for (const state of active.values()) if (state.run.conversationId === command.conversationId) cancel(state)
-          await Promise.all([deps.artifacts.delete(deps.store.deleteConversation(command.conversationId)), deps.memoryArtifacts.delete(deps.memoryStore.deleteConversation(command.conversationId))])
+          deps.store.deleteConversation(command.conversationId)
+          deps.memoryStore.deleteConversation(command.conversationId)
+          await Promise.all([retryArtifactCleanup(deps.store, deps.artifacts), retryArtifactCleanup(deps.memoryStore, deps.memoryArtifacts)])
           return { ok: true }
         }
         case 'cancelAll': for (const state of active.values()) cancel(state); return { ok: true }
@@ -403,7 +499,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
     },
     async shutdown() {
       closing = true
-      const states = [...active.values()]
+      const states = [...reservations.values()]
       // Host shutdown is recoverable; only an explicit owner stop is cancellation.
       for (const state of states) cancel(state, 'interrupted')
       let timer: ReturnType<typeof setTimeout> | undefined

@@ -324,7 +324,7 @@ describe('SQLite restart and schema safety', () => {
     expect(statSync(path).mode & 0o777).toBe(0o600)
     const inspect = new DatabaseSync(path)
     try {
-      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 })
+      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
       expect(inspect.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' })
       // synchronous is connection-local; inspect the owned connection for this setting.
       const db = (first as unknown as { db: DatabaseSync }).db
@@ -348,12 +348,12 @@ describe('SQLite restart and schema safety', () => {
   it('rejects a newer schema without changing its version or data', () => {
     const path = join(temp(), 'future.sqlite')
     const future = new DatabaseSync(path)
-    future.exec("PRAGMA user_version=2; CREATE TABLE future(value TEXT); INSERT INTO future VALUES('keep');")
+    future.exec("PRAGMA user_version=3; CREATE TABLE future(value TEXT); INSERT INTO future VALUES('keep');")
     future.close()
     expect(() => new SqliteAgentStore(path)).toThrow('Unsupported HeyNimbo agent schema.')
     const inspect = new DatabaseSync(path)
     try {
-      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
+      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 })
       expect(inspect.prepare('SELECT value FROM future').get()).toMatchObject({ value: 'keep' })
       expect(inspect.prepare("SELECT name FROM sqlite_master WHERE name='runs'").get()).toBeUndefined()
     } finally { inspect.close() }

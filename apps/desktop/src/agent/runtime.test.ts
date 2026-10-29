@@ -383,30 +383,44 @@ describe('agent coordinator', () => {
     expect(JSON.stringify(h.received) + JSON.stringify(h.sink.partial.mock.calls)).not.toContain('late-secret')
   })
 
-  it.each(['interrupted', 'failed'] as const)('Continue from %s reuses checkpointed tool results without repeating effects', async restored => {
-    let effects = 0
-    let calls = 0
-    const model = new MockLanguageModelV4({ doStream: async () => {
-      if (calls++) throw new Error('interrupted connection')
-      return { stream: new ReadableStream<Chunk>({ start(controller) { for (const chunk of chunks({ calls: [{ name: 'research', id: 'once' }] })) controller.enqueue(chunk); controller.close() } }) }
-    } })
-    const tools = [agentTool({ execute: async () => { effects++; return { ok: true, content: 'completed evidence', summary: 'Read source' } } })]
-    const first = setup(model, tools)
-    const { runId } = await first.start()
-    expect((await first.terminal(runId)).status).toBe('failed')
-    expect(effects).toBe(1)
-    if (restored === 'interrupted') {
-      first.store.setStatus(runId, 'running', Date.now())
-      expect(first.store.interruptUnfinished(Date.now())).toEqual([runId])
-    }
-    const resumedModel = scripted([{ text: 'Resumed with evidence' }])
-    const next = setup(resumedModel, tools, { store: first.store, memoryStore: first.memoryStore, artifacts: first.artifacts, memoryArtifacts: first.memoryArtifacts })
-    await next.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })
-    expect((await next.terminal(runId)).status).toBe('succeeded')
-    expect(effects).toBe(1)
-    expect(JSON.stringify(resumedModel.doStreamCalls[0]?.prompt)).toContain('completed evidence')
-    expect(first.store.latestCheckpoint(runId)?.step).toBe(2)
-    await expect(next.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })).rejects.toThrow()
+  it.each([
+    ['memory', 'interrupted'], ['memory', 'failed'], ['SQLite', 'interrupted'], ['SQLite', 'failed'],
+  ] as const)('%s Continue from %s reuses checkpointed tool results without repeating effects', async (adapter, restored) => {
+    const dir = mkdtempSync(join(tmpdir(), 'heynimbo-resume-'))
+    const store = adapter === 'memory' ? new MemoryAgentStore() : new SqliteAgentStore(join(dir, 'agent.sqlite'))
+    try {
+      let effects = 0
+      let calls = 0
+      const model = new MockLanguageModelV4({ doStream: async () => {
+        if (calls++) throw new Error('interrupted connection')
+        return { stream: new ReadableStream<Chunk>({ start(controller) { for (const chunk of chunks({ calls: [{ name: 'research', id: 'once' }] })) controller.enqueue(chunk); controller.close() } }) }
+      } })
+      const tools = [agentTool({ execute: async () => { effects++; return { ok: true, content: 'completed evidence', summary: 'Read source' } } })]
+      const first = setup(model, tools, { store })
+      const { runId } = await first.start()
+      expect((await first.terminal(runId)).status).toBe('failed')
+      expect(effects).toBe(1)
+      if (restored === 'interrupted') {
+        store.resume(runId, Date.now())
+        expect(store.interruptUnfinished(Date.now())).toEqual([runId])
+      }
+      const resumedModel = scripted([{ text: 'Resumed with evidence' }])
+      const next = setup(resumedModel, tools, { store, memoryStore: first.memoryStore, artifacts: first.artifacts, memoryArtifacts: first.memoryArtifacts })
+      await next.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })
+      expect((await next.terminal(runId)).status).toBe('succeeded')
+      expect(effects).toBe(1)
+      expect(JSON.stringify(resumedModel.doStreamCalls[0]?.prompt)).toContain('completed evidence')
+      expect(store.latestCheckpoint(runId)?.step).toBe(2)
+      await expect(next.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })).rejects.toThrow()
+      const blocked = deferred<MockLanguageModelV4>()
+      const other = setup(undefined, [], { store, models: () => blocked.promise })
+      const live = await other.start({ requestId: 'other' })
+      await expect(other.runtime.handle({ kind: 'continue', runId, model: { provider: 'mock', model: 'mock' } })).rejects.toThrow()
+      await other.runtime.handle({ kind: 'cancelAll' })
+      expect(store.getRun(live.runId)?.status).toBe('cancelled')
+      blocked.resolve(scripted([{ text: 'late' }]))
+      await Promise.all([first.runtime.shutdown(), next.runtime.shutdown(), other.runtime.shutdown()])
+    } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
   })
 
   it('temporary runs and artifacts never access retained storage', async () => {

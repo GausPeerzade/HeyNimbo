@@ -1,7 +1,7 @@
 import { sdkModel } from '../../main/answer-provider'
 import { defaultSettingsMiddleware, wrapLanguageModel } from 'ai'
 import { PROVIDERS, type ProviderId } from '../../shared/providers'
-import { FileArtifactStore, MemoryArtifactStore } from '../artifacts'
+import { FileArtifactStore, MemoryArtifactStore, retryArtifactCleanup } from '../artifacts'
 import type { AgentRuntime, Clock, ModelFactory, Resolver } from '../contracts'
 import { agentPaths } from '../paths'
 import { PlanAccessError } from '../model-policy'
@@ -26,6 +26,8 @@ export async function composeRuntime(init: HostInit, overrides: TestOverrides = 
   try {
     const now = overrides.clock?.now() ?? Date.now()
     await artifacts.sweepTemporary(now)
+    await retryArtifactCleanup(store, artifacts)
+    await artifacts.sweepOrphans((runId, id) => store.hasArtifact(runId, id))
     store.interruptUnfinished(now)
   } catch (error) { store.close(); memoryStore.close(); throw error }
   const runtime = createAgentRuntime({
