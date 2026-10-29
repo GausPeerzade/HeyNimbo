@@ -14,7 +14,7 @@ export interface GestureMessage {
 /** What the notch shows; the main process owns this state. */
 export type NotchStatus =
   | { kind: 'idle' }
-  | { kind: 'needsPermission'; permission: 'inputMonitoring' }
+  | { kind: 'needsPermission'; permission: 'inputMonitoring' | 'screenRecording' }
   | { kind: 'active'; label: string }
 
 /** A pointer ring in overlay-local CSS pixels. */

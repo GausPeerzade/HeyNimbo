@@ -1,6 +1,7 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import type { GestureMonitor } from '@nimboguide/native'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
+import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
 import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus } from './windows'
 
@@ -28,16 +29,20 @@ function createGesturePresenter(notch: BrowserWindow, overlays: OverlayManager):
     switch (message.phase) {
       case 'started':
         show({ kind: 'active', label: LABELS[message.action] ?? message.action })
-        if (message.action === 'talk') overlays.ring(screen.getCursorScreenPoint())
+        if (message.action === 'talk') {
+          // Capture on key-down, in parallel with speech, not after release.
+          void captureCursorDisplay()
+          overlays.ring(screen.getCursorScreenPoint())
+        }
         return
       case 'ended':
       case 'cancelled':
         overlays.clear()
-        show({ kind: 'idle' })
+        show(restingStatus())
         return
       case 'tapped':
         show({ kind: 'active', label: TAP_LABELS[message.action] ?? message.action })
-        idleTimer = setTimeout(() => show({ kind: 'idle' }), 1500)
+        idleTimer = setTimeout(() => show(restingStatus()), 1500)
     }
   }
 }
@@ -56,9 +61,13 @@ app.whenReady().then(() => {
   screen.on('display-added', resync)
   screen.on('display-removed', resync)
   screen.on('display-metrics-changed', resync)
+  scheduleExclusionSelfTest((point) => overlays.ring(point))
   const started = startGestures(createGesturePresenter(notch, overlays))
-  if (started.ok) monitor = started.monitor
-  else if (started.reason === 'inputMonitoring')
+  if (started.ok) {
+    monitor = started.monitor
+    ensureScreenCaptureAccess()
+    sendNotchStatus(notch, restingStatus())
+  } else if (started.reason === 'inputMonitoring')
     sendNotchStatus(notch, { kind: 'needsPermission', permission: 'inputMonitoring' })
   else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 })

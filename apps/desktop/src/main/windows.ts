@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { BrowserWindow, screen, type Display, type WebPreferences } from 'electron'
 import { Channels, type NotchStatus, type OverlayCommand } from '../shared/ipc'
+import { devFlag, devSetting } from './dev'
 
 const NOTCH_SIZE = { width: 240, height: 38 }
 
@@ -18,7 +19,8 @@ function secureWebPreferences(): WebPreferences {
 }
 
 function loadPage(window: BrowserWindow, page: 'notch' | 'overlay'): void {
-  const devServer = process.env['ELECTRON_RENDERER_URL']
+  // Only an unpackaged build may load pages from the dev server.
+  const devServer = devSetting('ELECTRON_RENDERER_URL')
   if (devServer) void window.loadURL(`${devServer}/${page}.html`)
   else void window.loadFile(join(__dirname, `../renderer/${page}.html`))
 }
@@ -29,7 +31,8 @@ function loadPage(window: BrowserWindow, page: 'notch' | 'overlay'): void {
 function floatAboveEverything(window: BrowserWindow): void {
   window.setAlwaysOnTop(true, 'screen-saver')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  window.setContentProtection(true)
+  // Turning this off in development proves the capture filter excludes us on its own.
+  window.setContentProtection(!devFlag('NIMBO_DEBUG_NO_CONTENT_PROTECTION'))
 }
 
 /** Centers the notch at the top of the primary display; call on display changes. */

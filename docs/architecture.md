@@ -33,7 +33,7 @@ Declarative and validated. No model-written code is executed.
 
 ## Roadmap
 
-0. **Spikes:** gestures ✅ (macOS), overlays ✅, capture, full-duplex audio, AX/UIA insertion, Codex contract tests, Windows input.
+0. **Spikes:** gestures ✅ (macOS), overlays ✅, capture ✅ (macOS: about 140 ms, own windows excluded), full-duplex audio, AX/UIA insertion, Codex contract tests, Windows input and capture.
 1. **Talk + Look + Point:** ask about the screen, get a spoken answer plus a pointer.
 2. **Draw:** scene protocol, speech-paced drawing, walkthroughs with click detection.
 3. **Type:** dictation, cleanup, safe insertion.

@@ -18,6 +18,28 @@ export declare class GestureMonitor {
   stop(): void
 }
 
+export interface CaptureOptions {
+  /** Longest image edge in pixels (default 1280). Frames are never upscaled. */
+  maxLongEdge?: number
+  /** JPEG quality 1-100 (default 80). */
+  jpegQuality?: number
+  /** Capture every display, cursor display first (default: cursor display only). */
+  allDisplays?: boolean
+}
+
+/** Captures screens off the main thread, excluding this app's own windows. */
+export declare function captureScreens(options?: CaptureOptions | undefined | null): Promise<ScreenCaptures>
+
+export interface DisplayCapture {
+  displayId: number
+  frame: ScreenRect
+  pixelWidth: number
+  pixelHeight: number
+  jpeg: Buffer
+  /** The cursor in image pixels, when it is on this display. */
+  cursor?: ImagePoint
+}
+
 export interface GestureBinding {
   action: string
   chord: Array<ModifierKey>
@@ -40,7 +62,32 @@ export interface GestureTiming {
 /** Whether global input may be observed (macOS Input Monitoring). */
 export declare function hasInputMonitoringAccess(): boolean
 
+/** Whether the screen may be recorded (macOS Screen Recording). */
+export declare function hasScreenCaptureAccess(): boolean
+
+export interface ImagePoint {
+  x: number
+  y: number
+}
+
 export type ModifierKey = 'Control' | 'Option' | 'Shift' | 'Command' | 'Fn'
 
 /** Prompts for Input Monitoring once; returns whether access is granted. */
 export declare function requestInputMonitoringAccess(): boolean
+
+/** Prompts for Screen Recording once; returns whether access is granted. */
+export declare function requestScreenCaptureAccess(): boolean
+
+export interface ScreenCaptures {
+  displays: Array<DisplayCapture>
+  captureMs: number
+  encodeMs: number
+}
+
+/** A rectangle in global screen points, top-left origin. */
+export interface ScreenRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}

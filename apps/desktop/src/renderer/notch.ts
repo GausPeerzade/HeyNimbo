@@ -12,7 +12,10 @@ function render(status: NotchStatus): void {
       return
     case 'needsPermission':
       pill.classList.add('warning')
-      label.textContent = 'Allow Input Monitoring in System Settings'
+      label.textContent =
+        status.permission === 'inputMonitoring'
+          ? 'Allow Input Monitoring in System Settings'
+          : 'Allow Screen Recording in System Settings'
       return
     case 'active':
       pill.classList.add('active')

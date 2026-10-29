@@ -1,10 +1,12 @@
 //! Native OS capabilities for NimboGuide's desktop shell, exposed through N-API.
 
+mod capture;
 mod platform;
 mod runtime;
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -136,6 +138,147 @@ pub fn has_input_monitoring_access() -> bool {
 #[napi]
 pub fn request_input_monitoring_access() -> bool {
     platform::request_input_access()
+}
+
+#[napi(object)]
+pub struct CaptureOptions {
+    /// Longest image edge in pixels (default 1280). Frames are never upscaled.
+    pub max_long_edge: Option<u32>,
+    /// JPEG quality 1-100 (default 80).
+    pub jpeg_quality: Option<u32>,
+    /// Capture every display, cursor display first (default: cursor display only).
+    pub all_displays: Option<bool>,
+}
+
+/// A rectangle in global screen points, top-left origin.
+#[napi(object)]
+pub struct ScreenRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[napi(object)]
+pub struct ImagePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[napi(object)]
+pub struct DisplayCapture {
+    pub display_id: u32,
+    pub frame: ScreenRect,
+    pub pixel_width: u32,
+    pub pixel_height: u32,
+    pub jpeg: Buffer,
+    /// The cursor in image pixels, when it is on this display.
+    pub cursor: Option<ImagePoint>,
+}
+
+#[napi(object)]
+pub struct ScreenCaptures {
+    pub displays: Vec<DisplayCapture>,
+    pub capture_ms: f64,
+    pub encode_ms: f64,
+}
+
+pub struct CaptureTask {
+    request: capture::Request,
+    quality: u8,
+}
+
+pub struct EncodedCaptures {
+    displays: Vec<(capture::RawCapture, Vec<u8>)>,
+    capture_ms: f64,
+    encode_ms: f64,
+}
+
+impl Task for CaptureTask {
+    type Output = EncodedCaptures;
+    type JsValue = ScreenCaptures;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let started = Instant::now();
+        let raw = capture::capture(&self.request).map_err(Error::from_reason)?;
+        let captured = Instant::now();
+        let displays = raw
+            .into_iter()
+            .map(|mut frame| {
+                let jpeg =
+                    capture::encode_jpeg(&frame.bgra, frame.width, frame.height, self.quality)?;
+                frame.bgra = Vec::new();
+                Ok((frame, jpeg))
+            })
+            .collect::<std::result::Result<Vec<_>, String>>()
+            .map_err(Error::from_reason)?;
+        let millis = |from: Instant, to: Instant| to.duration_since(from).as_secs_f64() * 1000.0;
+        Ok(EncodedCaptures {
+            displays,
+            capture_ms: millis(started, captured),
+            encode_ms: millis(captured, Instant::now()),
+        })
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        let displays = output
+            .displays
+            .into_iter()
+            .map(|(frame, jpeg)| DisplayCapture {
+                display_id: frame.display_id,
+                frame: ScreenRect {
+                    x: frame.frame.x,
+                    y: frame.frame.y,
+                    width: frame.frame.width,
+                    height: frame.frame.height,
+                },
+                pixel_width: frame.width,
+                pixel_height: frame.height,
+                cursor: frame
+                    .cursor
+                    .and_then(|point| {
+                        capture::to_image_point(point, &frame.frame, (frame.width, frame.height))
+                    })
+                    .map(|(x, y)| ImagePoint { x, y }),
+                jpeg: jpeg.into(),
+            })
+            .collect();
+        Ok(ScreenCaptures {
+            displays,
+            capture_ms: output.capture_ms,
+            encode_ms: output.encode_ms,
+        })
+    }
+}
+
+/// Captures screens off the main thread, excluding this app's own windows.
+#[napi(ts_return_type = "Promise<ScreenCaptures>")]
+pub fn capture_screens(options: Option<CaptureOptions>) -> AsyncTask<CaptureTask> {
+    let options = options.unwrap_or(CaptureOptions {
+        max_long_edge: None,
+        jpeg_quality: None,
+        all_displays: None,
+    });
+    let quality = options.jpeg_quality.unwrap_or(80).clamp(1, 100);
+    AsyncTask::new(CaptureTask {
+        request: capture::Request {
+            max_long_edge: options.max_long_edge.unwrap_or(1280).max(1),
+            all_displays: options.all_displays.unwrap_or(false),
+        },
+        quality: u8::try_from(quality).unwrap_or(80),
+    })
+}
+
+/// Whether the screen may be recorded (macOS Screen Recording).
+#[napi]
+pub fn has_screen_capture_access() -> bool {
+    capture::has_access()
+}
+
+/// Prompts for Screen Recording once; returns whether access is granted.
+#[napi]
+pub fn request_screen_capture_access() -> bool {
+    capture::request_access()
 }
 
 fn to_bindings(specs: Vec<GestureBinding>) -> Result<Vec<(String, Binding)>> {
