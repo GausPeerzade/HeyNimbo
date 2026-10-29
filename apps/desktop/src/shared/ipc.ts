@@ -29,16 +29,26 @@ export type OverlayCommand =
   | { kind: 'ring'; ring: OverlayRing }
   /** Front-load marks (overlay CSS pixels) within the declared speech budget.
    *  `from` seeds the single pen buddy, usually at the cursor. */
-  | { kind: 'beat'; marks: Mark[]; durationMs: number; from?: OverlayRing }
+  | { kind: 'beat'; marks: Mark[]; durationMs: number; from?: OverlayRing; epoch: number }
   /** Another display now owns the single buddy; retain this display's ink. */
   | { kind: 'park' }
   | { kind: 'fade'; from?: OverlayRing }
   | { kind: 'clear'; from?: OverlayRing }
+  /** The OS cursor on this display; the idle buddy rides next to it. */
+  | { kind: 'cursor'; at: OverlayRing }
+  /** The answer is done: show a small Clear button beside the drawings. */
+  | { kind: 'offerClear' }
   /** Sent only by an unpackaged main process. */
   | { kind: 'debug'; frameTrace: boolean }
 
 export type OverlayEvent =
-  | { kind: 'strokeStarted'; durationMs: number }
+  /** `epoch` echoes the beat's, so strokes from a cleared scene are ignored. */
+  | { kind: 'strokeStarted'; durationMs: number; epoch: number }
+  /** The buddy finished its work and is following the cursor again. */
+  | { kind: 'buddyIdle' }
+  /** The pointer entered or left the Clear button, so clicks there must land. */
+  | { kind: 'clearHover'; over: boolean }
+  | { kind: 'clearClicked' }
   | { kind: 'frameTrace'; deltas: number[] }
 
 export type SaveKeyResult = { ok: true } | { ok: false; reason: string }

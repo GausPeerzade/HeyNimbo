@@ -72,7 +72,7 @@ describe('passive window transparency', () => {
     const window = overlay()
     expect(window.options).toMatchObject({ transparent: true, backgroundColor: '#00000000', show: false, focusable: false })
     expect(window.options.webPreferences).toMatchObject({ backgroundThrottling: false })
-    expect(window.setIgnoreMouseEvents).toHaveBeenCalledWith(true)
+    expect(window.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true })
     expect(window.setContentProtection).toHaveBeenCalledWith(true)
     window.emit('ready-to-show')
     await flush()

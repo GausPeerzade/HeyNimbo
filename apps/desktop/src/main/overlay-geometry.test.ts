@@ -23,6 +23,8 @@ describe('toOverlaySpace', () => {
         { kind: 'circle', x: 0, y: 0, r: 64 },
         { kind: 'box', x: 1280, y: 800, w: 128, h: 80 },
         { kind: 'arrow', x1: 0, y1: 800, x2: 1280, y2: 0 },
+        { kind: 'arc', x: 640, y: 400, r: 64, start: -135, sweep: 90 },
+        { kind: 'curve', points: [[0, 0], [1280, 800]] },
         { kind: 'clear' },
       ],
       capture,
@@ -33,6 +35,8 @@ describe('toOverlaySpace', () => {
       { kind: 'circle', x: 0, y: 0, r: 72 },
       { kind: 'box', x: 1440, y: 900, w: 144, h: 90 },
       { kind: 'arrow', x1: 0, y1: 900, x2: 1440, y2: 0 },
+      { kind: 'arc', x: 720, y: 450, r: 72, start: -135, sweep: 90 },
+      { kind: 'curve', points: [[0, 0], [1440, 900]] },
       { kind: 'clear' },
     ])
   })

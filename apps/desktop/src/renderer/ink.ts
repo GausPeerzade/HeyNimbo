@@ -9,7 +9,7 @@ export type Point = [number, number]
 export interface Stroke {
   points: Point[]
   style: 'pen' | 'marker'
-  /** Marker strokes are as thick as the area they highlight. */
+  /** Width override: markers are as thick as the area they highlight, dots as their radius. */
   size?: number
 }
 
@@ -37,6 +37,35 @@ function bowed(from: Point, to: Point, rand: () => number): Point[] {
     const offset = Math.sin(Math.PI * t) * bow
     return [from[0] + dx * t - (dy / length) * offset, from[1] + dy * t + (dx / length) * offset]
   })
+}
+
+/** Points along a circle from `start` through `sweep` degrees (clockwise on screen). */
+function arcPoints(x: number, y: number, r: number, start: number, sweep: number): Point[] {
+  const steps = Math.max(8, Math.ceil(Math.abs(sweep) / 5))
+  return Array.from({ length: steps + 1 }, (_, i): Point => {
+    const angle = ((start + (sweep * i) / steps) * Math.PI) / 180
+    return [x + Math.cos(angle) * r, y + Math.sin(angle) * r]
+  })
+}
+
+/** A Catmull-Rom curve through every point, so sketches pass where the model aimed. */
+export function smoothThrough(points: readonly Point[], samplesPerSegment = 10): Point[] {
+  if (points.length < 3) return [...points]
+  const curve: Point[] = [points[0]!]
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i]!
+    const p1 = points[i]!
+    const p2 = points[i + 1]!
+    const p3 = points[i + 2] ?? p2
+    for (let step = 1; step <= samplesPerSegment; step++) {
+      const t = step / samplesPerSegment
+      const [t2, t3] = [t * t, t * t * t]
+      const blend = (a: number, b: number, c: number, d: number): number =>
+        0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3)
+      curve.push([blend(p0[0], p1[0], p2[0], p3[0]), blend(p0[1], p1[1], p2[1], p3[1])])
+    }
+  }
+  return curve
 }
 
 /** Strokes for a mark, or none for marks that are not ink. */
@@ -89,6 +118,13 @@ export function strokesFor(mark: Mark): Stroke[] {
       const y = mark.y + mark.h / 2
       return [{ points: bowed([mark.x, y], [mark.x + mark.w, y], random(mark.x + y)), style: 'marker', size: Math.min(40, mark.h * 0.95) }]
     }
+    case 'arc':
+      return [{ points: arcPoints(mark.x, mark.y, mark.r, mark.start, mark.sweep), style: 'pen' }]
+    case 'curve':
+      return [{ points: smoothThrough(mark.points), style: 'pen' }]
+    case 'dot':
+      // One small loop with a pen as wide as the radius fills the whole disc.
+      return [{ points: arcPoints(mark.x, mark.y, mark.r / 2, -90, 360), style: 'pen', size: mark.r }]
     case 'point':
     case 'text':
     case 'clear':
@@ -140,7 +176,7 @@ export function samplePath(path: MeasuredPath, progress: number): { point: Point
 }
 
 export function geometryFor(stroke: Stroke): StrokeGeometry {
-  const width = stroke.style === 'pen' ? 3.5 : stroke.size ?? 24
+  const width = stroke.size ?? (stroke.style === 'pen' ? 3.5 : 24)
   const options: StrokeOptions = {
     size: width, thinning: 0, smoothing: 0, streamline: 0,
     simulatePressure: false, last: true,

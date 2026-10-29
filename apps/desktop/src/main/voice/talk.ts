@@ -23,8 +23,8 @@ export interface TalkDeps {
   drawing: {
     /** Draws marks given in the capture's screenshot pixels. */
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
-    /** The answer is over; let the drawing linger, then fade it. */
-    fadeSoon(): void
+    /** The answer is over; offer to clear the drawing. */
+    answerDone(): void
   }
 }
 
@@ -113,7 +113,7 @@ export class TalkSession {
       case 'playbackDrained':
         if (turn?.spoken) {
           this.finish(turn)
-          this.deps.drawing.fadeSoon()
+          this.deps.drawing.answerDone()
         }
         return
       case 'micStarted':

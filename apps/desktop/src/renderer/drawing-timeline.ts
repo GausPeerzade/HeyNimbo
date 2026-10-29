@@ -7,6 +7,12 @@ export function strokeDuration(length: number): number {
   return clamp(0.25 + length / 1400, 0.3, 1.4)
 }
 
+/** A beat's drawing budget once it has waited behind earlier beats. A short
+ *  floor keeps late marks readable rather than instant. */
+export function beatBudget(durationMs: number, waitedMs: number, floorMs = 400): number {
+  return Math.max(floorMs, durationMs - Math.max(0, waitedMs))
+}
+
 export function flightDuration(from: Point, to: Point): number {
   return clamp(distanceBetween(from, to) / 800, 0.35, 0.9)
 }

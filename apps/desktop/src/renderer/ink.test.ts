@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { geometryFor, measurePath, samplePath, strokesFor, type Point } from './ink'
+import { geometryFor, measurePath, samplePath, smoothThrough, strokesFor, type Point } from './ink'
 
 // Uneven samples along a bent curve: point-count reveal would almost finish
 // the first leg at 50%, instead of traveling half the actual 200px length.
@@ -54,5 +54,28 @@ describe('arc-length reveal', () => {
   it('handles repeated and zero-length points without a nonfinite tip', () => {
     const path = measurePath([[4, 6], [4, 6], [4, 6]])
     expect(samplePath(path, 0.5)).toEqual({ point: [4, 6], angle: 90 })
+  })
+})
+
+describe('sketch shapes', () => {
+  it('draws arcs clockwise from their start angle and curves through every given point', () => {
+    const [arc] = strokesFor({ kind: 'arc', x: 100, y: 100, r: 50, start: -90, sweep: 90 })
+    const first = arc!.points[0]!
+    const last = arc!.points.at(-1)!
+    expect(first[0]).toBeCloseTo(100)
+    expect(first[1]).toBeCloseTo(50) // -90 degrees is straight up on screen
+    expect(last[0]).toBeCloseTo(150)
+    expect(last[1]).toBeCloseTo(100) // a clockwise quarter ends at three o'clock
+
+    const through: Point[] = [[0, 0], [40, 30], [80, -10], [120, 20]]
+    const curve = smoothThrough(through)
+    for (const point of through) expect(curve.some(([x, y]) => Math.hypot(x - point[0], y - point[1]) < 1e-9)).toBe(true)
+    expect(curve.length).toBeGreaterThan(through.length * 5)
+  })
+
+  it('fills a dot as a disc instead of drawing a thin ring', () => {
+    const [dot] = strokesFor({ kind: 'dot', x: 10, y: 10, r: 8 })
+    expect(geometryFor(dot!).width).toBe(8)
+    for (const [x, y] of dot!.points) expect(Math.hypot(x - 10, y - 10)).toBeCloseTo(4)
   })
 })

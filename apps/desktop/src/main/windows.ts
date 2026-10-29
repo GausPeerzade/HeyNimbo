@@ -112,7 +112,9 @@ function createOverlayWindow(display: Display): BrowserWindow {
     show: false,
     webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   })
-  window.setIgnoreMouseEvents(true)
+  // Click-through, but mouse moves still reach the page so it can tell when
+  // the pointer is over its one interactive part, the Clear button.
+  window.setIgnoreMouseEvents(true, { forward: true })
   floatAboveEverything(window)
   showPassivePage(window, 'overlay')
   return window
@@ -125,13 +127,31 @@ export class OverlayManager {
   private shown: { displayId: number; command: OverlayCommand } | undefined
   private fadeTimer: NodeJS.Timeout | undefined
   private buddyDisplayId: number | undefined
+  /** True from a beat until its overlay reports the buddy back at the cursor;
+   *  the buddy does not change displays mid-drawing. */
+  private buddyBusy = false
+  /** Bumped on every clear so strokes from an old scene start no sound. */
+  private epoch = 0
+  private followTimer: NodeJS.Timeout | undefined
+  private lastCursor: Electron.Point | undefined
 
   onStrokeStarted?: (durationMs: number) => void
 
   constructor() {
     ipcMain.on(Channels.overlayEvent, (event, payload: OverlayEvent) => {
-      if (![...this.windows.values()].some((window) => window.webContents === event.sender)) return
-      if (payload.kind === 'strokeStarted') this.onStrokeStarted?.(payload.durationMs)
+      const sender = [...this.windows].find(([, window]) => window.webContents === event.sender)
+      if (!sender) return
+      if (payload.kind === 'strokeStarted') {
+        if (payload.epoch === this.epoch) this.onStrokeStarted?.(payload.durationMs)
+      } else if (payload.kind === 'buddyIdle') {
+        if (sender[0] === this.buddyDisplayId) this.buddyBusy = false
+      } else if (payload.kind === 'clearHover') {
+        // Clicks land only while the pointer is over the button.
+        sender[1].setIgnoreMouseEvents(!payload.over, { forward: true })
+      } else if (payload.kind === 'clearClicked') {
+        sender[1].setIgnoreMouseEvents(true, { forward: true })
+        this.clear()
+      }
       else if (payload.kind === 'frameTrace' && devFlag('NIMBO_DEBUG_DRAW_TRACE')) {
         const sorted = [...payload.deltas].sort((a, b) => a - b)
         const percentile = (p: number): number => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)] ?? 0
@@ -188,18 +208,56 @@ export class OverlayManager {
     const display = displayFor(space, screen.getAllDisplays())
     if (!display) return
     clearTimeout(this.fadeTimer)
-    if (this.buddyDisplayId !== undefined && this.buddyDisplayId !== display.id) this.send(this.buddyDisplayId, { kind: 'park' })
-    this.buddyDisplayId = display.id
+    this.moveBuddyTo(display.id)
+    this.buddyBusy = true
     const cursor = screen.getCursorScreenPoint()
     this.send(display.id, {
       kind: 'beat',
       marks: toOverlaySpace(marks, space, display.bounds),
       durationMs,
       from: { x: cursor.x - display.bounds.x, y: cursor.y - display.bounds.y },
+      epoch: this.epoch,
     })
   }
 
-  /** Lets the drawing linger after the answer, then fades it out. */
+  /** Feeds the OS cursor to the display that owns the buddy, so it rides next
+   *  to the pointer whenever it is not drawing. */
+  startFollowing(intervalMs = 16): void {
+    this.followTimer ??= setInterval(() => this.followCursor(), intervalMs)
+  }
+
+  stopFollowing(): void {
+    clearInterval(this.followTimer)
+    this.followTimer = undefined
+  }
+
+  private followCursor(): void {
+    const cursor = screen.getCursorScreenPoint()
+    if (this.lastCursor?.x === cursor.x && this.lastCursor.y === cursor.y) return
+    this.lastCursor = cursor
+    const display = screen.getDisplayNearestPoint(cursor)
+    if (!this.buddyBusy) this.moveBuddyTo(display.id)
+    if (display.id === this.buddyDisplayId) {
+      this.send(display.id, { kind: 'cursor', at: { x: cursor.x - display.bounds.x, y: cursor.y - display.bounds.y } })
+    }
+  }
+
+  /** Exactly one display shows the buddy; the previous owner parks its copy. */
+  private moveBuddyTo(displayId: number): void {
+    if (this.buddyDisplayId === displayId) return
+    if (this.buddyDisplayId !== undefined) this.send(this.buddyDisplayId, { kind: 'park' })
+    this.buddyDisplayId = displayId
+    this.lastCursor = undefined
+  }
+
+  /** The answer is over: offer a Clear button, and fade the drawing if it is
+   *  still up after a while. */
+  answerDone(lingerMs = 60_000): void {
+    for (const id of this.windows.keys()) this.send(id, { kind: 'offerClear' })
+    this.fadeSoon(lingerMs)
+  }
+
+  /** Lets the drawing linger, then fades it out. */
   fadeSoon(delayMs = 6_000): void {
     clearTimeout(this.fadeTimer)
     this.fadeTimer = setTimeout(() => {
@@ -209,6 +267,7 @@ export class OverlayManager {
 
   clear(): void {
     clearTimeout(this.fadeTimer)
+    this.epoch++
     this.shown = undefined
     for (const id of this.windows.keys()) this.send(id, { kind: 'clear', from: this.cursorOnDisplay(id) })
   }

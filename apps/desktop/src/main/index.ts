@@ -73,7 +73,7 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
     onStatus: (label) => sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()),
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
-      fadeSoon: () => overlays.fadeSoon(),
+      answerDone: () => overlays.answerDone(),
     },
   })
   ears.warm()
@@ -96,6 +96,7 @@ app.whenReady().then(async () => {
   screen.on('display-added', resync)
   screen.on('display-removed', resync)
   screen.on('display-metrics-changed', resync)
+  overlays.startFollowing()
   if (scheduleDrawDemo(overlays)) return
   scheduleExclusionSelfTest((point) => overlays.ring(point))
 

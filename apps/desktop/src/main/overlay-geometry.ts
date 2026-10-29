@@ -39,7 +39,11 @@ export function toOverlaySpace(marks: readonly Mark[], capture: CaptureSpace, di
       case 'text':
         return { ...mark, x: x(mark.x), y: y(mark.y) }
       case 'circle':
+      case 'arc':
+      case 'dot':
         return { ...mark, x: x(mark.x), y: y(mark.y), r: mark.r * sx }
+      case 'curve':
+        return { ...mark, points: mark.points.map(([px, py]): [number, number] => [x(px), y(py)]) }
       case 'box':
       case 'highlight':
         return { ...mark, x: x(mark.x), y: y(mark.y), w: mark.w * sx, h: mark.h * sy }

@@ -14,3 +14,15 @@ html, body { margin: 0; width: 100%; height: 100%; background: transparent; over
 .buddy-body { fill: currentColor; stroke-linejoin: round; filter: drop-shadow(0 0 var(--glow, 8px) currentColor); }
 .label rect { fill: #2f6bff; filter: drop-shadow(0 0 4px rgb(47 107 255 / 0.3)); }
 .label text { fill: #fff; font: 500 13px -apple-system, "Segoe UI", sans-serif; }
+
+/* The one clickable thing on the overlay: a small pill to clear the drawing. */
+#clear {
+  position: absolute; pointer-events: auto; display: flex; align-items: center; gap: 6px;
+  padding: 5px 11px 5px 9px; border: 0; border-radius: 999px;
+  background: rgb(20 20 24 / 0.88); color: #f5f5f7; font: 600 12px -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28); cursor: pointer; animation: chip-in 180ms ease-out;
+}
+#clear[hidden] { display: none; }
+#clear:hover { background: rgb(10 10 12 / 0.96); }
+#clear span { font-size: 11px; opacity: 0.8; }
+@keyframes chip-in { from { opacity: 0; transform: scale(0.85); } }

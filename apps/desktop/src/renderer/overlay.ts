@@ -2,10 +2,11 @@ import type { Mark } from '../shared/beats'
 import { FrameTrace } from './frame-trace'
 import type { OverlayCommand, OverlayRing } from '../shared/ipc'
 import { geometryFor, samplePath, strokesFor, type Point, type StrokeGeometry } from './ink'
-import { sampleFlight, scheduleBeat, strokeDuration, flightDuration, type Gesture } from './drawing-timeline'
+import { beatBudget, sampleFlight, scheduleBeat, strokeDuration, flightDuration, type Gesture } from './drawing-timeline'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const stage = document.getElementById('stage') as unknown as SVGSVGElement
+const clearButton = document.getElementById('clear') as HTMLButtonElement
 const scene = layer('scene')
 const ringLayer = layer('rings', scene)
 const washLayer = layer('wash', scene)
@@ -26,16 +27,32 @@ interface Animation {
   durationMs: number
   begin: (durationMs: number) => (progress: number) => void
   frame?: (progress: number) => void
+  /** The flight back to the cursor; a new beat replaces it. */
+  isReturn?: boolean
 }
 
+/** Where the idle buddy sits relative to the OS pointer's tip. */
+const CURSOR_OFFSET: Point = [16, 20]
+/** Idle buddies lean like a pointer. */
+const IDLE_ANGLE = -35
+/** Follow smoothing time constant; frame-rate independent. */
+const FOLLOW_MS = 60
+/** Pause after the last stroke before flying home, in case more is coming. */
+const RETURN_DELAY_MS = 600
+
 let buddyAt: Point | undefined
+/** The OS cursor on this display, when this display owns the buddy. */
+let cursorAt: Point | undefined
+/** following: rides the cursor; busy: drawing or flying; parked: hidden here. */
+let mode: 'following' | 'busy' | 'parked' = 'parked'
+let lastFrame = 0
+let epoch = 0
 let plannedTip: Point | undefined
 let plannedEnd = 0
 let nextId = 0
 let framePending = false
 let fadeStarted: number | undefined
 let buddyFadeStarted: number | undefined
-let returning = false
 const animations: Animation[] = []
 const trace = new FrameTrace()
 
@@ -81,9 +98,72 @@ function tick(now: number): void {
   if (buddyFadeStarted !== undefined) {
     const progress = Math.min(1, (now - buddyFadeStarted) / 180)
     buddyLayer.setAttribute('opacity', String(1 - progress))
-    if (progress === 1) buddyFadeStarted = undefined
+    if (progress === 1) {
+      buddyFadeStarted = undefined
+      buddyAt = undefined
+    }
   }
-  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined) wake()
+  const followed = follow(now)
+  lastFrame = now
+  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined || followed) wake()
+}
+
+function followTarget(): Point | undefined {
+  if (!cursorAt) return undefined
+  return [Math.min(innerWidth - 10, cursorAt[0] + CURSOR_OFFSET[0]), Math.min(innerHeight - 10, cursorAt[1] + CURSOR_OFFSET[1])]
+}
+
+/** Eases the idle buddy toward the cursor; once drawing is done, flies home.
+ *  Returns whether another frame is needed. */
+function follow(now: number): boolean {
+  const target = followTarget()
+  if (animations.length || mode === 'parked') return false
+  if (!target) {
+    // Drawing finished but the cursor is elsewhere: hand the buddy over.
+    if (mode === 'busy') settle(now)
+    return false
+  }
+  if (mode === 'busy') {
+    flyHome(now + RETURN_DELAY_MS)
+    return true
+  }
+  const from = buddyAt ?? target
+  // Cap the step: after the mouse rested, the first frame must not snap.
+  const blend = 1 - Math.exp(-Math.min(32, Math.max(0, now - lastFrame)) / FOLLOW_MS)
+  const next: Point = [from[0] + (target[0] - from[0]) * blend, from[1] + (target[1] - from[1]) * blend]
+  moveBuddy(next, IDLE_ANGLE, INK)
+  return Math.hypot(target[0] - next[0], target[1] - next[1]) > 0.3
+}
+
+/** Hides the buddy here and lets main give it to the cursor's display. */
+function settle(now: number): void {
+  mode = 'parked'
+  buddyFadeStarted = now
+  window.nimbo.sendOverlayEvent({ kind: 'buddyIdle' })
+}
+
+/** Flies from wherever the buddy is to the cursor, then resumes following. */
+function flyHome(at: number): void {
+  const target = followTarget()
+  if (!buddyAt || !target) return
+  const from = buddyAt
+  animations.push({
+    start: at,
+    durationMs: flightDuration(from, target) * 1000,
+    isReturn: true,
+    begin: () => {
+      const origin = buddyAt ?? from
+      const home = followTarget() ?? target
+      const fly = flight(origin, home, INK)
+      return (progress) => {
+        fly(progress)
+        if (progress === 1) {
+          mode = 'following'
+          window.nimbo.sendOverlayEvent({ kind: 'buddyIdle' })
+        }
+      }
+    },
+  })
 }
 
 function strokeAction(geometry: StrokeGeometry, group: number): Action {
@@ -108,7 +188,7 @@ function strokeAction(geometry: StrokeGeometry, group: number): Action {
       const path = element('path', { class: geometry.style, d: geometry.outline, mask: `url(#${id})`, opacity: 0 })
       const target = geometry.style === 'marker' ? washLayer : inkLayer
       target.append(mask, path)
-      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs })
+      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       // Progressive reveal/pen presence adapted from Jason Kneen's MIT overlay;
       // both use our final centerline, correcting the upstream tip mismatch.
       return (progress) => {
@@ -138,7 +218,7 @@ function textAction(mark: Extract<Mark, { kind: 'text' }>, group: number): Actio
       clip.append(reveal)
       text.setAttribute('clip-path', `url(#${id})`)
       wordsLayer.append(clip, text)
-      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs })
+      window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       return (progress) => {
         reveal.setAttribute('width', String(width * progress))
         moveBuddy([mark.x + width * progress, mark.y - 6], 90, INK)
@@ -199,8 +279,12 @@ function showLabel(x: number, y: number, label: string): SVGGElement {
 function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefined): void {
   fadeStarted = undefined
   scene.setAttribute('opacity', '1')
-  if (returning) animations.length = 0
-  returning = false
+  mode = 'busy'
+  // A pending or running flight home gives way to the new work.
+  const home = animations.findIndex((animation) => animation.isReturn)
+  if (home >= 0) animations.splice(home)
+  const last = animations.at(-1)
+  plannedEnd = last ? last.start + last.durationMs : 0
   const origin: Point = animations.length && plannedTip ? plannedTip : buddyAt ?? [from?.x ?? 20, from?.y ?? 20]
   const actions: Action[] = []
   for (const [group, mark] of marks.entries()) {
@@ -221,8 +305,10 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
     } else if (mark.kind === 'text') actions.push(textAction(mark, group))
     else for (const stroke of strokesFor(mark)) actions.push(strokeAction(geometryFor(stroke), group))
   }
-  const start = Math.max(performance.now(), animations.length ? plannedEnd : 0)
-  const timeline = scheduleBeat(actions, origin, durationMs)
+  const now = performance.now()
+  const start = Math.max(now, animations.length ? plannedEnd : 0)
+  // Time spent queued behind earlier beats comes out of this beat's budget.
+  const timeline = scheduleBeat(actions, origin, beatBudget(durationMs, start - now))
   for (const [index, entry] of timeline.entries()) {
     if (entry.kind === 'gesture') {
       animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: actions[entry.index]!.begin })
@@ -232,8 +318,8 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
       animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: () => flight(entry.from, entry.to, color) })
     }
   }
-  const last = timeline.at(-1)
-  plannedEnd = start + (last ? last.startMs + last.durationMs : 0)
+  const end = timeline.at(-1)
+  plannedEnd = start + (end ? end.startMs + end.durationMs : 0)
   plannedTip = actions.at(-1)?.to ?? origin
   trace.activeUntil(plannedEnd)
   wake()
@@ -243,20 +329,43 @@ function clearScene(): void {
   for (const group of [ringLayer, washLayer, inkLayer, wordsLayer]) group.replaceChildren()
 }
 
+/** Shows the Clear button at the drawing's top-right corner, kept on screen. */
+function offerClear(): void {
+  const box = [washLayer, inkLayer, wordsLayer]
+    .map((group) => group.getBBox())
+    .filter((rect) => rect.width > 0 || rect.height > 0)
+  if (!box.length) return
+  const right = Math.max(...box.map((rect) => rect.x + rect.width))
+  const top = Math.min(...box.map((rect) => rect.y))
+  clearButton.hidden = false
+  const { width, height } = clearButton.getBoundingClientRect()
+  clearButton.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, right - width / 2))}px`
+  clearButton.style.top = `${Math.max(8, Math.min(innerHeight - height - 8, top - height - 10))}px`
+}
+
+function hideClear(): void {
+  if (clearButton.hidden) return
+  clearButton.hidden = true
+  window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: false })
+}
+
+clearButton.addEventListener('mouseenter', () => window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: true }))
+clearButton.addEventListener('mouseleave', () => window.nimbo.sendOverlayEvent({ kind: 'clearHover', over: false }))
+clearButton.addEventListener('click', () => {
+  hideClear()
+  window.nimbo.sendOverlayEvent({ kind: 'clearClicked' })
+})
+
+/** After clear or fade: fly home if the cursor is here, else hand the buddy over. */
 function returnToCursor(from: OverlayRing | undefined): void {
-  returning = true
   animations.length = 0
   plannedTip = undefined
   plannedEnd = 0
-  if (!buddyAt) return
-  if (!from) {
-    buddyFadeStarted = performance.now()
-    wake()
-    return
-  }
-  const home: Point = [Math.max(16, Math.min(innerWidth - 16, from.x + 35)), Math.max(16, Math.min(innerHeight - 16, from.y + 25))]
-  const origin = buddyAt
-  animations.push({ start: performance.now(), durationMs: flightDuration(origin, home) * 1000, begin: () => flight(origin, home, INK) })
+  if (mode !== 'busy') return
+  if (from) {
+    cursorAt = [from.x, from.y]
+    flyHome(performance.now())
+  } else settle(performance.now())
   wake()
 }
 
@@ -265,7 +374,10 @@ function apply(command: OverlayCommand): void {
     case 'debug':
       trace.enabled = command.frameTrace
       return
+    case 'offerClear':
+      return offerClear()
     case 'clear':
+      hideClear()
       fadeStarted = undefined
       scene.setAttribute('opacity', '1')
       clearScene()
@@ -275,14 +387,27 @@ function apply(command: OverlayCommand): void {
       buddyFadeStarted = undefined
       buddyLayer.setAttribute('opacity', '0')
       buddyAt = undefined
+      cursorAt = undefined
+      mode = 'parked'
       return
+    case 'cursor':
+      cursorAt = [command.at.x, command.at.y]
+      if (mode === 'parked') {
+        // Appear right at the pointer instead of flying in from a stale spot.
+        mode = 'following'
+        buddyAt = followTarget()
+      }
+      return wake()
     case 'ring': {
       ringLayer.replaceChildren(element('circle', { class: 'ring', cx: command.ring.x, cy: command.ring.y, r: 28 }))
       return
     }
     case 'beat':
+      hideClear()
+      epoch = command.epoch
       return drawBeat(command.marks, command.durationMs, command.from)
     case 'fade':
+      hideClear()
       fadeStarted = performance.now()
       returnToCursor(command.from)
       wake()

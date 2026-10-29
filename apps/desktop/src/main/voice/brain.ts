@@ -18,8 +18,11 @@ You can also draw on their screen to show what you mean. Write each drawing comm
 @arrow X1 Y1 X2 Y2    an arrow from one place to another
 @line X1 Y1 X2 Y2     underline or connect two things
 @text X Y "words"     a short handwritten note
+@arc X Y R START SWEEP  part of a circle; angles in degrees, 0 is three o'clock, positive turns clockwise (-90 is straight up)
+@curve X1 Y1 X2 Y2 ...  a smooth freehand line through 2 to 24 points
+@dot X Y R            a small filled dot
 @clear                erase your earlier drawings
-Draw only when it helps them find or understand something, with at most five commands per answer. Don't draw without a screenshot.`
+Use drawings to point things out, and also to sketch when they ask you to draw something. Sketch it as a simple line drawing in an empty area or where they point, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twelve commands per answer, and don't draw without a screenshot.`
 
 export interface Exchange {
   question: string
