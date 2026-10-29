@@ -1,0 +1,109 @@
+# NimboGuide: redesign review and specification
+
+## Method and boundaries
+Read the complete userinterface.wiki SKILL + AGENTS (152 expanded rules), Rams, MotionSites SKILL/craft/review, frontend-design, native-conventions, ship-readiness and Vercel guidelines; product context §5–6. Inspected the supplied pre-branch Home and Settings PNGs first. No competitor extraction, unlicensed examples/media, running checkout, 3D or drawing implementation was opened or reused. Scores are a local heuristic review, not the hosted Rams engine or an accessibility certification.
+
+## Before
+Rams (0–10): Accessibility 7, Color 5, Typography 6, Spacing 5, Components 5, UX 6, Motion 4, Craft 3, Native 7 (mean 5.33).
+MotionSites adapted to a desktop utility: First glance 5, Signature 3, Typography 6, Composition/space 4, Colour/light 5, Media integration 3, Motion 4, Narrow window (not a mobile product) 6, Copy 6, Polish 5 (mean 4.7).
+
+### Findings, original source lines; fixed checklist
+- `apps/desktop/src/renderer/tokens.css:5`: system AccentColor focus disagrees with petrol. [ux-similarity-consistency] One accent must identify action, selection and focus. **Fix:** plum accent, accent focus, tested opaque contrast pairs.
+- `apps/desktop/src/renderer/tokens.css:19–23`: search, new, settings all get the same outlined box; no active transform. [ux-von-restorff-emphasis, physics-active-state, duration-press-hover] **Fix:** filled send, quiet chrome, inset search, 140ms press at .97.
+- `apps/desktop/src/renderer/home.html:6–9`: duplicated wordmark and duplicate New actions. [ux-cognitive-load-reduce, ux-pragnanz-simplify] **Fix:** sidebar becomes Conversations; New is an unboxed compose row; titlebar New only appears with sidebar closed.
+- `apps/desktop/src/renderer/home.css:30–39`: question and title repeat at the same visual weight, tiny ink floats inside a large border. [ux-proximity-grouping, ux-common-region-boundaries] **Fix:** compact titlebar, distinct question/answer scale, close-cropped drawing with a pen-margin edge and truthful caption.
+- `apps/desktop/src/renderer/home.css:40–49`: centered empty hero stranded above a deep composer; two unrelated focus boundaries. [ux-fitts-target-size, ux-von-restorff-emphasis, visual-concentric-radius] **Fix:** left-aligned invitation in the reading column; compact composer, single accent focus-within, 44px send/stop.
+- `apps/desktop/src/renderer/settings.css:7–13`: wall of equally strong separators and 17px checkbox targets. [ux-proximity-grouping, ux-fitts-hit-area] **Fix:** grouped rows, 20px native accent checkbox inside a fully clickable ≥64px label row, short section introductions.
+- `apps/desktop/src/renderer/setup.css:2–5`: no relationship between key, privacy explanation and next action; unstyled hierarchy. [ux-proximity-grouping, ux-peak-end-finish-strong] **Fix:** proper key label, connection action, inline checking/result, full-width primary.
+- `apps/desktop/src/renderer/notch.css:8` and `notch.ts:18,51–62`: entrance-only animation, immediate disappearance, timing scattered in JS. [easing-entrance-ease-out, easing-exit-ease-in, presence-disable-interactions, timing-consistent] **Fix:** reversible CSS opacity/transform transitions with discrete hidden exit retention; inert during exit; CSS dwell and motion tokens, reduced-motion fallback.
+- `apps/desktop/build/brand/logo.svg:3`: silhouette plus carved upward arrow reads as cloud upload, not a drawing tool. [ux-pragnanz-simplify] **Fix:** original open-corner pen nib: a nib points into an L-shaped screen corner. No cloud, sparkles or stock symbol.
+- `apps/desktop/src/renderer/home.css:37`, `tokens.css:7–8`, `notch.css:4–18`: untokenized colors/dimensions, unrelated rounding. [visual-consistent-spacing-scale, visual-concentric-radius, type-optical-sizing-auto, type-tabular-nums-for-data] **Fix:** one neutral scale, role tokens, 4px spacing, 6/10/14px concentric radii, system type with optical sizing, tabular times, balanced headings.
+
+What reads as AI-made is not the use of system type: that is correct here. It is *visual monotony without purpose*: the same outlined control for three different tasks, teal washed over the whole shell, a stock cloud mark enlarged as decoration, a framed empty thumbnail and landing-page empty-state composition. Keep the conventional window, native menus and good privacy semantics; remove the decoration rather than add a new dashboard kit.
+
+## Direction and precise implementation spec
+**Chosen: Pen margin. Mood: attentive, precise, personal.** Signature: a plum pen-nib/corner mark becomes the slim margin beside a generated drawing; the drawing is the only handwritten surface. The app is a reading workspace, not an AI dashboard.
+Alternatives: **Signal desk**, cool cobalt, horizontal history ribbon and compact workbench; **Field notes**, olive, narrow date rail and side-by-side answer/drawing. All three are original populated-light static studies generated by `scripts/ui-directions.cjs`; no sample/media assets.
+
+Palette: a single neutral gray scale (white, #F8F8F8, #EEEEEE, #DEDEDE, #858585, #626262, #323232, #282828, #1D1D1D). Accent light #70415F / dark #D8AFCB. Semantic green #276344/#9DCEAE, warning #805A16/#E4C17B, error #A62F46/#F0A6B2. Selected background #EEEEEE/#323232; selection identified additionally by a margin and aria-current. Borders needed to identify inputs use #858585 (both themes); decorative separators deliberately quieter, never relied on alone.
+Drawing palette: buddy #986180, ink #493644, paper #FCFCFC, highlight #D9BC61; supporting drawing colors remain semantic names in the *one* overlay palette block. No drawing behavior edits.
+System font only; 12 metadata / 13 control / 15 body / 17 question / 20 section / 28 empty heading, body 1.6, headings 1.25, medium 500/semibold 600; optical sizing auto, calt, no synthesis; tabular times, balanced headings, pretty prose. Caveat 500 only for generated drawing text.
+Spacing 4/8/12/16/24/32/48/64px. Sidebar 240px, Settings 188px. Reading column 640px. Toolbar 64px. Drawing viewport 320×176px with cropped scene viewBox, not saved screen pixels. Composer 14px outer radius, 8px inset, 6px inner action radius; other controls 6px, artifact 10px, pill 18px. Native window corners/shadow remain OS-owned; no CSS elevation on app windows. Opaque surfaces also satisfy reduced transparency.
+Motion: 140ms press/hover, 200ms peek entrance ease-out, 160ms exit ease-in; .97 pressed scale, .98 peek scale, 4px travel. Reversible CSS transitions preserve the current visual state on interruption; no spring/bounce because there is no gesture/overshoot. 200ms hover dwell, 120ms leave grace. No page/route/typing animations. Reduce Motion cuts all travel and timing. Brief's brand focus overrides generic native-accent advice; brief's restrained flat surfaces override wiki six-shadow/gradient button recipe. No motion library is introduced just to copy React-specific presence APIs.
+
+## Contrast evidence
+Automated test reads the actual CSS token blocks. Every text role is checked on canvas, raised, sidebar and selected backgrounds; on-accent on accent; required UI boundary ≥3:1; drawing ink/paper ≥4.5. There are 60 tested pairs (30 per theme). Minima below include the lowest-contrast background among canvas, raised, sidebar and selection; this is more conservative than checking only the reading canvas. Functional inputs use `boundary`; quiet group separators are decorative, not identifying edges.
+
+| Pair (minimum over four surfaces) | Light | Dark |
+|---|---:|---:|
+| Main text / surface | 12.71:1 | 12.07:1 |
+| Secondary text / surface | 5.26:1 | 6.82:1 |
+| Accent / surface (also focus) | 6.93:1 | 6.66:1 |
+| Success / surface | 6.13:1 | 7.25:1 |
+| Warning / surface | 5.34:1 | 7.46:1 |
+| Error / surface | 5.81:1 | 6.60:1 |
+| Input boundary / surface | 3.18:1 | 3.47:1 |
+| On accent / accent | 8.05:1 | 8.76:1 |
+| Drawing ink / paper | 10.80:1 | 9.41:1 |
+
+Dark thumbnails deliberately use #323232 paper and #E9D8E4 ink, avoiding a white spotlight in a night workspace. Desktop drawings retain #FCFCFC paper in the restricted overlay palette block. Highlight is non-text ink, accompanied by explanatory text; no contrast promise is made for naked ink over arbitrary desktop content.
+
+## Look-and-fix log
+### Round 1: screenshot, look, fix
+Read every generated image from the initial partial capture pass, including both Home themes and every light Settings view, setup and peek. MotionSites scores: first glance 8, signature 8, type 8, composition 8, colour 8, media 8, motion 7, narrow 7, copy 7, polish 6 (mean 7.5).
+Three weakest: **Polish 6** — removed the composer's separated double focus border (offset 3→0), reduced native checkbox artwork 32→20px while retaining whole-row labels, moved selected-row marker inside the paint containment. **Copy 7** — replaced the vague empty headline with “Ask about your screen”, shortened privacy copy without losing provider/local-storage distinctions. **Motion 7** — verified inert exits and added immediate reversal while a CSS exit is still running, tested with fake timers. Also changed dark drawing paper from white to neutral #323232 and increased the native notch capture region 320→420px: the maximum three recents measured 373px and would otherwise clip.
+
+### Round 2: final look and validation
+All 30 required/extra resting PNGs plus two exit frames in `/tmp/nimbo-ui-validation/` were opened with the read tool. A repeat of this pass fixed **preview-only** hidden-window paint throttling: background throttling is disabled only in the dev capture flow, with two animation frames awaited and an explicit disconnected-state assertion. Earlier stale dark-disconnected capture is replaced; no product data/state workaround was added. The final diagnostic file records all windows `visible:false`, no horizontal/body overflow, fonts loaded, no console/load errors. Peek retains `display:block`, opacity ≈0.85 and `inert:true` during exit, then becomes `display:none`.
+
+| Rams category | Before | After |
+|---|---:|---:|
+| Accessibility | 7 | 8 |
+| Color | 5 | 9 |
+| Typography | 6 | 8 |
+| Spacing | 5 | 8 |
+| Components | 5 | 8 |
+| UX | 6 | 8 |
+| Motion | 4 | 8 |
+| Craft | 3 | 9 |
+| Native | 7 | 8 |
+| Mean | 5.33 | 8.22 |
+
+| MotionSites desktop-adapted area | Before | Final |
+|---|---:|---:|
+| First glance | 5 | 8 |
+| Signature | 3 | 8 |
+| Typography | 6 | 8 |
+| Composition / space | 4 | 8 |
+| Colour / light | 5 | 9 |
+| Media integration | 3 | 8 |
+| Motion | 4 | 8 |
+| Narrow window | 6 | 7 |
+| Copy | 6 | 9 |
+| Polish | 5 | 8 |
+| Mean | 4.7 | 8.1 |
+
+Per-surface final MotionSites vectors use the column order above (both themes inspected separately; same score when visually equivalent):
+- `home-empty-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1).
+- `home-unconnected-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); Connect is the sole filled action.
+- `home-populated-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); close-cropped ink, selectable transcript, no screenshot retained.
+- `home-searching-{light,dark}.png` / `home-search-empty-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); results and explicit Clear recovery retain the conversation.
+- `home-busy-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); Stop replaces Send, draft remains editable.
+- `home-narrow-{light,dark}.png`: 8,8,8,8,9,7,8,7,9,8 (8.0); intentional scrollable transcript, composer/Stop never clipped. This is a desktop minimum window, not a mobile release.
+- `settings-{general,voice,history,connection,about}-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); grouped native forms, disclosure/privacy content remains scrollable.
+- `setup-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); real key label and inline validation status, no key/network action exercised in preview.
+- `pill-{light,dark}.png` / `peek-{light,dark}.png` / `peek-exiting-{light,dark}.png`: 8,8,8,8,9,8,8,7,9,8 (8.1); no idle loop; three recents fit; exit verified from intermediate/final frames and code.
+All review *areas* reach ≥7; cross-surface area mean exceeds 8. A longer transcript naturally scrolls behind the fixed composer; that is not hidden content or an overlapping control.
+
+## Independent validation and residual limits
+- `pnpm test`: 160 TypeScript tests (154 existing + 6 new), 20 Rust tests, all passed.
+- `pnpm typecheck`, `pnpm build`, `git diff --check`: passed. Nothing staged; no commit.
+- Added contrast/native backing parity tests (2), sparse/cleared thumbnail crop tests (2), busy primary-action test (1), interruptible hover/inert exit test (1); updated setup mock for native theme.
+- `pnpm --filter @nimboguide/desktop brand`: regenerated SVG-derived iconset, ICNS, light/dark logos, 1×/2× monochrome template. Replaced historical Cloudpath template filenames with `NimboGuideTemplate`.
+- Reproduce: `apps/desktop/node_modules/.bin/electron scripts/ui-directions.cjs`; `pnpm --filter @nimboguide/desktop build`; `NIMBO_DEBUG_HOME_PREVIEW=1 apps/desktop/node_modules/.bin/electron apps/desktop`.
+- No visible-window, VoiceOver, real Keychain/network, packaged Dock/menu-bar installation, multi-monitor or increased-system-text test was performed. Those remain release checks, not claimed passes. Existing overlay bloom/motion was deliberately not touched: only its top palette block changed, per the 3D-lane restriction. No drawing pipeline, prompts, history/schema or packaging behavior changed.
+- Static alternative directions are original studies, not extra shipped modes. Palette/type/spacing/motion and main surface dimensions are role tokens; replacing a direction's palette is a token edit. No future theme picker was added.
+
+Local skill: heuristic checks. The full engine runs at
+https://www.rams.ai/?utm_source=skill&utm_medium=footer
+(356 scored rules, verified re-reviews, one-click fixes on every PR)

@@ -6,7 +6,7 @@ import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometr
 import { protectPage, type AppPage } from './page-security'
 import { devFlag, devSetting } from './dev'
 
-const NOTCH_SIZE = { width: 384, height: 320 }
+const NOTCH_SIZE = { width: 384, height: 420 }
 let notchVisible = true
 const INTERACTIVE_REGION_ID = new RegExp(`^(?:clear|card:${CARD_ID_PATTERN})$`)
 /** Three card regions and the Clear button per display. */

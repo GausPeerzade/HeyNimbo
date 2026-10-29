@@ -8,6 +8,7 @@ import { SettingsStore } from './settings'
 import { parseAppRequest } from './app-requests'
 import { isPageSender } from './page-security'
 import { loadPage, secureWebPreferences } from './windows'
+import { WINDOW_PALETTE } from '../shared/ui-palette'
 
 export interface ShellActions {
   ask(question: string): { accepted: true }
@@ -73,7 +74,7 @@ export class AppShell {
     if (!this.home) {
       const window = new BrowserWindow({
         ...clampHomeBounds(this.settings.get().homeBounds, screen.getAllDisplays().map(d => d.workArea)), minWidth: 720, minHeight: 520,
-        title: 'NimboGuide', titleBarStyle: 'hiddenInset', backgroundColor: nativeTheme.shouldUseDarkColors ? '#14242D' : '#F7FAFB', show: false,
+        title: 'NimboGuide', titleBarStyle: 'hiddenInset', backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, show: false,
         paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app'),
       })
       this.home = window
@@ -92,7 +93,7 @@ export class AppShell {
   }
   openSettings(category?: string): BrowserWindow {
     if (!this.preferences) {
-      const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'NimboGuide Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? '#14242D' : '#F7FAFB', paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
+      const window = new BrowserWindow({ width: 760, height: 610, minWidth: 680, minHeight: 520, title: 'NimboGuide Settings', titleBarStyle: 'hiddenInset', show: false, backgroundColor: nativeTheme.shouldUseDarkColors ? WINDOW_PALETTE.dark : WINDOW_PALETTE.light, paintWhenInitiallyHidden: true, webPreferences: secureWebPreferences('app') })
       this.preferences = window
       window.on('closed', () => { this.preferences = undefined; this.updateDock() })
       window.once('ready-to-show', () => { if (!this.preview) { window.show(); this.updateDock() } })
@@ -132,7 +133,7 @@ export class AppShell {
   private updateTray(): void {
     this.tray?.destroy(); this.tray = undefined
     if (!this.settings.get().showMenuBar || this.preview) return
-    const image = nativeImage.createFromPath(brandPath('CloudpathTemplate.png'))
+    const image = nativeImage.createFromPath(brandPath('NimboGuideTemplate.png'))
     image.setTemplateImage(true)
     this.tray = new Tray(image)
     this.tray.setToolTip('NimboGuide')

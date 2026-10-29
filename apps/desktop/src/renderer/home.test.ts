@@ -93,3 +93,12 @@ it('keeps the draft when real TalkSession turn creation fails and an error snaps
     expect(c.currentId).toBeNull(); expect(c.list()).toEqual([])
   } finally { talk.close(); c.close() }
 })
+it('replaces the send action with Stop while a response is busy and restores it afterwards', async () => {
+  await import('./home')
+  mocks.snapshot!({ ...snapshot(), busy: true, status: 'Drawing an explanation…' })
+  expect(nodes.get('send')!.hidden).toBe(true)
+  expect(nodes.get('stop')!.hidden).toBe(false)
+  mocks.snapshot!({ ...snapshot(), busy: false })
+  expect(nodes.get('send')!.hidden).toBe(false)
+  expect(nodes.get('stop')!.hidden).toBe(true)
+})

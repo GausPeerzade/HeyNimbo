@@ -13,9 +13,17 @@ let enterTimer: ReturnType<typeof setTimeout>, leaveTimer: ReturnType<typeof set
 const theme = matchMedia('(prefers-color-scheme: dark)')
 const updateMark = () => { mark.src = theme.matches ? darkLogo : logo }
 updateMark(); theme.addEventListener('change', updateMark)
+const motionTokens = getComputedStyle(document.documentElement)
+const hoverDwell = Number(motionTokens.getPropertyValue('--hover-dwell'))
+const leaveGrace = Number(motionTokens.getPropertyValue('--leave-grace'))
+function setPeek(expanded: boolean): void {
+  // CSS retains the exiting surface; inert prevents stale controls during exit.
+  peek.inert = !expanded
+  peek.hidden = !expanded
+  window.nimbo.sendNotchEvent({ kind: 'expanded', expanded })
+}
 function dismiss(): void {
-  clearTimeout(enterTimer); clearTimeout(leaveTimer); peek.hidden = true; suppressed = true
-  window.nimbo.sendNotchEvent({ kind: 'expanded', expanded: false })
+  clearTimeout(enterTimer); clearTimeout(leaveTimer); setPeek(false); suppressed = over
   window.nimbo.sendNotchEvent({ kind: 'hover', over: false })
 }
 function render(status: NotchStatus): void {
@@ -45,16 +53,20 @@ window.addEventListener('mousemove', event => {
   window.nimbo.sendNotchEvent({ kind: 'hover', over: hit })
   if (hit) {
     clearTimeout(leaveTimer)
-    if (!suppressed && peek.hidden) enterTimer = setTimeout(() => { peek.hidden = false; window.nimbo.sendNotchEvent({ kind: 'expanded', expanded: true }) }, 200)
+    if (!suppressed && peek.hidden) {
+      if (peek.getAnimations().some(animation => animation.playState === 'running')) setPeek(true)
+      else enterTimer = setTimeout(() => setPeek(true), hoverDwell)
+    }
   } else {
     clearTimeout(enterTimer); suppressed = false
-    if (!peek.hidden) leaveTimer = setTimeout(() => { peek.hidden = true; window.nimbo.sendNotchEvent({ kind: 'expanded', expanded: false }) }, 250)
+    if (!peek.hidden) leaveTimer = setTimeout(() => setPeek(false), leaveGrace)
   }
 })
 surface.addEventListener('mouseleave', () => {
   over = false; suppressed = false; clearTimeout(enterTimer)
   window.nimbo.sendNotchEvent({ kind: 'hover', over: false })
-  leaveTimer = setTimeout(() => { peek.hidden = true; window.nimbo.sendNotchEvent({ kind: 'expanded', expanded: false }) }, 250)
+  clearTimeout(leaveTimer)
+  leaveTimer = setTimeout(() => setPeek(false), leaveGrace)
 })
 pill.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home' })
 document.getElementById('home')!.onclick = () => window.nimbo.sendNotchEvent({ kind: 'home' })

@@ -3,7 +3,7 @@
 <body>
 <a class="skip" href="#question">Skip to composer</a>
 <aside id="sidebar" aria-label="Conversations">
-  <div class="sidebar-title" translate="no">NimboGuide</div>
+  <div class="sidebar-title">Conversations</div>
   <input id="search" type="search" name="conversation-search" aria-label="Search conversations" placeholder="Search conversations…" autocomplete="off"/>
   <button id="new">New conversation <kbd>⌘N</kbd></button>
   <nav id="conversations" aria-label="Conversation history"></nav>
@@ -14,7 +14,7 @@
   <div id="transcript" tabindex="0" aria-label="Conversation transcript"></div>
   <div class="composer-area">
     <p id="feedback" role="status" aria-live="polite"></p>
-    <form id="composer"><label class="sr-only" for="question">Ask NimboGuide</label><textarea id="question" name="question" rows="2" maxlength="16000" placeholder="Ask about your screen…" autocomplete="off" autofocus></textarea><div class="composer-controls"><span id="screen-context">Uses your screen for this turn</span><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
-    <div class="composer-note"><span>Hold Control + Option to ask by voice</span><span id="saving">Saved locally for 30 days</span></div>
+    <form id="composer"><label class="sr-only" for="question">Ask NimboGuide</label><textarea id="question" name="question" rows="1" maxlength="16000" placeholder="Ask about your screen…" autocomplete="off" autofocus></textarea><div class="composer-controls"><span id="screen-context">Screen shared for this question</span><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
+    <div class="composer-note"><span>Hold Control + Option to speak</span><span id="saving">Saved locally for 30 days</span></div>
   </div>
 </main><script type="module" src="./home.ts"></script></body></html>

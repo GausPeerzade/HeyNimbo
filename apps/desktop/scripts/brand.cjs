@@ -7,10 +7,11 @@ const scratch = mkdtempSync('/tmp/nimbo-brand-')
 app.setPath('userData', scratch)
 setTimeout(() => app.exit(1), 30000).unref()
 app.whenReady().then(async () => {
+  app.dock?.hide()
   session.defaultSession.webRequest.onBeforeRequest((details, done) => done({ cancel: !details.url.startsWith('file:') }))
   const tokens = readFileSync(join(__dirname, '../src/renderer/tokens.css'), 'utf8')
   const accents = [...tokens.matchAll(/--accent:\s*(#[0-9a-fA-F]{6})/g)].map(match => match[1])
-  const brand = { field: accents[0], foreground: '#FFFFFF', darkMark: accents[1] }
+  const brand = { field: accents[0], foreground: tokens.match(/--on-accent:\s*(#[0-9a-fA-F]{6})/)[1], darkMark: accents[1] }
   const mark = readFileSync(join(root, 'logo.svg'), 'utf8')
   const page = join(root, 'raster.html')
   const window = new BrowserWindow({ width: 1024, height: 1024, show: false, transparent: true, webPreferences: { offscreen: true, nodeIntegration: false, contextIsolation: true, sandbox: true } })
@@ -28,7 +29,7 @@ app.whenReady().then(async () => {
     await render(`NimboGuide.iconset/icon_${size}x${size}.png`, size, true, brand.foreground)
     await render(`NimboGuide.iconset/icon_${size}x${size}@2x.png`, size * 2, true, brand.foreground)
   }
-  for (const [name, size] of [['CloudpathTemplate.png', 22], ['CloudpathTemplate@2x.png', 44]]) await render(name, size, false, '#000000')
+  for (const [name, size] of [['NimboGuideTemplate.png', 22], ['NimboGuideTemplate@2x.png', 44]]) await render(name, size, false, '#000000')
   await render('logo.png', 256)
   await render('logo-dark.png', 256, false, brand.darkMark)
   execFileSync('iconutil', ['-c', 'icns', iconset, '-o', join(root, 'NimboGuide.icns')])
