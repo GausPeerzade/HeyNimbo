@@ -92,6 +92,28 @@ it.each(['approve', 'allowMix'] as const)('blocks twenty %s retries for two seco
   expect(electron.showMessageBox).toHaveBeenCalledTimes(2)
   expect(commands).toEqual([request])
 })
+it('applies the post-Cancel pause to every confirmation so switching kind, task or Stop-all generation cannot reopen a dialog', async () => {
+  vi.useFakeTimers()
+  const { ipc, handler, event, commands } = setup()
+  const live = (id: string) => ({ id, goal: 'Read', mode: 'local' as const, mixed: false, status: 'running' as const, persistence: 'temporary' as const, created: 0, updated: 1, usage: { inputTokens: 0, outputTokens: 0 } })
+  const ask = (runId: string, n: number) => ipc.push({ kind: 'events', runs: [live(runId)], events: [{ runId, seq: n, id: `e${runId}${n}`, at: 0, payload: { type: 'approval.requested', approvalId: `a${runId}`, callId: 'c', tool: 'save_artifact', preview: 'Save', digest: 'd' } }] })
+  ask('one', 1)
+  await expect(handler(event, { kind: 'approve', runId: 'one', approvalId: 'aone', decision: 'approved' })).rejects.toThrow('Nothing approved.')
+  await expect(handler(event, { kind: 'allowMix', runId: 'one' })).rejects.toThrow('Nothing approved.')
+  for (const id of ['two', 'three', 'four']) {
+    await handler(event, { kind: 'stopAll' }); ask(id, 1)
+    await expect(handler(event, { kind: 'allowMix', runId: id })).rejects.toThrow('Nothing approved.')
+    await expect(handler(event, { kind: 'approve', runId: id, approvalId: `a${id}`, decision: 'approved' })).rejects.toThrow('Nothing approved.')
+  }
+  expect(electron.showMessageBox).toHaveBeenCalledOnce()
+  // Denial needs no confirmation and stays available during the pause.
+  await handler(event, { kind: 'approve', runId: 'four', approvalId: 'afour', decision: 'denied' })
+  expect(commands).toEqual([{ kind: 'approve', runId: 'four', approvalId: 'afour', decision: 'denied' }])
+  await vi.advanceTimersByTimeAsync(2000)
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, { kind: 'allowMix', runId: 'four' })
+  expect(electron.showMessageBox).toHaveBeenCalledTimes(2)
+})
 it('requires main-owned approval of the retained host preview before forwarding an approved decision', async () => {
   vi.useFakeTimers()
   const { ipc, handler, event, commands } = setup()

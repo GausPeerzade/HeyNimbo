@@ -212,6 +212,26 @@ it.each(['unknown-provider', 'gateway-name'])('sanitizes unsupported model selec
   expect(run).toMatchObject({ status: 'failed', error: { code: 'provider', message: expect.stringContaining('Check the connection') } })
   expect(JSON.stringify(run)).not.toContain('credential-secret')
 })
+it('keeps every task reachable when fifty maximum-length goals exceed one host message', async () => {
+  const dir = temp()
+  const store = new SqliteAgentStore(agentPaths(dir).db)
+  for (let i = 0; i < 50; i++) {
+    const { run } = store.createRun({ id: `run${i}`, requestId: `req${i}`, goal: `${i} ${'é"'.repeat(7990)}`, mode: 'web', persistence: 'retained', grants: [], budget: DEFAULT_BUDGET, created: 1000 + i })
+    store.setStatus(run.id, 'succeeded', 2000 + i)
+  }
+  store.close()
+  const host = await hostRuntime(dir, model([]))
+  const seen: string[] = []
+  let before: number | undefined, more = true
+  while (more) {
+    const page = await host.handle({ kind: 'list', limit: 50, ...(before === undefined ? {} : { before }) }) as { runs: RunSummary[]; more?: boolean }
+    expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(HOST_MESSAGE_MAX_BYTES)
+    seen.push(...page.runs.map(run => run.id))
+    more = page.more === true && page.runs.length > 0
+    before = page.runs.at(-1)?.updated
+  }
+  expect(seen).toEqual(Array.from({ length: 50 }, (_, i) => `run${49 - i}`))
+})
 it('pages large event histories and previews within the host message budget so a heavy task still loads', async () => {
   const dir = temp()
   // Ten near-limit text steps: 200 such events cannot fit one 512 KiB host message.

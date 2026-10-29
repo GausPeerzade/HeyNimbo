@@ -206,6 +206,37 @@ it('pages Show earlier from the oldest retained sequence without keeping more th
   expect(requests.filter(value => value.kind === 'events').at(-1)).toEqual({ kind: 'events', runId: 'run', afterSeq: 200, limit: 200 })
   expect(panel.querySelectorAll('pre')[0]?.dataset.seq).toBe('201'); expect(panel.querySelectorAll('pre')).toHaveLength(2000)
 })
+it('fills the whole Show earlier window across byte-limited pages instead of skipping its tail', async () => {
+  // The host returns at most 50 events per reply and says when more remain.
+  respond = async value => {
+    if (value.kind === 'list') return { runs: [run()] }
+    if (value.kind === 'events') {
+      const end = Math.min(2400, value.afterSeq + Math.min(value.limit, 50))
+      return { events: Array.from({ length: end - value.afterSeq }, (_, i) => event(value.afterSeq + i + 1)), more: end < 2400 }
+    }
+    return { ok: true }
+  }
+  const view = setup(); view.setActive(true)
+  for (let i = 0; i < 60; i++) await settle()
+  const seqs = () => panel.querySelectorAll('pre').map(node => Number(node.dataset.seq))
+  expect(seqs()[0]).toBe(401)
+  button('Show earlier').onclick!()
+  for (let i = 0; i < 10; i++) await settle()
+  const shown = seqs()
+  expect(shown[0]).toBe(201)
+  expect(shown).toEqual(Array.from({ length: shown.length }, (_, i) => 201 + i))
+  expect(shown.length).toBeLessThanOrEqual(2000)
+  view.dispose()
+})
+it('keeps Load older available when a byte-limited task page is short but the host reports more', async () => {
+  respond = async value => value.kind === 'list' ? (value.before === undefined ? { runs: [run('a', 10), run('b', 9)], more: true } : { runs: [run('c', 8)], more: false }) : { events: [] }
+  const view = setup(); view.setActive(true); await settle()
+  expect(button('Load older').hidden).toBe(false)
+  button('Load older').onclick!(); await settle()
+  expect(requests.filter(value => value.kind === 'list')).toEqual([{ kind: 'list', limit: 50 }, { kind: 'list', before: 9, limit: 50 }])
+  expect(button('Load older').hidden).toBe(true)
+  view.dispose()
+})
 it('retains the request ID across an uncertain start retry and blocks duplicate submissions while it is in flight', async () => {
   let finish!: (value: unknown) => void
   respond = async value => value.kind === 'start' ? new Promise(resolve => { finish = resolve }) : { runs: [] }

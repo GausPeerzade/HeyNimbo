@@ -62,6 +62,44 @@ it('preserves fragmented arguments and long text below the per-step envelope bud
   expect(h.store.events(runId, 0, 200).map(e => e.payload)).toContainEqual({ type: 'text', step: 2, text })
 })
 
+// 1 is the worst legal fragmentation; 1,000 and 48,000 are typical and single-record providers.
+it.each([1, 1000, 48000])('accepts the same near-limit 48,000-character answer whether the provider sends it %i characters per SSE record', async size => {
+  // Same shape as the review's reproduction: a code answer just under the 48,000-character text limit.
+  const answer = 'const x = 1;\n'.repeat(4000).slice(0, 48000)
+  const transport = compatible(() => [...Array.from({ length: Math.ceil(answer.length / size) }, (_, i) => record({ content: answer.slice(i * size, (i + 1) * size) })), record({}, 'stop')])
+  const h = setup({ models: async () => transport.selected })
+  const { runId } = await h.start()
+  const run = await h.terminal(runId)
+  expect(run.status).toBe('succeeded')
+  expect(h.store.events(runId, 0, 200).map(e => e.payload)).toContainEqual({ type: 'text', step: 1, text: answer })
+}, 30_000)
+
+it('still fails early on a flood of empty stream parts that carry no content', async () => {
+  let pulled = 0
+  const selected = new MockLanguageModelV4({ doStream: async () => ({ stream: new ReadableStream<Chunk>({ pull(controller) {
+    if (pulled++ === 0) { controller.enqueue({ type: 'text-start', id: 't' }); return }
+    if (pulled > 400_000) { controller.close(); return }
+    controller.enqueue({ type: 'text-delta', id: 't', delta: '' })
+  } }) }) })
+  const h = setup({ models: async () => selected })
+  const { runId } = await h.start()
+  expect((await h.terminal(runId)).error).toEqual({ code: 'budget', message: 'The model response was too large.' })
+  expect(pulled).toBeLessThan(400_000)
+}, 30_000)
+
+it('charges provider metadata attached to text deltas instead of exempting it with the delta text', async () => {
+  let pulled = 0
+  const selected = new MockLanguageModelV4({ doStream: async () => ({ stream: new ReadableStream<Chunk>({ pull(controller) {
+    if (pulled++ === 0) { controller.enqueue({ type: 'text-start', id: 't' }); return }
+    if (pulled > 40) { controller.close(); return }
+    controller.enqueue({ type: 'text-delta', id: 't', delta: 'a', providerMetadata: { fixture: { padding: 'p'.repeat(100_000) } } } as Chunk)
+  } }) }) })
+  const h = setup({ models: async () => selected })
+  const { runId } = await h.start()
+  expect((await h.terminal(runId)).error).toEqual({ code: 'budget', message: 'The model response was too large.' })
+  expect(pulled).toBeLessThan(40)
+})
+
 it.each(['toolCallId', 'toolName', 'id'] as const)('rejects an oversized %s field before SDK accumulation', async field => {
   const chunk: Chunk = field === 'id' ? { type: 'tool-input-start', id: 'i'.repeat(257), toolName: 'read' } : { type: 'tool-call', toolCallId: 'call', toolName: 'read', input: '{}', [field]: 'x'.repeat(field === 'toolName' ? 129 : 257) }
   const selected = new MockLanguageModelV4({ doStream: async () => ({ stream: new ReadableStream<Chunk>({ start(controller) { controller.enqueue(chunk); controller.close() } }) }) })

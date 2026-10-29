@@ -35,6 +35,8 @@ const INPUT_BYTES = 16 * 1024
 const STREAM_BYTES = 1024 * 1024
 const RESPONSE_BYTES = 2 * 1024 * 1024
 const RESPONSE_ERROR = 'The model response was too large.'
+/** Per-delta overhead charge: one-character streaming of a 48,000-character answer stays far below RESPONSE_BYTES. */
+const DELTA_FRAMING = 16
 const CHECKPOINT_BYTES = 4 * 1024 * 1024
 const TRANSCRIPT_ERROR = 'The task transcript grew too large.'
 function transcript(messages: ModelMessage[]): ModelMessage[] {
@@ -258,9 +260,14 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
             for (const [key, value] of Object.entries(part)) {
               if (typeof value === 'string' && value.length > (key === 'toolName' ? 128 : key === 'toolCallId' || key === 'id' ? 256 : RESPONSE_BYTES)) throw new BudgetError(RESPONSE_ERROR)
             }
-            // Include every envelope field, including nested provider metadata,
-            // escaping and UTF-8 expansion, not only visible text or arguments.
-            envelopeBytes += Buffer.byteLength(JSON.stringify(part))
+            // Charge what the SDK retains. Deltas are concatenated, so their
+            // repeated framing is charged as a small fixed cost per part (which
+            // still bounds empty-delta floods); their content, ID and any attached
+            // metadata are charged in full. Every other part is charged whole.
+            if (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-input-delta') {
+              const { delta, id, ...rest } = part
+              envelopeBytes += DELTA_FRAMING + Buffer.byteLength(delta) + id.length + (Object.keys(rest).length > 1 ? Buffer.byteLength(JSON.stringify(rest)) : 0)
+            } else envelopeBytes += Buffer.byteLength(JSON.stringify(part))
             if (envelopeBytes > RESPONSE_BYTES) throw new BudgetError(RESPONSE_ERROR)
             if (part.type === 'tool-input-delta' || part.type === 'reasoning-delta') bytes += Buffer.byteLength(part.delta)
             // Complete calls may be supplied without deltas. Count them in a
@@ -537,7 +544,17 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           }
           return count < events.length ? { events: events.slice(0, count), more: true } : { events, ...(events.length === command.limit ? { more: true } : {}) }
         }
-        case 'list': return { runs: [...deps.memoryStore.listRuns(command.limit, command.before), ...deps.store.listRuns(command.limit, command.before)].sort((a, b) => b.updated - a.updated).slice(0, command.limit).map(summary) }
+        case 'list': {
+          // Goals may be 16,000 characters, so 50 summaries can exceed one host message: stop at the byte budget.
+          const runs = [...deps.memoryStore.listRuns(command.limit, command.before), ...deps.store.listRuns(command.limit, command.before)].sort((a, b) => b.updated - a.updated).slice(0, command.limit).map(summary)
+          let bytes = 0, count = 0
+          for (const run of runs) {
+            const size = Buffer.byteLength(JSON.stringify(run)) + 1
+            if (count > 0 && bytes + size > REPLY_BUDGET) break
+            bytes += size; count++
+          }
+          return count < runs.length ? { runs: runs.slice(0, count), more: true } : { runs, ...(runs.length === command.limit ? { more: true } : {}) }
+        }
         default: throw new Error('Command is not available.')
       }
     },

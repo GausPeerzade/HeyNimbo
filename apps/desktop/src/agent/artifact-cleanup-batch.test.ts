@@ -89,4 +89,5 @@ it('falls back only within a failed page, retains a mid-batch EIO job across res
     expect(existsSync(target)).toBe(false)
     expect((await original.read('keep', shared.id))?.content).toEqual(bytes('unique-0'))
   } finally { await runtime.shutdown() }
-}, 10000)
+  // ~400 real rm calls plus a restart: ~2.5 s alone, much slower when the suite saturates the disk.
+}, 30_000)

@@ -87,7 +87,8 @@ export type AgentRequest =
 /** Results of `AgentApi.request`, by request kind. Main forwards host results unchanged. */
 export interface AgentResults {
   start: { runId: string }
-  list: { runs: RunSummary[] }
+  /** Byte-bounded like `events`; `more` means request again with `before` = last run's `updated`. */
+  list: { runs: RunSummary[]; more?: boolean }
   /** Pages are bounded by bytes as well as count; `more` says whether to fetch from the last seq. */
   events: { events: AgentEvent[]; more?: boolean }
   /** Only text media types are previewable; `text` is a prefix that fits one host message. */

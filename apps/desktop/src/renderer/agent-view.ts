@@ -18,10 +18,11 @@ function runsResult(value: unknown): RunSummary[] {
   })
 }
 /** Host pages are bounded by bytes too, so a short page is not the end unless `more` is absent. */
-function hasMore(value: unknown, count: number): boolean {
+function morePages(value: unknown, count: number, limit: number): boolean {
   const more = record(value).more
-  return more === undefined ? count >= 200 : more === true
+  return more === undefined ? count >= limit : more === true
 }
+const hasMore = (value: unknown, count: number): boolean => morePages(value, count, 200)
 function eventsResult(value: unknown, runId: string, afterSeq: number): AgentEvent[] {
   const events = record(value).events
   if (!Array.isArray(events) || events.length > 200) throw new Error('Invalid events')
@@ -171,12 +172,13 @@ export class AgentView {
     if (this.listing) return
     this.listing = true; this.older.disabled = true
     try {
-      const runs = runsResult(await this.api.request({ kind: 'list', limit: 50, ...(this.before === undefined ? {} : { before: this.before }) }))
+      const page = await this.api.request({ kind: 'list', limit: 50, ...(this.before === undefined ? {} : { before: this.before }) })
+      const runs = runsResult(page)
       if (this.disposed) return
       this.upsert(runs, this.before !== undefined); this.before = runs.length ? Math.min(...runs.map(run => run.updated)) : this.before
       const first = runs.find(run => this.runs.has(run.id))
       if (!this.selected && first) this.select(first.id)
-      this.older.hidden = runs.length < 50; this.schedule()
+      this.older.hidden = !runs.length || !morePages(page, runs.length, 50); this.schedule()
     } catch { this.status.textContent = 'Could not load tasks. Try again.' }
     finally { this.listing = false; this.older.disabled = false }
   }
@@ -207,9 +209,23 @@ export class AgentView {
     if (first <= 1 || this.earlier.disabled) return
     this.earlier.disabled = true
     try {
-      const afterSeq = Math.max(0, first - 201)
-      const events = eventsResult(await this.api.request({ kind: 'events', runId, afterSeq, limit: 200 }), runId, afterSeq)
-      if (!this.disposed && generation === this.generation) this.timeline.append(events.filter(event => event.seq < first), 'earlier')
+      // The window is (start, first). A byte-limited reply can cover only its
+      // beginning, so collect until the window is complete before showing any
+      // of it; otherwise the next click would compute a window past the gap.
+      const start = Math.max(0, first - 201), collected: AgentEvent[] = []
+      let afterSeq = start
+      while (afterSeq < first - 1) {
+        const limit = Math.min(200, first - 1 - afterSeq)
+        const page = await this.api.request({ kind: 'events', runId, afterSeq, limit })
+        if (this.disposed || generation !== this.generation) return
+        // eventsResult rejects non-advancing cursors, so this loop always progresses.
+        const events = eventsResult(page, runId, afterSeq).filter(event => event.seq < first)
+        if (!events.length) break
+        collected.push(...events)
+        afterSeq = events.at(-1)!.seq
+        if (!morePages(page, events.length, limit)) break
+      }
+      this.timeline.append(collected, 'earlier')
     } catch { this.status.textContent = 'Could not load earlier events. Try again.' }
     finally { this.earlier.disabled = false }
   }

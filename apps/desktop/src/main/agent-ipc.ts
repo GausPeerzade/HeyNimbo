@@ -43,7 +43,9 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
   const approvals = new Map<string, Extract<AgentEvent['payload'], { type: 'approval.requested' }>>()
   const runs = new Map<string, RunSummary>()
   let confirmation: { runId: string; controller: AbortController } | undefined
-  const cancelled = new Map<string, number>()
+  // One window-wide pause after the owner cancels: the renderer cannot reset it by
+  // choosing another kind, task or Stop-all generation. Denials stay available.
+  let pausedUntil = 0
   const sequences = new Map<string, number>()
   const obsolete = (runId: string): void => { if (confirmation?.runId === runId) confirmation.controller.abort() }
   const revokeAuthority = (): void => { authority++; approvals.clear(); runs.clear(); sequences.clear(); confirmation?.controller.abort() }
@@ -52,8 +54,7 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
     const home = deps.home(), generation = authority
     if (confirmation) throw new Error('Finish the open confirmation first.')
     if (!home) throw new Error('Approval expired.')
-    const key = `${kind}:${runId}`
-    if ((cancelled.get(key) ?? 0) > Date.now()) throw new Error('Nothing approved.')
+    if (pausedUntil > Date.now()) throw new Error('Nothing approved.')
     const controller = new AbortController()
     confirmation = { runId, controller }
     try {
@@ -64,8 +65,7 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
       catch { throw new Error(controller.signal.aborted ? 'Approval expired.' : 'Could not confirm this action.') }
       if (disposed || controller.signal.aborted || authority !== generation || deps.home() !== home || !isPageSender(event, home, 'home') || !current()) throw new Error('Approval expired.')
       if (result.response !== 1) {
-        cancelled.delete(key); cancelled.set(key, Date.now() + 2000)
-        while (cancelled.size > 256) cancelled.delete(cancelled.keys().next().value!)
+        pausedUntil = Date.now() + 2000
         throw new Error('Nothing approved.')
       }
     } finally { confirmation = undefined }
