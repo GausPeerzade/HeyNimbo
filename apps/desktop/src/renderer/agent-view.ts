@@ -17,6 +17,11 @@ function runsResult(value: unknown): RunSummary[] {
     return value as RunSummary
   })
 }
+/** Host pages are bounded by bytes too, so a short page is not the end unless `more` is absent. */
+function hasMore(value: unknown, count: number): boolean {
+  const more = record(value).more
+  return more === undefined ? count >= 200 : more === true
+}
 function eventsResult(value: unknown, runId: string, afterSeq: number): AgentEvent[] {
   const events = record(value).events
   if (!Array.isArray(events) || events.length > 200) throw new Error('Invalid events')
@@ -187,10 +192,11 @@ export class AgentView {
     let afterSeq = 0
     try {
       for (;;) {
-        const events = eventsResult(await this.api.request({ kind: 'events', runId, afterSeq, limit: 200 }), runId, afterSeq)
+        const page = await this.api.request({ kind: 'events', runId, afterSeq, limit: 200 })
+        const events = eventsResult(page, runId, afterSeq)
         if (this.disposed || generation !== this.generation) return
         this.timeline.append(events)
-        if (events.length < 200) break
+        if (!events.length || !hasMore(page, events.length)) break
         afterSeq = Math.max(...events.map(event => event.seq))
       }
       this.timeline.setInteractive(true)

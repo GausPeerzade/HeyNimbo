@@ -69,6 +69,17 @@ it('fetches history in 200-event pages using the fetched cursor rather than a ne
   const nodes = panel.querySelectorAll('pre').filter(node => node.dataset.seq)
   expect(nodes).toHaveLength(203); expect(nodes.map(node => Number(node.dataset.seq))).toEqual(Array.from({ length: 203 }, (_, i) => i + 1))
 })
+it('keeps paging byte-bounded history pages that are shorter than the limit while the host reports more', async () => {
+  respond = async value => {
+    if (value.kind === 'list') return { runs: [run()] }
+    if (value.kind === 'events') return value.afterSeq === 0 ? { events: [event(1), event(2)], more: true } : value.afterSeq === 2 ? { events: [event(3)], more: false } : { events: [] }
+    return { ok: true }
+  }
+  const view = setup(); view.setActive(true); await settle(); await settle()
+  expect(requests.filter(value => value.kind === 'events').map(value => value.kind === 'events' && value.afterSeq)).toEqual([0, 2])
+  expect(panel.querySelectorAll('pre').filter(node => node.dataset.seq).map(node => Number(node.dataset.seq))).toEqual([1, 2, 3])
+  view.dispose()
+})
 it('ignores other-run partials and stale history responses after task selection changes', async () => {
   let old!: (value: unknown) => void
   respond = async value => value.kind === 'list' ? { runs: [run(), run('other', 99)] } : value.kind === 'events' && value.runId === 'run' ? new Promise(resolve => { old = resolve }) : { events: [event(1, 'other')] }

@@ -88,9 +88,10 @@ export type AgentRequest =
 export interface AgentResults {
   start: { runId: string }
   list: { runs: RunSummary[] }
-  events: { events: AgentEvent[] }
-  /** Only text media types are previewable; content is capped at 1 MB. */
-  artifact: { name: string; mediaType: string; bytes: number; text: string }
+  /** Pages are bounded by bytes as well as count; `more` says whether to fetch from the last seq. */
+  events: { events: AgentEvent[]; more?: boolean }
+  /** Only text media types are previewable; `text` is a prefix that fits one host message. */
+  artifact: { name: string; mediaType: string; bytes: number; text: string; truncated?: boolean }
   pickFolder: { grant: { id: string; label: string } } | { cancelled: true }
   approve: { ok: true }; answer: { ok: true }; allowMix: { ok: true }; cancel: { ok: true }; continue: { ok: true }; delete: { ok: true }; stopAll: { ok: true }
 }

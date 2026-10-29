@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { UnsupportedFunctionalityError, isStepCount, modelMessageSchema, jsonSchema, streamText, tool, wrapLanguageModel, type ModelMessage, type ToolSet } from 'ai'
-import { isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError, type CancelAllResult } from '../shared/agent-protocol'
+import { HOST_MESSAGE_MAX_BYTES, isTerminal, type AgentEvent, type AgentEventPayload, type HostCommand, type RunSummary, type AgentError, type CancelAllResult } from '../shared/agent-protocol'
 import type { AgentRuntime, AgentTool, AgentStore, ArtifactStore, RunRecord, RuntimeDeps, StepCheckpoint } from './contracts'
 import { DO_INSTRUCTIONS } from './prompt'
 import { PlanAccessError } from './model-policy'
@@ -29,6 +29,8 @@ function canonical(value: unknown): string {
 }
 
 class BudgetError extends Error {}
+/** Room left for the reply envelope inside one host→main message. */
+const REPLY_BUDGET = HOST_MESSAGE_MAX_BYTES - 16 * 1024
 const INPUT_BYTES = 16 * 1024
 const STREAM_BYTES = 1024 * 1024
 const RESPONSE_BYTES = 2 * 1024 * 1024
@@ -446,9 +448,14 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           const value = await find(command.runId).artifacts.read(command.runId, command.artifactId)
           if (!value) throw new Error('Artifact not found.')
           if (!value.meta.mediaType.startsWith('text/') && value.meta.mediaType !== 'application/json') throw new Error('This artifact cannot be previewed as text.')
-          let end = Math.min(value.content.byteLength, 1000000)
-          while (end > 0 && end < value.content.byteLength && (value.content[end]! & 0xc0) === 0x80) end--
-          return { name: value.meta.name, mediaType: value.meta.mediaType, bytes: value.meta.bytes, text: new TextDecoder().decode(value.content.subarray(0, end)) }
+          // A reply must fit one host message; JSON escaping can expand text, so measure the encoded form.
+          let end = Math.min(value.content.byteLength, REPLY_BUDGET)
+          for (;;) {
+            while (end > 0 && end < value.content.byteLength && (value.content[end]! & 0xc0) === 0x80) end--
+            const text = new TextDecoder().decode(value.content.subarray(0, end))
+            if (end === 0 || Buffer.byteLength(JSON.stringify(text)) <= REPLY_BUDGET) return { name: value.meta.name, mediaType: value.meta.mediaType, bytes: value.meta.bytes, text, ...(end < value.content.byteLength ? { truncated: true } : {}) }
+            end = Math.floor(end / 2)
+          }
         }
         case 'delete': {
           if (!deps.memoryStore.getRun(command.runId) && !deps.store.getRun(command.runId)) {
@@ -519,7 +526,17 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           return { ok: true }
         }
         case 'cancel': { const state = active.get(command.runId); if (state) cancel(state); else find(command.runId); return { ok: true } }
-        case 'events': return { events: find(command.runId).store.events(command.runId, command.afterSeq, command.limit) }
+        case 'events': {
+          // Count-limited pages of 64 KB events can exceed one host message; stop at the byte budget instead.
+          const events = find(command.runId).store.events(command.runId, command.afterSeq, command.limit)
+          let bytes = 0, count = 0
+          for (const event of events) {
+            const size = Buffer.byteLength(JSON.stringify(event)) + 1
+            if (count > 0 && bytes + size > REPLY_BUDGET) break
+            bytes += size; count++
+          }
+          return count < events.length ? { events: events.slice(0, count), more: true } : { events, ...(events.length === command.limit ? { more: true } : {}) }
+        }
         case 'list': return { runs: [...deps.memoryStore.listRuns(command.limit, command.before), ...deps.store.listRuns(command.limit, command.before)].sort((a, b) => b.updated - a.updated).slice(0, command.limit).map(summary) }
         default: throw new Error('Command is not available.')
       }

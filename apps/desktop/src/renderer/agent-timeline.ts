@@ -197,10 +197,14 @@ export class AgentTimeline {
       void this.options.request({ kind: 'artifact', runId: event.runId, artifactId: p.artifactId }).then(result => {
         if (this.disposed || generation !== this.generation || previewGeneration !== this.previewGeneration) { open.disabled = false; return }
         if (!result || typeof result !== 'object' || !('text' in result) || typeof result.text !== 'string' || result.text.length > 1_048_576) throw new Error('Invalid preview')
-        const text = result.text
-        const nodes = [element('pre', 'agent-preview', safeAgentLabel(text)), button('Copy', () => {
-          void navigator.clipboard.writeText(text).catch(() => this.options.announce?.('Could not copy this preview.'))
-        })]
+        const text = result.text, truncated = 'truncated' in result && result.truncated === true
+        const nodes = [
+          ...(truncated ? [element('p', 'agent-preview-note', 'Preview shows the beginning only; the artifact is larger.')] : []),
+          element('pre', 'agent-preview', safeAgentLabel(text)),
+          button(truncated ? 'Copy shown text' : 'Copy', () => {
+            void navigator.clipboard.writeText(text).catch(() => this.options.announce?.('Could not copy this preview.'))
+          }),
+        ]
         this.preview = { nodes, open }; card.append(...nodes)
       }).catch(() => { open.disabled = false; this.options.announce?.('Could not open this preview.') })
     })

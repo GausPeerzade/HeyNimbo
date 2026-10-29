@@ -101,6 +101,16 @@ it('shows artifact preview controls visibly while Copy preserves the exact origi
   root.all('button').find(node => node.textContent === 'Copy')!.onclick!(); await tick()
   expect(copy).toHaveBeenCalledWith(text)
 })
+it('labels a truncated preview and copies only what was actually shown instead of claiming the full artifact', async () => {
+  const timeline = setup(); timeline.reset('run', false)
+  request = async () => ({ text: 'first part', truncated: true })
+  const copy = vi.fn(async () => {})
+  vi.stubGlobal('navigator', { clipboard: { writeText: copy } })
+  timeline.append([event(1, { type: 'artifact', artifactId: 'artifact', name: 'Big', mediaType: 'text/plain', bytes: 900000 })]); flush()
+  root.all('button')[0]!.onclick!(); await tick()
+  expect(root.all('p').some(node => node.textContent === 'Preview shows the beginning only; the artifact is larger.')).toBe(true)
+  expect(root.all('button').some(node => node.textContent === 'Copy shown text')).toBe(true)
+})
 it('never offers buttons for stale approval replayed alongside or after its decision', () => {
   const timeline = setup(); timeline.reset('run', false)
   timeline.append([event(2, { type: 'approval.decided', approvalId: 'approval', decision: 'denied' }), event(1, approval())]); flush()

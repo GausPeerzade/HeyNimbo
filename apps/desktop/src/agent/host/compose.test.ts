@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MockLanguageModelV4 } from 'ai/test'
 import type { AgentRuntime } from '../contracts'
-import { DEFAULT_BUDGET, type AgentEvent, type HostCommand, type HostToMain, type RunSummary } from '../../shared/agent-protocol'
+import { DEFAULT_BUDGET, HOST_MESSAGE_MAX_BYTES, type AgentEvent, type HostCommand, type HostToMain, type RunSummary } from '../../shared/agent-protocol'
 import { SqliteAgentStore } from '../store'
 import { agentPaths } from '../paths'
 import { composeRuntime } from './compose'
@@ -211,6 +211,33 @@ it.each(['unknown-provider', 'gateway-name'])('sanitizes unsupported model selec
   const run = await finished(runtime, runId)
   expect(run).toMatchObject({ status: 'failed', error: { code: 'provider', message: expect.stringContaining('Check the connection') } })
   expect(JSON.stringify(run)).not.toContain('credential-secret')
+})
+it('pages large event histories and previews within the host message budget so a heavy task still loads', async () => {
+  const dir = temp()
+  // Ten near-limit text steps: 200 such events cannot fit one 512 KiB host message.
+  const big = 'x'.repeat(47_000)
+  const steps: Script[] = Array.from({ length: 12 }, (_, i) => ({ text: `${i}:${big}`, call: { name: 'save_artifact', id: `s${i}`, input: { name: 'n.txt', content: 'y' } } }))
+  const selected = model([...steps, { call: { name: 'save_artifact', id: 'large', input: { name: 'large.txt', content: 'z'.repeat(900_000) } } }, { text: 'done' }])
+  const host = await hostRuntime(dir, selected)
+  const { runId } = await host.handle(start) as { runId: string }
+  await vi.waitFor(() => expect(host.events().at(-1)?.payload).toMatchObject({ type: 'status', status: 'succeeded' }), { timeout: 10_000 })
+  const seen: AgentEvent[] = []
+  let afterSeq = 0, more = true, pages = 0
+  while (more) {
+    const page = await host.handle({ kind: 'events', runId, afterSeq, limit: 200 }) as { events: AgentEvent[]; more?: boolean }
+    expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(HOST_MESSAGE_MAX_BYTES)
+    seen.push(...page.events); pages++
+    more = page.more === true
+    if (page.events.length) afterSeq = page.events.at(-1)!.seq
+  }
+  expect(pages).toBeGreaterThan(1)
+  expect(seen.map(event => event.seq)).toEqual(Array.from({ length: seen.length }, (_, i) => i + 1))
+  expect(seen.at(-1)?.payload).toMatchObject({ type: 'status', status: 'succeeded' })
+  const artifact = seen.filter(event => event.payload.type === 'artifact').map(event => event.payload as Extract<AgentEvent['payload'], { type: 'artifact' }>).find(p => p.bytes === 900_000)!
+  const preview = await host.handle({ kind: 'artifact', runId, artifactId: artifact.artifactId }) as { text: string; bytes: number }
+  expect(preview.bytes).toBe(900_000)
+  expect(preview.text.length).toBeGreaterThan(100_000)
+  expect(preview.text.length).toBeLessThan(900_000)
 })
 it('sweeps only old artifact temp files at startup without following directory symlinks', async () => {
   const dir = temp(), outside = temp(), artifacts = agentPaths(dir).artifacts
