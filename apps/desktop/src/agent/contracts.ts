@@ -2,7 +2,8 @@
 // tested independently against these interfaces; the coordinator composes them.
 // Nothing here may import Electron: the host runs in a utility process and,
 // later, headless.
-import type { AgentEvent, AgentEventPayload, FolderGrant, Persistence, RunBudget, RunMode, RunStatus, RunSummary, RunUsage, AgentError } from '../shared/agent-protocol'
+import type { LanguageModel } from 'ai'
+import type { AgentEvent, AgentEventPayload, FolderGrant, HostCommand, ModelSelection, Persistence, RunBudget, RunMode, RunStatus, RunSummary, RunUsage, AgentError, SearchConfig } from '../shared/agent-protocol'
 
 // ---------------------------------------------------------------------------
 // Store (agent.sqlite or in-memory)
@@ -14,6 +15,8 @@ export interface NewRun {
   mode: RunMode
   persistence: Persistence
   conversationId?: string
+  /** Persisted with the run so Continue cannot widen or lose them. Empty for web runs. */
+  grants: FolderGrant[]
   budget: RunBudget
   created: number
 }
@@ -21,7 +24,7 @@ export interface NewRun {
 /** One model step's ordered messages, enough to continue the run after restart. */
 export interface StepCheckpoint { runId: string; step: number; messages: string /* JSON ModelMessage[] */; at: number }
 
-export interface RunRecord extends RunSummary { requestId: string; budget: RunBudget; nextSeq: number }
+export interface RunRecord extends RunSummary { requestId: string; budget: RunBudget; grants: FolderGrant[]; nextSeq: number }
 
 export interface AgentStore {
   /** Returns the existing run when `requestId` was already used (idempotent start). */
@@ -106,3 +109,47 @@ export interface AgentTool {
 
 export interface ResolvedAddress { address: string; family: 4 | 6 }
 export type Resolver = (hostname: string) => Promise<ResolvedAddress[]>
+
+// ---------------------------------------------------------------------------
+// Runtime composition (host side)
+
+/** Fetches a secret from main on demand; main answers only for configured names. */
+export type CredentialSource = (name: string) => Promise<string>
+
+/** Builds the SDK model for a run. Production wraps the existing `sdkModel`; tests pass a mock. */
+export type ModelFactory = (selection: ModelSelection, credentials: CredentialSource) => Promise<LanguageModel>
+
+/** Builds the tool set available to a run. The coordinator still enforces scope per call. */
+export type ToolFactory = (options: { search?: SearchConfig; credentials: CredentialSource }) => AgentTool[]
+
+export interface Clock { now(): number }
+
+/** Batched output of the runtime; the host forwards it to main. */
+export interface RuntimeSink {
+  events(events: AgentEvent[], runs: RunSummary[]): void
+  /** Transient streaming text; may be dropped or coalesced freely. */
+  partial(runId: string, step: number, text: string): void
+}
+
+/** The whole agent runtime as the host process sees it. */
+export interface AgentRuntime {
+  handle(command: HostCommand): Promise<unknown>
+  /** Cancels every run and waits (bounded) for in-flight tools to settle. */
+  shutdown(): Promise<void>
+}
+
+export interface RuntimeDeps {
+  /** Retained runs. */
+  store: AgentStore
+  /** Temporary runs (history off / retention 0); never touches disk. */
+  memoryStore: AgentStore
+  artifacts: ArtifactStore
+  memoryArtifacts: ArtifactStore
+  models: ModelFactory
+  tools: ToolFactory
+  credentials: CredentialSource
+  sink: RuntimeSink
+  clock?: Clock
+  /** Event batching window; default one animation frame (16 ms). */
+  flushMs?: number
+}

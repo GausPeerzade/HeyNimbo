@@ -49,8 +49,8 @@ export interface RunSummary {
 export type AgentEventPayload =
   | { type: 'run.created'; goal: string; mode: RunMode; persistence: Persistence; budget: RunBudget }
   | { type: 'status'; status: RunStatus; reason?: string }
-  /** Model text for a step. `partial` updates are coalesced and superseded by the final one. */
-  | { type: 'text'; step: number; text: string; partial?: boolean }
+  /** Final model text for a step. Live token text travels as a transient `partial` push and is never persisted. */
+  | { type: 'text'; step: number; text: string }
   | { type: 'tool.call'; step: number; callId: string; tool: string; input: string }
   | { type: 'tool.result'; callId: string; ok: boolean; summary: string; artifactId?: string }
   | { type: 'tool.denied'; callId: string; reason: string }
@@ -89,18 +89,22 @@ export interface FolderGrant { id: string; root: string; label: string }
 
 /** Main → host. */
 export type HostCommand =
-  | { kind: 'start'; requestId: string; goal: string; mode: RunMode; persistence: Persistence; conversationId?: string; grants: FolderGrant[]; budget: RunBudget; model: ModelSelection }
+  | { kind: 'start'; requestId: string; goal: string; mode: RunMode; persistence: Persistence; conversationId?: string; grants: FolderGrant[]; budget: RunBudget; model: ModelSelection; search?: SearchConfig }
   | { kind: 'approve'; runId: string; approvalId: string; decision: 'approved' | 'denied' }
   | { kind: 'answer'; runId: string; questionId: string; text: string }
   | { kind: 'allowMix'; runId: string }
   | { kind: 'cancel'; runId: string }
-  | { kind: 'continue'; runId: string; grants: FolderGrant[]; model: ModelSelection }
+  /** Grants are the ones persisted with the run; main cannot widen them on continue. */
+  | { kind: 'continue'; runId: string; model: ModelSelection }
   | { kind: 'delete'; runId: string }
   | { kind: 'deleteConversation'; conversationId: string }
   | { kind: 'cancelAll' }
   | { kind: 'list'; before?: number; limit: number }
   | { kind: 'events'; runId: string; afterSeq: number; limit: number }
   | { kind: 'artifact'; runId: string; artifactId: string }
+
+/** Web search backend. Secrets (e.g. a Brave key) are fetched through `credential.request`, never sent here. */
+export type SearchConfig = { provider: 'searxng'; baseURL: string } | { provider: 'brave' }
 
 /** Which configured provider/model the host should use; the secret is fetched separately. */
 export interface ModelSelection { provider: string; model: string; effort?: 'low' | 'medium' | 'high'; baseURL?: string }
@@ -111,13 +115,15 @@ export type HostState = 'idle' | 'starting' | 'ready' | 'crashed' | 'stopped'
 /** Main → Home pushes on `AgentChannels.events`. */
 export type AgentPush =
   | { kind: 'events'; events: AgentEvent[]; runs: RunSummary[] }
+  /** Transient streaming text for the current step; replaced by the persisted `text` event. */
+  | { kind: 'partial'; runId: string; step: number; text: string }
   | { kind: 'host'; state: HostState; message?: string }
 
 export const AgentChannels = { request: 'heynimbo:agent-request', push: 'heynimbo:agent-push' } as const
 
 /** Envelope on the main ↔ host MessagePort. */
 export type MainToHost =
-  | { v: 1; kind: 'init'; dataDir: string; temporaryOnly: boolean }
+  | { v: 1; kind: 'init'; dataDir: string }
   | { v: 1; kind: 'command'; id: number; command: HostCommand }
   | { v: 1; kind: 'credential'; id: number; ok: true; secret: string } | { v: 1; kind: 'credential'; id: number; ok: false; message: string }
 
@@ -125,7 +131,9 @@ export type HostToMain =
   | { v: 1; kind: 'ready' }
   | { v: 1; kind: 'reply'; id: number; ok: true; result: unknown } | { v: 1; kind: 'reply'; id: number; ok: false; message: string }
   | { v: 1; kind: 'events'; events: AgentEvent[]; runs: RunSummary[] }
-  | { v: 1; kind: 'credential.request'; id: number; provider: string }
+  | { v: 1; kind: 'partial'; runId: string; step: number; text: string }
+  /** `name` is a provider ID or 'brave-search'. Main answers only for the run's configured provider. */
+  | { v: 1; kind: 'credential.request'; id: number; name: string }
 
 // ---------------------------------------------------------------------------
 // Validation. Strict: unknown fields, wrong types and oversized values throw.
@@ -207,7 +215,7 @@ export function parseAgentEvent(value: unknown): AgentEvent {
   if (JSON.stringify(p).length > LIMITS.event) throw new Error('Agent event too large.')
   const s = (key: string, max: number = LIMITS.event, nonempty = false): void => { text(p[key], max, `${type}.${key}`, nonempty) }
   const keys: Record<AgentEventType, readonly string[]> = {
-    'run.created': ['goal', 'mode', 'persistence', 'budget'], status: ['status', 'reason'], text: ['step', 'text', 'partial'],
+    'run.created': ['goal', 'mode', 'persistence', 'budget'], status: ['status', 'reason'], text: ['step', 'text'],
     'tool.call': ['step', 'callId', 'tool', 'input'], 'tool.result': ['callId', 'ok', 'summary', 'artifactId'], 'tool.denied': ['callId', 'reason'],
     'approval.requested': ['approvalId', 'callId', 'tool', 'preview', 'digest'], 'approval.decided': ['approvalId', 'decision'],
     question: ['questionId', 'text'], answer: ['questionId', 'text'], artifact: ['artifactId', 'name', 'mediaType', 'bytes'],
@@ -217,7 +225,7 @@ export function parseAgentEvent(value: unknown): AgentEvent {
   switch (type) {
     case 'run.created': s('goal', LIMITS.goal, true); oneOf(p.mode, RUN_MODES, 'mode'); oneOf(p.persistence, ['retained', 'temporary'] as const, 'persistence'); record(p.budget, 'budget'); break
     case 'status': oneOf(p.status, RUN_STATUSES, 'status'); if (p.reason !== undefined) s('reason', 2000); break
-    case 'text': int(p.step, 0, 10_000, 'step'); s('text'); if (p.partial !== undefined && typeof p.partial !== 'boolean') throw new Error('Invalid partial flag.'); break
+    case 'text': int(p.step, 0, 10_000, 'step'); s('text'); break
     case 'tool.call': int(p.step, 0, 10_000, 'step'); id(p.callId, 'call ID'); s('tool', 100, true); s('input', 8000); break
     case 'tool.result': id(p.callId, 'call ID'); if (typeof p.ok !== 'boolean') throw new Error('Invalid tool result.'); s('summary', 8000); if (p.artifactId !== undefined) id(p.artifactId, 'artifact ID'); break
     case 'tool.denied': id(p.callId, 'call ID'); s('reason', 2000, true); break
