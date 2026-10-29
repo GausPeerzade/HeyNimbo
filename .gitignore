@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+target/
+*.node
+.DS_Store
+*.log
+.env
+.env.*

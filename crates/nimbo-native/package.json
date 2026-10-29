@@ -1,0 +1,19 @@
+{
+  "name": "@nimboguide/native",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "nimbo-native",
+    "targets": ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc"]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --no-const-enum",
+    "build:debug": "napi build --platform --no-const-enum"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.9"
+  }
+}

@@ -1,0 +1,13 @@
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+body { display: flex; justify-content: center; align-items: flex-start; font: 600 13px -apple-system, "Segoe UI", sans-serif; }
+.pill {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px;
+  border-radius: 0 0 16px 16px; background: #0b0b0f; color: #f5f5f7;
+  transition: min-width 160ms ease;
+}
+.pill.idle { min-width: 120px; justify-content: center; }
+.pill.idle #label { display: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #5ac8fa; }
+.pill.active .dot { animation: pulse 900ms ease-in-out infinite; }
+.pill.warning .dot { background: #ffcc00; }
+@keyframes pulse { 50% { transform: scale(1.6); opacity: 0.6; } }

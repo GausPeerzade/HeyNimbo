@@ -1,0 +1,4 @@
+html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
+#stage { width: 100%; height: 100%; }
+.ring { fill: none; stroke: #5ac8fa; stroke-width: 4; animation: breathe 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes breathe { 50% { transform: scale(1.25); opacity: 0.55; } }

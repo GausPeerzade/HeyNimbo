@@ -1,0 +1,16 @@
+{
+  "name": "nimboguide",
+  "private": true,
+  "description": "An open-source AI buddy that sees your screen, talks, draws, and does tasks.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test && cargo test --workspace",
+    "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
+    "dev": "pnpm --filter @nimboguide/desktop dev"
+  }
+}
