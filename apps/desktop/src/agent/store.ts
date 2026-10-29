@@ -40,6 +40,7 @@ function validateCheckpoint(checkpoint: StepCheckpoint): void {
 abstract class Store implements AgentStore {
   abstract createRun(run: NewRun): { run: RunRecord; created: boolean }
   abstract getRun(id: string): RunRecord | undefined
+  abstract getRunByRequest(requestId: string): RunRecord | undefined
   abstract listRuns(limit: number, before?: number): RunSummary[]
   abstract appendEvent(runId: string, payload: AgentEventPayload, at: number): AgentEvent
   abstract events(runId: string, afterSeq: number, limit: number): AgentEvent[]
@@ -50,13 +51,20 @@ abstract class Store implements AgentStore {
     return run
   }
   protected abstract mutate(runId: string, change: (run: RunRecord) => void): void
+  resume(runId: string, at: number): void {
+    integer(at)
+    this.mutate(runId, run => {
+      if (!(run.status === 'interrupted' || (run.status === 'failed' && run.error?.code === 'provider'))) throw new Error('Only an interrupted or provider-failed run can continue.')
+      run.status = 'running'
+      run.updated = at
+      delete run.error
+    })
+  }
   setStatus(runId: string, status: RunStatus, at: number, error?: AgentError): void {
     event(runId, 1, { type: 'status', status }, at)
     if (error !== undefined) event(runId, 1, { type: 'error', ...error }, at)
     this.mutate(runId, run => {
-      // Provider outages are retryable; policy/budget failures remain terminal.
-      const continuing = run.status === 'failed' && run.error?.code === 'provider' && status === 'running'
-      if (completed(run.status) && run.status !== status && !continuing) throw new Error('Run is terminal.')
+      if (completed(run.status) && run.status !== status) throw new Error('Run is terminal.')
       run.status = status
       run.updated = at
       if (error === undefined) delete run.error
@@ -80,6 +88,10 @@ abstract class Store implements AgentStore {
   abstract deleteRun(runId: string): string[]
   abstract deleteConversation(conversationId: string): string[]
   abstract deleteBefore(before?: number): string[]
+  abstract cleanupJobs(after?: string): string[]
+  abstract enqueueCleanup(artifactId: string): void
+  abstract hasArtifact(runId: string, artifactId: string): boolean
+  abstract completeCleanup(artifactId: string): void
 }
 
 type RunKey = Pick<RunSummary, 'id' | 'updated'>
@@ -142,6 +154,14 @@ export class MemoryAgentStore extends Store {
   private log = new Map<string, AgentEvent[]>()
   private checkpoints = new Map<string, Map<number, StepCheckpoint>>()
   private latest = new Map<string, number>()
+  private cleanup = new Set<string>()
+  cleanupJobs(after = ''): string[] { this.assertOpen(); return [...this.cleanup].filter(id => id > after).sort().slice(0, 200) }
+  enqueueCleanup(artifactId: string): void { this.assertOpen(); this.cleanup.add(artifactId) }
+  completeCleanup(artifactId: string): void { this.assertOpen(); this.cleanup.delete(artifactId) }
+  hasArtifact(runId: string, artifactId: string): boolean {
+    this.assertOpen()
+    return this.log.get(runId)?.some(event => event.payload.type === 'artifact' && event.payload.artifactId === artifactId) ?? false
+  }
   createRun(input: NewRun): { run: RunRecord; created: boolean } {
     this.assertOpen()
     const existing = this.requests.get(input.requestId)
@@ -154,6 +174,7 @@ export class MemoryAgentStore extends Store {
     return { run: clone(run), created: true }
   }
   getRun(id: string): RunRecord | undefined { this.assertOpen(); return clone(this.runs.get(id)) }
+  getRunByRequest(requestId: string): RunRecord | undefined { this.assertOpen(); const id = this.requests.get(requestId); return id === undefined ? undefined : this.getRun(id) }
   private remember(run: RunRecord): void {
     const previous = this.runs.get(run.id)
     if (previous) this.index.delete(previous)
@@ -219,6 +240,7 @@ export class MemoryAgentStore extends Store {
     const run = this.runs.get(runId)
     if (!run) return []
     const artifacts = this.log.get(runId)!.flatMap(e => e.payload.type === 'artifact' ? [e.payload.artifactId] : [])
+    for (const id of artifacts) this.cleanup.add(id)
     this.requests.delete(run.requestId)
     this.index.delete(run)
     this.runs.delete(runId)
@@ -232,7 +254,7 @@ export class MemoryAgentStore extends Store {
     const ids = [...this.runs.values()].filter(run => run.conversationId === conversationId).map(run => run.id)
     return [...new Set(ids.flatMap(id => this.deleteRun(id)))]
   }
-  close(): void { this.closed = true; this.runs.clear(); this.index = new RunIndex(); this.requests.clear(); this.log.clear(); this.checkpoints.clear(); this.latest.clear() }
+  close(): void { this.closed = true; this.runs.clear(); this.index = new RunIndex(); this.requests.clear(); this.log.clear(); this.checkpoints.clear(); this.latest.clear(); this.cleanup.clear() }
   deleteBefore(before?: number): string[] {
     this.assertOpen()
     if (before !== undefined) integer(before)
@@ -268,7 +290,7 @@ export class SqliteAgentStore extends Store {
     this.db = new DatabaseSync(path)
     try {
       const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version)
-      if (version !== 0 && version !== 1) throw new Error('Unsupported HeyNimbo agent schema.')
+      if (version !== 0 && version !== 1 && version !== 2) throw new Error('Unsupported HeyNimbo agent schema.')
       // WAL+NORMAL survives app crashes. Power loss may lose the last commits;
       // that tradeoff is acceptable for read-only run events, not an effects ledger.
       this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA secure_delete=ON;')
@@ -285,6 +307,12 @@ export class SqliteAgentStore extends Store {
         CREATE TABLE step_checkpoints(run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
           step INTEGER NOT NULL, messages TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(run_id,step));
         PRAGMA user_version=1;
+        COMMIT;
+      `)
+      if (version < 2) this.db.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE cleanup_jobs(artifact_id TEXT PRIMARY KEY);
+        PRAGMA user_version=2;
         COMMIT;
       `)
       this.statements = {
@@ -307,6 +335,10 @@ export class SqliteAgentStore extends Store {
         deleteConversation: this.db.prepare('DELETE FROM runs WHERE conversation_id=?'),
         purgeArtifacts: this.db.prepare("SELECT DISTINCT json_extract(e.payload,'$.artifactId') AS id FROM run_events e JOIN runs r ON r.id=e.run_id WHERE (? IS NULL OR r.updated < ?) AND json_extract(e.payload,'$.type')='artifact'"),
         purge: this.db.prepare('DELETE FROM runs WHERE (? IS NULL OR updated < ?)'),
+        enqueueCleanup: this.db.prepare('INSERT OR IGNORE INTO cleanup_jobs(artifact_id) VALUES(?)'),
+        cleanupJobs: this.db.prepare('SELECT artifact_id FROM cleanup_jobs WHERE artifact_id > ? ORDER BY artifact_id LIMIT 200'),
+        completeCleanup: this.db.prepare('DELETE FROM cleanup_jobs WHERE artifact_id=?'),
+        hasArtifact: this.db.prepare("SELECT 1 FROM run_events WHERE run_id=? AND json_extract(payload,'$.type')='artifact' AND json_extract(payload,'$.artifactId')=? LIMIT 1"),
       }
     } catch (error) { this.db.close(); throw error }
   }
@@ -326,6 +358,10 @@ export class SqliteAgentStore extends Store {
   }
   getRun(id: string): RunRecord | undefined {
     const row = this.statements.get.get(id)
+    return row ? decode(row) : undefined
+  }
+  getRunByRequest(requestId: string): RunRecord | undefined {
+    const row = this.statements.request.get(requestId)
     return row ? decode(row) : undefined
   }
   protected mutate(runId: string, change: (run: RunRecord) => void): void {
@@ -372,15 +408,17 @@ export class SqliteAgentStore extends Store {
     })
   }
   deleteRun(runId: string): string[] {
-    return this.transaction(() => {
+    return this.deleting(() => {
       const ids = this.statements.artifacts.all(runId).map(row => String(row.id))
+      for (const id of ids) this.statements.enqueueCleanup.run(id)
       this.statements.deleteRun.run(runId)
       return ids
     })
   }
   deleteConversation(conversationId: string): string[] {
-    return this.transaction(() => {
+    return this.deleting(() => {
       const ids = this.statements.conversationArtifacts.all(conversationId).map(row => String(row.id))
+      for (const id of ids) this.statements.enqueueCleanup.run(id)
       this.statements.deleteConversation.run(conversationId)
       return ids
     })
@@ -388,10 +426,23 @@ export class SqliteAgentStore extends Store {
   close(): void { if (!this.closed) { this.db.close(); this.closed = true } }
   deleteBefore(before?: number): string[] {
     if (before !== undefined) integer(before)
-    return this.transaction(() => {
+    return this.deleting(() => {
       const ids = this.statements.purgeArtifacts.all(before ?? null, before ?? null).map(row => String(row.id))
+      for (const id of ids) this.statements.enqueueCleanup.run(id)
       this.statements.purge.run(before ?? null, before ?? null)
       return ids
     })
+  }
+  cleanupJobs(after = ''): string[] { return this.statements.cleanupJobs.all(after).map(row => String(row.artifact_id)) }
+  enqueueCleanup(artifactId: string): void { this.statements.enqueueCleanup.run(artifactId) }
+  hasArtifact(runId: string, artifactId: string): boolean { return this.statements.hasArtifact.get(runId, artifactId) !== undefined }
+  completeCleanup(artifactId: string): void { this.statements.completeCleanup.run(artifactId) }
+  private deleting(action: () => string[]): string[] {
+    const ids = this.transaction(action)
+    // Truncate live journal remnants after logical deletion. This is not
+    // forensic erasure: SSD snapshots, backups and external readers still apply.
+    const result = this.db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()!
+    if (result.busy) throw new Error('Agent cleanup is pending.')
+    return ids
   }
 }

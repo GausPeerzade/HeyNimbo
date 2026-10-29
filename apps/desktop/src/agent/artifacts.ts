@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { chmod, lstat, mkdir, open, opendir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import type { ArtifactMeta, ArtifactStore } from './contracts'
+import type { AgentStore, ArtifactMeta, ArtifactStore } from './contracts'
 
 const clone = <T>(value: T): T => structuredClone(value)
 const MAX_BYTES = 10_000_000
@@ -10,7 +10,7 @@ const MAX_META_BYTES = 16 * 1024
 const ID = /^[A-Za-z0-9_-]{1,200}$/
 const HASH = /^[a-f0-9]{64}$/
 const UNSAFE_NAME = /[\\/\u0000-\u001f\u007f-\u009f]/g
-const safeName = (name: string): string => name.replace(UNSAFE_NAME, '').trim().slice(0, 200).trim() || 'artifact'
+const safeName = (name: string): string => name.replace(UNSAFE_NAME, '').replace(/[\u202a-\u202e\u2066-\u2069\u200e\u200f\u2028\u2029]/g, char => `⟪U+${char.charCodeAt(0).toString(16).toUpperCase()}⟫`).trim().slice(0, 200).trim() || 'artifact'
 const validId = (id: string): boolean => typeof id === 'string' && ID.test(id)
 const digest = (content: Uint8Array): string => createHash('sha256').update(content).digest('hex')
 function snapshot(content: Uint8Array): Uint8Array {
@@ -79,12 +79,20 @@ async function atomicWrite(path: string, content: Uint8Array | string): Promise<
 export class MemoryArtifactStore implements ArtifactStore {
   private artifacts = new Map<string, ArtifactMeta>()
   private blobs = new Map<string, { content: Uint8Array; refs: number }>()
+  private bytes = 0
+  constructor(private maxBytes = 50_000_000) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid artifact storage limit.')
+  }
   async save(runId: string, name: string, mediaType: string, content: Uint8Array): Promise<ArtifactMeta> {
     const copy = snapshot(content), meta = metadata(runId, name, mediaType, copy)
+    // Include sidecars so even a flood of empty/deduplicated saves is bounded.
+    const added = Buffer.byteLength(JSON.stringify(meta)) + (this.blobs.has(meta.sha256) ? 0 : copy.byteLength)
+    if (this.bytes + added > this.maxBytes) throw new Error('Temporary artifact storage is full.')
     const blob = this.blobs.get(meta.sha256) ?? { content: copy, refs: 0 }
     blob.refs++
     this.blobs.set(meta.sha256, blob)
     this.artifacts.set(meta.id, meta)
+    this.bytes += added
     return clone(meta)
   }
   async read(runId: string, artifactId: string): Promise<{ meta: ArtifactMeta; content: Uint8Array } | undefined> {
@@ -97,8 +105,9 @@ export class MemoryArtifactStore implements ArtifactStore {
       const meta = this.artifacts.get(id)
       if (!meta) continue
       this.artifacts.delete(id)
+      this.bytes -= Buffer.byteLength(JSON.stringify(meta))
       const blob = this.blobs.get(meta.sha256)!
-      if (--blob.refs === 0) this.blobs.delete(meta.sha256)
+      if (--blob.refs === 0) { this.blobs.delete(meta.sha256); this.bytes -= blob.content.byteLength }
     }
   }
 }
@@ -131,6 +140,41 @@ export class FileArtifactStore implements ArtifactStore {
   }
   private async directories(part: string, create = false): Promise<boolean> {
     return await directory(this.dir, create) && await directory(join(this.dir, part), create)
+  }
+  /** Cold reconciliation; bounded batches avoid retaining all artifact hashes. */
+  async sweepOrphans(referenced: (runId: string, artifactId: string) => boolean): Promise<void> {
+    return this.exclusive(async () => {
+      if (!await directory(this.dir, false)) return
+      const hasMeta = await this.directories('meta')
+      if (hasMeta) for await (const entry of await opendir(join(this.dir, 'meta'))) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+        let meta
+        try { meta = await this.meta(entry.name.slice(0, -5)) } catch { continue }
+        if (meta && !referenced(meta.runId, meta.id)) await rm(this.metaPath(meta.id), { force: true })
+      }
+      const collect = async (hashes: Set<string>) => {
+        if (hasMeta) for await (const entry of await opendir(join(this.dir, 'meta'))) {
+          if (!entry.name.endsWith('.json')) continue
+          // Unknown/corrupt sidecars may own any blob: preserve rather than
+          // guess. Known deletion jobs remain retryable until repaired.
+          let meta
+          try { meta = await this.meta(entry.name.slice(0, -5)) } catch { return }
+          if (meta) hashes.delete(meta.sha256)
+        }
+        for (const hash of hashes) await rm(this.blobPath(hash), { force: true })
+      }
+      for await (const prefix of await opendir(this.dir)) {
+        if (!prefix.isDirectory() || !/^[a-f0-9]{2}$/.test(prefix.name)) continue
+        if (!await this.directories(prefix.name)) continue
+        let hashes = new Set<string>()
+        for await (const entry of await opendir(join(this.dir, prefix.name))) {
+          if (!entry.isFile() || !HASH.test(entry.name) || !entry.name.startsWith(prefix.name)) continue
+          hashes.add(entry.name)
+          if (hashes.size === 200) { await collect(hashes); hashes = new Set() }
+        }
+        if (hashes.size) await collect(hashes)
+      }
+    })
   }
   private metaPath(id: string): string { return join(this.dir, 'meta', `${id}.json`) }
   private blobPath(sha256: string): string { return join(this.dir, sha256.slice(0, 2), sha256) }
@@ -182,8 +226,24 @@ export class FileArtifactStore implements ArtifactStore {
         if (meta) hashes.delete(meta.sha256)
       }
       for (const hash of hashes) await this.directories(hash.slice(0, 2))
-      for (const id of deleting) await rm(this.metaPath(id), { force: true })
+      // Keep the hash sidecar until blob deletion succeeds. A crash/EIO after
+      // unlinking metadata would otherwise lose the only retry reference.
       for (const hash of hashes) await rm(this.blobPath(hash), { force: true })
+      for (const id of deleting) await rm(this.metaPath(id), { force: true })
     })
   }
+}
+
+/** One bounded-memory pass; failed jobs stay durable for the next purge/start. */
+export async function retryArtifactCleanup(store: AgentStore, artifacts: ArtifactStore): Promise<void> {
+  let after: string | undefined, failed = false
+  for (;;) {
+    const jobs = store.cleanupJobs(after)
+    if (!jobs.length) break
+    for (const id of jobs) {
+      try { await artifacts.delete([id]); store.completeCleanup(id) } catch { failed = true }
+    }
+    after = jobs.at(-1)!
+  }
+  if (failed) throw new Error('Artifact cleanup is pending.')
 }

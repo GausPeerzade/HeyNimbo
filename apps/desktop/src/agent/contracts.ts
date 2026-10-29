@@ -40,12 +40,15 @@ export interface AgentStore {
   /** Returns the existing run when `requestId` was already used (idempotent start). */
   createRun(run: NewRun): { run: RunRecord; created: boolean }
   getRun(id: string): RunRecord | undefined
+  getRunByRequest(requestId: string): RunRecord | undefined
   /** Newest first; `before` is an `updated` cursor (exclusive). */
   listRuns(limit: number, before?: number): RunSummary[]
   /** Assigns the next per-run seq atomically and persists the event. */
   appendEvent(runId: string, payload: AgentEventPayload, at: number): AgentEvent
   events(runId: string, afterSeq: number, limit: number): AgentEvent[]
   setStatus(runId: string, status: RunStatus, at: number, error?: AgentError): void
+  /** Atomically reactivates only interrupted or provider-failed runs. */
+  resume(runId: string, at: number): void
   setMixed(runId: string, at: number): void
   addUsage(runId: string, usage: RunUsage, at: number): void
   saveCheckpoint(checkpoint: StepCheckpoint): void
@@ -56,6 +59,11 @@ export interface AgentStore {
   deleteRun(runId: string): string[]
   deleteConversation(conversationId: string): string[]
   deleteBefore(before?: number): string[]
+  /** Content-free artifact deletion jobs, paged by opaque ID (exclusive). */
+  cleanupJobs(after?: string): string[]
+  enqueueCleanup(artifactId: string): void
+  hasArtifact(runId: string, artifactId: string): boolean
+  completeCleanup(artifactId: string): void
   close(): void
 }
 
@@ -163,4 +171,6 @@ export interface RuntimeDeps {
   clock?: Clock
   /** Event batching window; default one animation frame (16 ms). */
   flushMs?: number
+  /** Profile-wide execution reservations, including non-quiescing cancelled work. Default 3. */
+  maxActiveRuns?: number
 }
