@@ -40,6 +40,8 @@ function createGesturePresenter(
       const session = talk()
       if (!session) return show({ kind: 'active', label: 'Add your OpenAI key first' })
       if (message.phase === 'started') {
+        // A new question replaces whatever the last answer was still drawing.
+        overlays.clear()
         overlays.listen(true)
         return session.holdStarted()
       }
