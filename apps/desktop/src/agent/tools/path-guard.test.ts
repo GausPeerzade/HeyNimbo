@@ -9,7 +9,8 @@ import { renameSync, symlinkSync, unlinkSync } from 'node:fs'
 let dir: string
 let grant: FolderGrant
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'heynimbo-path-'))
+  // Grants from main are always canonical; macOS temp dirs are reached through /var → /private/var.
+  dir = await realpath(await mkdtemp(join(tmpdir(), 'heynimbo-path-')))
   const root = join(dir, 'project')
   await mkdir(root)
   await writeFile(join(root, 'notes.txt'), 'safe')

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type RequestListener, type Server } from 'node:http'
@@ -37,7 +37,8 @@ afterEach(async () => {
   for (const server of servers.splice(0)) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
-function temp() { const dir = mkdtempSync(join(tmpdir(), 'heynimbo-compose-')); dirs.push(dir); return dir }
+// Canonical like main's picker grants (macOS temp paths go through /var → /private/var).
+function temp() { const dir = realpathSync(mkdtempSync(join(tmpdir(), 'heynimbo-compose-'))); dirs.push(dir); return dir }
 async function http(listener: RequestListener) {
   const server = createServer(listener); servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

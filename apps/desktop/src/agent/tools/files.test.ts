@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, writeFile, rm, truncate, readdir, symlink, rename, stat, link } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, truncate, readdir, symlink, rename, stat, link, realpath } from 'node:fs/promises'
 import { unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,7 +28,8 @@ let dir: string
 let root: string
 let ctx: ToolContext
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'heynimbo-files-'))
+  // Grants from main are always canonical; macOS temp dirs are reached through /var → /private/var.
+  dir = await realpath(await mkdtemp(join(tmpdir(), 'heynimbo-files-')))
   root = join(dir, 'project')
   await mkdir(root)
   ctx = { runId: 'run1', grants: [{ id: 'g1', root, label: 'project' }], signal: new AbortController().signal, checkpoint() {}, artifacts: new TestArtifacts(), outputBudget: 100_000 }
