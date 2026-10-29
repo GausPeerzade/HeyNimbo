@@ -8,7 +8,7 @@ afterEach(() => repositories.splice(0).forEach(r => r.close()))
 describe('HistoryRepository', () => {
   it('migrates once, saves the question before dispatch, and retains partial answers after interruption', () => {
     const r = repository()
-    expect(r.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 })
+    expect(r.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
     const c = r.create(100), t = r.begin(c, '  Find the export button  ', 'voice', 101)
     expect(r.turns(c)[0]).toMatchObject({ id: t, question: '  Find the export button  ', answer: '', state: 'interrupted', screenContextUsed: false })
     expect(r.list()[0]?.title).toBe('Find the export button')
@@ -77,4 +77,24 @@ it('bounds the sidebar query while old conversations remain searchable and indiv
   expect(r.list().some(c => c.id === old)).toBe(false)
   expect(r.conversation(old)?.title).toBe('Ancient waypoint')
   expect(r.search('waypoint')[0]).toMatchObject({ conversationId: old, updated: 1 })
+})
+
+it('migrates a real v1 history file to v2 and records provider/model without changing context or older turns', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync('/tmp/nimbo-history-v1-test-'), path = join(dir, 'history.sqlite')
+  try {
+    const original = new HistoryRepository(path), c = original.create(), old = original.begin(c, 'Old question', 'voice')
+    original.update(old, 'Old answer', { version: 1, beats: [] }, true); original.finish(old, 'complete')
+    original.db.exec('ALTER TABLE turns DROP COLUMN provider; ALTER TABLE turns DROP COLUMN model; PRAGMA user_version=1;')
+    original.close()
+    const migrated = new HistoryRepository(path)
+    expect(migrated.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 })
+    expect(migrated.turns(c)[0]).toMatchObject({ provider: 'openai', model: 'gpt-6.1-terra', question: 'Old question', answer: 'Old answer' })
+    migrated.begin(c, 'New question', 'text', Date.now(), { provider: 'anthropic', model: 'claude-sonnet-5-5' })
+    expect(migrated.turns(c).at(-1)).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5' })
+    expect(migrated.context(c)).toEqual([{ question: 'Old question', answer: 'Old answer' }])
+    migrated.close()
+    const reopened = new HistoryRepository(path); expect(reopened.turns(c)).toHaveLength(2); reopened.close()
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

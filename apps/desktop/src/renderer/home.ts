@@ -53,17 +53,17 @@ function renderTranscript(s: AppSnapshot): void {
     renderedId = s.currentId
     turnTranscript.clear(); transcript.replaceChildren(); emptyKey = ''
   }
-  const key = String(s.keyPresent)
+  const key = `${s.keyPresent}:${s.connection?.answerVision}`
   if (!s.turns.length && emptyKey !== key) {
     turnTranscript.clear(); transcript.replaceChildren(); emptyKey = key
     const empty = element('section', s.keyPresent ? 'empty' : 'empty connection-needed')
     const picture = element('picture'), source = element('source'), image = element('img')
     source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
     image.src = logo; image.alt = ''; image.width = 80; image.height = 80; picture.append(source, image)
-    empty.append(picture, element('h2', '', 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Describe what you want to find or understand.' : 'Connect OpenAI to ask about your screen and get a drawn explanation.'))
+    empty.append(picture, element('h2', '', s.connection?.answerVision === false ? 'Ask a question.' : 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Describe what you want to find or understand.' : 'Connect a provider to ask about your screen and get a drawn explanation.'))
     if (!s.keyPresent) {
-      empty.append(button('Connect OpenAI', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
-      empty.append(element('p', 'privacy-summary', 'When you ask, your question and a screen capture go to OpenAI. Local history saves text and generated drawings, not screen images or audio.'))
+      empty.append(button('Connect a provider', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
+      empty.append(element('p', 'privacy-summary', 'When you ask, your question and a screen capture go to your selected answer provider or local endpoint, if the model supports images. Local history saves text and generated drawings, not screen images or audio.'))
     }
     transcript.append(empty)
   }
@@ -79,6 +79,8 @@ function render(s: AppSnapshot): void {
   renderSidebar(); renderTranscript(s)
   document.getElementById('stop')!.hidden = !s.busy
   ;document.getElementById('send')!.hidden = s.busy || !s.keyPresent
+  const screenContext = document.getElementById('screen-context')
+  if (screenContext) screenContext.textContent = s.connection?.answerVision === false ? 'Text only · does not see or draw on your screen' : 'Includes a screen capture when you ask'
   document.getElementById('feedback')!.textContent = s.status
   document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? 'Kept until deleted' : `Saved locally for ${s.settings.retention} days`
 }

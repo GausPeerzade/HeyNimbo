@@ -8,7 +8,7 @@ import type { GestureMessage, NotchStatus } from '../shared/ipc'
 import { AudioWindow, ensureMicrophoneAccess } from './audio-window'
 import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
-import { loadOpenAIKey } from './secrets'
+import { Connections } from './connections'
 import { openSetupWindow } from './setup-window'
 import { configureDrawDemo, limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { Ears } from './voice/ears'
@@ -42,7 +42,7 @@ function createGesturePresenter(
     console.info(`[gesture] ${message.action} ${message.phase}`)
     if (message.action === 'talk') {
       const session = talk()
-      if (!session) return show({ kind: 'active', label: 'Add your OpenAI key first' })
+      if (!session || session.voiceAvailable === false) return show({ kind: 'active', label: 'Voice needs an OpenAI key. Add one in Settings → Connection; ChatGPT plans power answers only.' })
       if (message.phase === 'started') {
         // A new question replaces whatever the last answer was still drawing.
         overlays.clear()
@@ -66,13 +66,13 @@ function createGesturePresenter(
   }
 }
 
-/** Builds the voice pipeline once a key is available. */
-function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell): TalkSession {
-  void ensureMicrophoneAccess()
-  const ears = new Ears(key)
-  const mouth = new Mouth(key, shell.settings.get().voice)
+/** Builds answers; only the API key enables realtime ears and mouth. */
+function startTalking(key: string | undefined, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell, connections: Connections): TalkSession {
+  if (key) void ensureMicrophoneAccess()
+  const ears = key ? new Ears(key) : undefined
+  const mouth = key ? new Mouth(key, shell.settings.get().voice) : undefined
   const session = new TalkSession({
-    key,
+    key, answer: () => connections.answer(),
     conversations: shell.conversations,
     ears,
     mouth,
@@ -84,8 +84,8 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
       answerDone: () => overlays.answerDone(),
     },
   })
-  ears.warm()
-  mouth.warm()
+  ears?.warm()
+  mouth?.warm()
   return session
 }
 
@@ -114,7 +114,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   scheduleExclusionSelfTest((point) => overlays.ring(point))
 
   let talk: TalkSession | undefined
-  let key: string | undefined
+  let connections: Connections
   const shell = new AppShell({
     ask: (question) => {
       if (!talk) throw new Error('The voice connection is not ready. Try again.')
@@ -122,11 +122,14 @@ if (ownsInstance) app.whenReady().then(async () => {
     },
     stop: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
     clear: () => overlays.clear(),
-    replaceKey: () => openSetupWindow((saved) => { key = saved; reconnect() }),
+    replaceKey: () => openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true })),
+    connectionRequest: request => connections.request(request),
+    connectionSnapshot: () => connections.snapshot(),
+    validateSettings: async settings => ({ ...settings, connection: await connections.validateSettings(settings.connection) }),
     settingsChanged: (settings, previous) => {
       setNotchVisibility(notch, settings.showNotch)
       audio.send({ kind: 'mute', muted: settings.muted })
-      if (settings.voice !== previous.voice) reconnect()
+      if (settings.voice !== previous.voice || JSON.stringify(settings.connection) !== JSON.stringify(previous.connection)) reconnect()
     },
     permissions: () => ({
       microphone: systemPreferences.getMediaAccessStatus('microphone'),
@@ -137,9 +140,10 @@ if (ownsInstance) app.whenReady().then(async () => {
   const audio = new AudioWindow((event) => talk?.onAudioEvent(event))
   const reconnect = (): void => {
     try { talk?.close() } finally { overlays.listen(false) }
-    if (key) talk = startTalking(key, notch, overlays, audio, shell)
-    shell.keyPresent = Boolean(key); shell.publish()
+    talk = startTalking(connections.voiceKey, notch, overlays, audio, shell, connections)
+    shell.keyPresent = connections.answerReady; shell.publish()
   }
+  connections = new Connections(shell.settings, reconnect, () => { shell.openSettings('Connection') })
   const peek = new NotchPeek(notch, shell)
   shell.onChanged = snapshot => peek.publish(snapshot)
   if (!app.getLoginItemSettings().wasOpenedAtLogin) shell.openHome()
@@ -156,8 +160,9 @@ if (ownsInstance) app.whenReady().then(async () => {
     sendNotchStatus(notch, { kind: 'needsPermission', permission: 'inputMonitoring' })
   else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 
-  key = await loadOpenAIKey()
+  try { await connections.load() } catch { shell.setStatus('Connection storage unavailable; reconnect in Settings.') }
   reconnect()
+  if (!connections.answerReady) openSetupWindow(() => { void connections.load().then(reconnect) }, request => connections.request(request, { selectSavedProvider: true }))
 })
 
 // A menu-bar style app keeps running with no focused window.

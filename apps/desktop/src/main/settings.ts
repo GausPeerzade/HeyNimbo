@@ -1,17 +1,19 @@
 import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { defaultConnectionSettings } from '../shared/providers'
+import { parseConnectionSettings } from './provider-settings'
 import type { AppSettings } from '../shared/app'
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  openAtLogin: false, showMenuBar: true, showNotch: true, voice: 'marin', muted: false, saveHistory: true, retention: 30,
+  openAtLogin: false, showMenuBar: true, showNotch: true, voice: 'marin', muted: false, saveHistory: true, retention: 30, connection: defaultConnectionSettings(),
 }
 
 /** File loads may omit fields; live updates must contain a complete valid value. */
 export function parseSettings(value: unknown, complete = false): AppSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid settings.')
   const input = value as Record<string, unknown>
-  const result = { ...DEFAULT_SETTINGS }
-  if (complete && Object.keys(input).some(key => !['openAtLogin', 'showMenuBar', 'showNotch', 'muted', 'saveHistory', 'voice', 'retention', 'homeBounds'].includes(key))) throw new Error('Unknown setting.')
+  const result = { ...DEFAULT_SETTINGS, connection: defaultConnectionSettings() }
+  if (complete && Object.keys(input).some(key => !['openAtLogin', 'showMenuBar', 'showNotch', 'muted', 'saveHistory', 'voice', 'retention', 'homeBounds', 'connection'].includes(key))) throw new Error('Unknown setting.')
   for (const key of ['openAtLogin', 'showMenuBar', 'showNotch', 'muted', 'saveHistory'] as const) {
     if (complete || input[key] !== undefined) {
       if (typeof input[key] !== 'boolean') throw new Error(`Invalid setting: ${key}.`)
@@ -26,6 +28,7 @@ export function parseSettings(value: unknown, complete = false): AppSettings {
     if (![0, 7, 30, 90, 'forever'].includes(input.retention as number)) throw new Error('Invalid history retention.')
     result.retention = input.retention as AppSettings['retention']
   }
+  if (input.connection !== undefined) result.connection = parseConnectionSettings(input.connection)
   if (input.homeBounds !== undefined) {
     const b = input.homeBounds as Record<string, unknown> | null
     if (!b || typeof b !== 'object' || Array.isArray(b) || (complete && Object.keys(b).some(key => !['x', 'y', 'width', 'height'].includes(key))) || !['x', 'y', 'width', 'height'].every(key => typeof b[key] === 'number' && Number.isFinite(b[key])) || Number(b.width) < 720 || Number(b.height) < 520) throw new Error('Invalid Home bounds.')
@@ -38,7 +41,7 @@ export class SettingsStore {
   private value: AppSettings
   constructor(private readonly path: string) {
     try { this.value = parseSettings(JSON.parse(readFileSync(path, 'utf8'))) }
-    catch { this.value = { ...DEFAULT_SETTINGS } }
+    catch { this.value = { ...DEFAULT_SETTINGS, connection: defaultConnectionSettings() } }
   }
   get(): AppSettings { return structuredClone(this.value) }
   set(value: unknown): AppSettings {

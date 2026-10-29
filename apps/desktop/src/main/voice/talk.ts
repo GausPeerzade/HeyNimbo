@@ -5,6 +5,7 @@ import type { CaptureSpace } from '../overlay-geometry'
 import type { DrawingScene } from '../../shared/app'
 import type { ConversationController } from '../conversations'
 import { streamAnswer, type Exchange, type Screenshot } from './brain'
+import type { AnswerConnection } from '../answer-provider'
 import type { Ears } from './ears'
 import type { Mouth } from './mouth'
 
@@ -15,10 +16,11 @@ const SAVE_INTERVAL_MS = 250
 const WORDS_PER_SECOND = 2.6
 
 export interface TalkDeps {
-  key: string
+  key?: string
+  answer?: () => AnswerConnection
   conversations: ConversationController
-  ears: Ears
-  mouth: Mouth
+  ears?: Ears
+  mouth?: Mouth
   audio: { send(command: VoiceCommand): void }
   capture: () => Promise<ScreenCaptures | undefined>
   /** A label while busy, or undefined to return the notch to rest. */
@@ -34,6 +36,7 @@ export interface TalkDeps {
 interface Turn {
   readonly id: number
   readonly abort: AbortController
+  readonly connection?: AnswerConnection
   readonly capture: Promise<ScreenCaptures | undefined>
   readonly marks: Map<string, number>
   releasedAt?: number
@@ -58,14 +61,18 @@ export class TalkSession {
 
   constructor(private readonly deps: TalkDeps) {}
 
+  get voiceAvailable(): boolean { return Boolean(this.deps.ears && this.deps.mouth) }
+
   holdStarted(): void {
+    if (!this.voiceAvailable) { this.deps.onStatus('Voice unavailable: add an OpenAI key in Settings → Connection. ChatGPT plans support answers only.'); return }
     this.interrupt()
-    this.deps.ears.begin()
+    this.deps.ears!.begin()
+    const connection = this.deps.answer?.()
     const id = ++this.nextId
     this.turn = {
       id,
       abort: new AbortController(),
-      capture: this.deps.capture(),
+      connection, capture: connection?.vision === false ? Promise.resolve(undefined) : this.deps.capture(),
       marks: new Map(),
       spoken: false,
       scene: { version: 1, beats: [] }, answer: '', dirty: false,
@@ -78,8 +85,9 @@ export class TalkSession {
   askText(question: string): { accepted: true } {
     if (!question.trim()) throw new Error('Enter a question.')
     this.holdCancelled()
+    const connection = this.deps.answer?.()
     const turn: Turn = {
-      id: ++this.nextId, abort: new AbortController(), capture: this.deps.capture(), marks: new Map(),
+      id: ++this.nextId, abort: new AbortController(), connection, capture: connection?.vision === false ? Promise.resolve(undefined) : this.deps.capture(), marks: new Map(),
       spoken: false, lines: new Map(), scene: { version: 1, beats: [] }, answer: '', dirty: false, releasedAt: performance.now(),
     }
     this.turn = turn
@@ -97,8 +105,8 @@ export class TalkSession {
     clearTimeout(this.errorTimer)
     try { this.holdCancelled() }
     finally {
-      try { this.deps.ears.close() }
-      finally { this.deps.mouth.close() }
+      try { this.deps.ears?.close() }
+      finally { this.deps.mouth?.close() }
     }
   }
 
@@ -123,7 +131,7 @@ export class TalkSession {
     const turn = this.turn
     switch (event.kind) {
       case 'micChunk':
-        if (turn?.id === event.id && !turn.abort.signal.aborted) this.deps.ears.append(event.pcm)
+        if (turn?.id === event.id && !turn.abort.signal.aborted) this.deps.ears?.append(event.pcm)
         return
       case 'micStopped':
         if (turn?.id === event.id) turn.micStopped?.()
@@ -158,7 +166,7 @@ export class TalkSession {
 
   private async answer(turn: Turn, micStopped: Promise<void>): Promise<void> {
     await micStopped
-    const question = await this.deps.ears.finish()
+    const question = await this.deps.ears!.finish()
     this.mark(turn, 'transcript')
     if (turn.abort.signal.aborted) return
     if (!question) return this.finish(turn)
@@ -168,7 +176,7 @@ export class TalkSession {
 
   private begin(turn: Turn, question: string, mode: 'voice' | 'text'): Exchange[] {
     const history = this.deps.conversations.context()
-    turn.recordId = this.deps.conversations.begin(question, mode)
+    turn.recordId = this.deps.conversations.begin(question, mode, turn.connection ? { provider: turn.connection.provider, model: turn.connection.model } : undefined)
     this.deps.onStatus('Thinking…')
     return history
   }
@@ -192,6 +200,7 @@ export class TalkSession {
     const say = ({ sentence, marks }: Beat): void => {
       if (turn.space && marks.length) turn.scene.beats.push({ sentence, marks, space: turn.space })
       save()
+      if (!this.deps.mouth) { this.draw(turn, marks, 800); return }
       if (sentence === undefined) {
         // Trailing marks with no sentence of their own draw once speech reaches them.
         speech = speech.then(() => this.draw(turn, marks, 800))
@@ -204,7 +213,7 @@ export class TalkSession {
       speech = speech.then(() =>
         turn.abort.signal.aborted
           ? undefined
-          : this.deps.mouth.speak(sentence, (pcm) => {
+          : this.deps.mouth!.speak(sentence, (pcm) => {
               if (!turn.abort.signal.aborted) this.deps.audio.send({ kind: 'play', line, pcm })
             }),
       )
@@ -213,6 +222,7 @@ export class TalkSession {
     }
     for await (const delta of streamAnswer({
       key: this.deps.key,
+      connection: turn.connection,
       question,
       screenshot,
       history,
@@ -229,6 +239,7 @@ export class TalkSession {
     this.flush(turn)
     await speech
     if (turn.abort.signal.aborted) return
+    if (!this.deps.mouth) { this.finish(turn); this.deps.drawing.answerDone(); return }
     turn.spoken = true
     this.deps.audio.send({ kind: 'playEnd' })
   }
@@ -256,9 +267,9 @@ export class TalkSession {
     finally {
       turn.abort.abort()
       turn.micStopped?.()
-      try { this.deps.ears.cancel() }
+      try { this.deps.ears?.cancel() }
       finally {
-        try { this.deps.mouth.cancel() }
+        try { this.deps.mouth?.cancel() }
         finally {
           try { this.deps.audio.send({ kind: 'micStop' }) }
           finally { this.deps.audio.send({ kind: 'playCancel' }) }

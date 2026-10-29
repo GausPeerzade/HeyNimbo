@@ -1,3 +1,4 @@
+import { renderConnections } from './connections'
 import { button, element, isSnapshot, request } from './app-dom'
 import type { AppSettings, AppSnapshot } from '../shared/app'
 import logo from '../../build/brand/logo.png?url'
@@ -50,14 +51,12 @@ function render(): void {
       select('retention', 'Keep history', [['Off', 0], ['7 days', 7], ['30 days', 30], ['90 days', 90], ['Until deleted', 'forever']])
       explanation('Saved here: questions, answers, generated drawing text and marks, times, and whether screen context was used. No screenshots, microphone audio or API key. Pinned items use the same retention. Off stops saving new conversations.')
       fields.append(element('h2', '', 'What leaves this Mac'))
-      explanation('Your question and a capture of the display under your pointer go to OpenAI. Voice also sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
+      explanation('Your question and a capture of the display under your pointer go to the selected answer provider (or your local endpoint). Voice uses an OpenAI key and also sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
       fields.append(button('Delete all history…', () => { void request({ kind: 'deleteAll' }) }, 'danger'))
-      explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to OpenAI.')
+      explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to providers.')
       break
     case 'Connection':
-      fields.append(element('p', 'connection-state', snapshot.keyPresent ? 'OpenAI key is present' : 'OpenAI key is missing'))
-      explanation('The key is encrypted using the macOS Keychain. It is never displayed here or stored with your conversations. Your OpenAI account is billed for requests.')
-      fields.append(button(snapshot.keyPresent ? 'Replace key…' : 'Add OpenAI key…', () => { void request({ kind: 'replaceKey' }) }, 'primary'))
+      renderConnections(fields, snapshot, update)
       break
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
@@ -77,7 +76,13 @@ function render(): void {
   }
   if (focused) document.getElementById(focused)?.focus()
 }
-window.nimboApp.onSnapshot(value => { snapshot = value; render() })
+window.nimboApp.onSnapshot(value => {
+  snapshot = value
+  if (category === 'Connection' && document.activeElement instanceof HTMLInputElement) return
+  const message = document.getElementById('connection-feedback')?.textContent
+  render()
+  const feedback = document.getElementById('connection-feedback'); if (feedback && message) feedback.textContent = message
+})
 window.nimboApp.onNavigate(value => { if (value.category && categories.includes(value.category)) { category = value.category; render() } })
 document.onkeydown = event => { if (event.key === 'Escape') window.close() }
 void request({ kind: 'snapshot' }).then(value => { if (isSnapshot(value)) { snapshot = value; render() } })

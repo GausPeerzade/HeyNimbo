@@ -23,7 +23,7 @@ vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn() }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
 vi.mock('./gestures', () => ({ startGestures: mocks.gestures }))
-vi.mock('./secrets', () => ({ loadOpenAIKey: mocks.key }))
+vi.mock('./connections', () => ({ Connections: vi.fn(function () { let key: string | undefined; return { load: async () => { key = await mocks.key() }, get voiceKey() { return key }, get answerReady() { return Boolean(key) }, snapshot: () => ({}), answer: vi.fn() } }) }))
 vi.mock('./setup-window', () => ({ openSetupWindow: mocks.setup }))
 vi.mock('./voice/ears', () => ({ Ears: mocks.ears }))
 vi.mock('./voice/mouth', () => ({ Mouth: mocks.mouth }))
@@ -116,4 +116,18 @@ it('reconnect resets overlay listening before installing the replacement session
   expect(close).toHaveBeenCalledOnce()
   expect(mocks.overlays.listen).toHaveBeenCalledWith(false)
   expect(mocks.overlays.listen.mock.invocationCallOrder[0]!).toBeLessThan(mocks.talk.mock.invocationCallOrder.at(-1)!)
+})
+
+it('shows an actionable voice message without displaying the listening ear for a typed-only connection', async () => {
+  vi.resetModules(); vi.clearAllMocks()
+  const session = { voiceAvailable: false, holdStarted: vi.fn() }
+  mocks.talk.mockImplementation(function () { return session })
+  mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
+  mocks.gestures.mockReturnValue({ ok: true, monitor: { stop: vi.fn() } }); mocks.key.mockResolvedValue(undefined)
+  vi.spyOn(console, 'info').mockImplementation(() => {})
+  await import('./index'); await vi.waitFor(() => expect(mocks.talk).toHaveBeenCalled())
+  const present = mocks.gestures.mock.calls[0]![0] as (message: { action: string; phase: string }) => void
+  mocks.overlays.listen.mockClear()
+  present({ action: 'talk', phase: 'started' })
+  expect(session.holdStarted).not.toHaveBeenCalled(); expect(mocks.overlays.listen).not.toHaveBeenCalledWith(true)
 })

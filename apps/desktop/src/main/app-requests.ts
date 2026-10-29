@@ -1,4 +1,5 @@
 import type { AppRequest, NotchEvent } from '../shared/app'
+import { parseConnectionRequest } from './provider-settings'
 import { parseSettings } from './settings'
 
 function record(value: unknown): Record<string, unknown> {
@@ -35,6 +36,8 @@ export function parseAppRequest(value: unknown): AppRequest {
       return { kind: 'settings', category: input.category as string | undefined }
     case 'updateSettings':
       shape(input, ['settings']); return { kind: 'updateSettings', settings: parseSettings(input.settings, true) }
+    case 'connection':
+      shape(input, ['request']); return { kind: 'connection', request: parseConnectionRequest(input.request) }
     case 'permission':
       shape(input, ['permission'])
       if (input.permission !== 'microphone' && input.permission !== 'screen' && input.permission !== 'input') throw new Error('Invalid permission.')

@@ -8,3 +8,6 @@ input { width: 100%; min-height: var(--input-height); }
 button { width: 100%; }
 #status { min-height: var(--space-6); font-size: var(--text-meta); }
 #status.error { color: var(--error); } #status.ok { color: var(--success); }
+[hidden] { display: none !important; }
+select { width: 100%; min-height: var(--input-height); }
+#features { font-size: var(--text-ui); }

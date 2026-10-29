@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { ConnectionResult } from '../shared/providers'
 import { AppChannels, type AppRequest, type AppSnapshot, type SearchHit } from '../shared/app'
 const api = {
-  request: (request: AppRequest): Promise<AppSnapshot | SearchHit[] | { accepted: true } | void> => ipcRenderer.invoke(AppChannels.request, request),
+  request: (request: AppRequest): Promise<ConnectionResult | AppSnapshot | SearchHit[] | { accepted: true } | void> => ipcRenderer.invoke(AppChannels.request, request),
   onSnapshot: (listener: (snapshot: AppSnapshot) => void) => {
     const handler = (_event: IpcRendererEvent, snapshot: AppSnapshot) => listener(snapshot)
     ipcRenderer.on(AppChannels.snapshot, handler)

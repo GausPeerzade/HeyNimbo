@@ -85,6 +85,7 @@ export const Channels = {
   notchStatus: 'nimbo:notch-status',
   overlay: 'nimbo:overlay',
   overlayEvent: 'nimbo:overlay-event',
+  connection: 'nimbo:setup-connection',
   saveOpenAIKey: 'nimbo:save-openai-key',
   voiceCommand: 'nimbo:voice-command',
   voiceEvent: 'nimbo:voice-event',

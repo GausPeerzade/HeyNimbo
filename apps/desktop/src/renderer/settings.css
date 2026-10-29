@@ -29,3 +29,14 @@ select { max-width: var(--settings-sidebar); min-height: var(--input-height); ba
 .permission strong { display: block; font-weight: var(--weight-medium); margin-bottom: var(--space-1); }
 .permission button { font-size: var(--text-meta); }
 .titlebar-drag { position: fixed; top: 0; left: var(--settings-sidebar); right: 0; height: var(--titlebar); -webkit-app-region: drag; user-select: none; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.connection-field { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-4) 0; font-size: var(--text-ui); }
+.connection-field input, #connection-model-picker { width: 100%; min-height: var(--input-height); }
+#connection-model-picker { max-width: 100%; }
+.connection-field button { align-self: flex-start; }
+
+.connection-section + .connection-section { margin-top: var(--space-6); }
+.connection-section h2 { margin: 0 0 var(--space-3); }
+details.connection-section { border-top: var(--line) solid var(--separator); padding-top: var(--space-4); }
+details.connection-section > summary { font-size: var(--text-ui); font-weight: var(--weight-medium); }
+.permission small { overflow-wrap: anywhere; }
