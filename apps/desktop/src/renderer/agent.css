@@ -1,0 +1,39 @@
+/* Do is a separate, bounded workbench. No model-authored HTML or inline CSS. */
+.agent-composer-heading { max-width: var(--reading-width); margin: 0 auto var(--space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.agent-composer-heading:has(#mode-switch[hidden]) { display: none; }
+#mode-switch, #agent-folders, .agent-run-controls, .agent-folder-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+#mode-switch button[aria-pressed="true"], #agent-folders button[aria-pressed="true"] { border-color: var(--accent); background: var(--selection); font-weight: var(--weight-strong); }
+#agent-context { max-width: var(--reading-width); margin: var(--space-2) auto; font-size: var(--text-meta); color: var(--secondary); }
+#agent-folders { max-width: var(--reading-width); margin: 0 auto var(--space-2); }
+.agent-folder-chips { flex-basis: 100%; }
+.agent-folder-chip { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-2); border: var(--line) solid var(--separator); border-radius: var(--radius-small); max-width: 100%; }
+.agent-folder-chip span { overflow-wrap: anywhere; }
+.agent-folder-chip button { border: 0; background: transparent; }
+.agent-folder-chips[aria-disabled="true"] { opacity: var(--disabled-opacity); }
+#agent-panel { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(140px, 28%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-6); }
+.agent-host, .agent-status { grid-column: 1 / -1; margin: 0; font-size: var(--text-meta); color: var(--secondary); }
+.agent-host { padding: var(--space-3); border: var(--line) solid var(--boundary); border-radius: var(--radius-small); }
+.agent-host:empty, .agent-status:empty { display: none; }
+.agent-task-list { grid-column: 1; grid-row: 3; min-height: 0; overflow: auto; border-right: var(--line) solid var(--separator); padding-right: var(--space-3); }
+.agent-task-list h2 { margin: 0 0 var(--space-3); font-size: var(--text-ui); }
+.agent-task { display: flex; flex-direction: column; align-items: start; text-align: left; gap: var(--space-1); width: 100%; margin-bottom: var(--space-2); border-color: transparent; background: transparent; overflow-wrap: anywhere; }
+.agent-task[aria-current="true"] { background: var(--selection); border-color: var(--accent); }
+.agent-badge { font-size: var(--text-meta); color: var(--secondary); }
+.agent-detail { grid-column: 2; grid-row: 3; min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.agent-detail > h2 { margin: 0; font-size: var(--text-question); overflow-wrap: anywhere; }
+.agent-detail > button { align-self: start; }
+.agent-timeline { flex: 1; min-height: 0; overflow: auto; overflow-anchor: auto; padding: var(--space-1); }
+.agent-timeline pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: var(--leading-body); margin: 0; user-select: text; }
+.agent-event, .agent-card, .agent-streaming { margin-bottom: var(--space-4) !important; }
+.agent-card { padding: var(--space-3); background: var(--raised); border: var(--line) solid var(--separator); border-radius: var(--radius-small); }
+.agent-card button { margin: var(--space-2) var(--space-2) 0 0; overflow-wrap: anywhere; max-width: 100%; }
+.agent-card p { margin: var(--space-2) 0; font-size: var(--text-meta); color: var(--secondary); }
+.agent-card textarea { border: var(--line) solid var(--boundary); border-radius: var(--radius-small); padding: var(--space-2); }
+.agent-card textarea:focus-visible { outline: var(--focus-width) solid var(--focus); }
+.agent-status, .agent-status:empty { min-height: 1lh; }
+.agent-streaming { border-left: var(--focus-width) solid var(--accent); padding-left: var(--space-3); }
+.agent-status, .agent-tool-call, .agent-tool-result, .agent-usage { color: var(--secondary); }
+.agent-error { color: var(--error); }
+.agent-preview { max-height: 40vh; overflow: auto; margin-top: var(--space-3) !important; }
+@media (max-width: 800px) { #agent-panel { padding: var(--space-3); grid-template-columns: minmax(100px, 28%) minmax(0, 1fr); gap: var(--space-2); } }
+@media (prefers-reduced-motion: reduce) { #agent-panel *, #agent-folders *, .agent-composer-heading * { animation: none; transition: none; scroll-behavior: auto; } }
