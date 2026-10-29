@@ -2,6 +2,7 @@ import type { Mark } from '../shared/beats'
 import { FrameTrace } from './frame-trace'
 import type { OverlayCommand, OverlayRing } from '../shared/ipc'
 import { geometryFor, samplePath, strokesFor, type Point, type StrokeGeometry } from './ink'
+import { buddyPath, EAR_FOLD } from './buddy-shape'
 import { beatBudget, sampleFlight, scheduleBeat, strokeDuration, flightDuration, type Gesture } from './drawing-timeline'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -13,12 +14,9 @@ const washLayer = layer('wash', scene)
 const inkLayer = layer('ink', scene)
 const wordsLayer = layer('words', scene)
 const buddyLayer = layer('buddy-layer')
-const INK = '#2f6bff'
-const HIGHLIGHT = '#ffd84d'
 const FADE_MS = 240
 
 interface Action extends Gesture {
-  color: string
   begin: (durationMs: number) => (progress: number) => void
 }
 
@@ -39,8 +37,17 @@ const IDLE_ANGLE = -35
 const FOLLOW_MS = 60
 /** Pause after the last stroke before flying home, in case more is coming. */
 const RETURN_DELAY_MS = 600
+/** Time for the pen to become an ear while listening, and back. */
+const MORPH_MS = 240
 
 let buddyAt: Point | undefined
+/** The angle and scale callers last gave the buddy, before the ear blend. */
+let buddyPose: [angle: number, scale: number] = [IDLE_ANGLE, 1]
+let listening = false
+/** 0 is the pen and 1 the ear; eases toward `listening` over MORPH_MS. */
+let earAmount = 0
+/** The blend the buddy's outline was last drawn at. */
+let drawnEar = 0
 /** The OS cursor on this display, when this display owns the buddy. */
 let cursorAt: Point | undefined
 /** following: rides the cursor; busy: drawing or flying; parked: hidden here. */
@@ -104,8 +111,9 @@ function tick(now: number): void {
     }
   }
   const followed = follow(now)
+  const morphing = morph(now)
   lastFrame = now
-  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined || followed) wake()
+  if (animations.length || fadeStarted !== undefined || buddyFadeStarted !== undefined || followed || morphing) wake()
 }
 
 function followTarget(): Point | undefined {
@@ -131,7 +139,7 @@ function follow(now: number): boolean {
   // Cap the step: after the mouse rested, the first frame must not snap.
   const blend = 1 - Math.exp(-Math.min(32, Math.max(0, now - lastFrame)) / FOLLOW_MS)
   const next: Point = [from[0] + (target[0] - from[0]) * blend, from[1] + (target[1] - from[1]) * blend]
-  moveBuddy(next, IDLE_ANGLE, INK)
+  moveBuddy(next, IDLE_ANGLE)
   return Math.hypot(target[0] - next[0], target[1] - next[1]) > 0.3
 }
 
@@ -154,7 +162,7 @@ function flyHome(at: number): void {
     begin: () => {
       const origin = buddyAt ?? from
       const home = followTarget() ?? target
-      const fly = flight(origin, home, INK)
+      const fly = flight(origin, home)
       return (progress) => {
         fly(progress)
         if (progress === 1) {
@@ -167,7 +175,6 @@ function flyHome(at: number): void {
 }
 
 function strokeAction(geometry: StrokeGeometry, group: number): Action {
-  const color = geometry.style === 'marker' ? HIGHLIGHT : INK
   const padding = geometry.width + 8
   const left = Math.min(...geometry.points.map(([x]) => x)) - padding
   const top = Math.min(...geometry.points.map(([, y]) => y)) - padding
@@ -175,7 +182,7 @@ function strokeAction(geometry: StrokeGeometry, group: number): Action {
   const bottom = Math.max(...geometry.points.map(([, y]) => y)) + padding
   return {
     group, from: geometry.points[0]!, to: geometry.points.at(-1)!,
-    seconds: strokeDuration(geometry.length), color,
+    seconds: strokeDuration(geometry.length),
     begin: (durationMs) => {
       const id = `ink-reveal-${nextId++}`
       const mask = element('mask', { id, maskUnits: 'userSpaceOnUse', x: left, y: top, width: right - left, height: bottom - top })
@@ -196,7 +203,7 @@ function strokeAction(geometry: StrokeGeometry, group: number): Action {
         reveal.setAttribute('stroke-dashoffset', String(1 - progress))
         reveal.setAttribute('stroke-linecap', progress === 1 ? 'round' : 'butt')
         const tip = samplePath(geometry, progress)
-        moveBuddy(tip.point, tip.angle, color)
+        moveBuddy(tip.point, tip.angle)
       }
     },
   }
@@ -210,7 +217,7 @@ function textAction(mark: Extract<Mark, { kind: 'text' }>, group: number): Actio
   text.remove()
   return {
     group, from: [mark.x, mark.y - 6], to: [mark.x + width, mark.y - 6],
-    seconds: Math.min(1.4, 0.4 + 0.015 * mark.text.length), color: INK,
+    seconds: Math.min(1.4, 0.4 + 0.015 * mark.text.length),
     begin: (durationMs) => {
       const id = `text-reveal-${nextId++}`
       const clip = element('clipPath', { id })
@@ -221,7 +228,7 @@ function textAction(mark: Extract<Mark, { kind: 'text' }>, group: number): Actio
       window.nimbo.sendOverlayEvent({ kind: 'strokeStarted', durationMs, epoch })
       return (progress) => {
         reveal.setAttribute('width', String(width * progress))
-        moveBuddy([mark.x + width * progress, mark.y - 6], 90, INK)
+        moveBuddy([mark.x + width * progress, mark.y - 6], 90)
       }
     },
   }
@@ -231,25 +238,55 @@ function buddy(): SVGGElement {
   const existing = buddyLayer.querySelector<SVGGElement>('g.buddy')
   if (existing) return existing
   const group = element('g', { class: 'buddy' })
-  group.append(element('path', { class: 'buddy-body', d: 'M0 0 L-7.5 13 L7.5 13 Z' }))
+  group.append(element('path', { class: 'buddy-body', d: buddyPath(0) }), element('path', { class: 'buddy-fold', d: EAR_FOLD, opacity: 0 }))
   buddyLayer.append(group)
   return group
 }
 
-function moveBuddy(point: Point, angle: number, color: string, scale = 1, glow = 8): void {
+function moveBuddy(point: Point, angle: number, scale = 1, glow = 8): void {
   buddyFadeStarted = undefined
   buddyAt = point
-  const body = buddy()
-  body.setAttribute('transform', `translate(${point[0]} ${point[1]}) rotate(${angle}) scale(${scale})`)
-  body.style.color = color
-  body.style.setProperty('--glow', `${glow}px`)
+  buddyPose = [angle, scale]
+  buddy().style.setProperty('--glow', `${glow}px`)
+  placeBuddy(performance.now())
   buddyLayer.setAttribute('opacity', '1')
 }
 
-function flight(from: Point, to: Point, color: string): (progress: number) => void {
+/** Draws the buddy at its pose; as it becomes an ear it stands upright and breathes. */
+function placeBuddy(now: number): void {
+  if (!buddyAt) return
+  const group = buddy()
+  const ear = earAmount * earAmount * (3 - 2 * earAmount)
+  if (ear !== drawnEar) {
+    drawnEar = ear
+    group.querySelector('.buddy-body')!.setAttribute('d', buddyPath(ear))
+    group.querySelector('.buddy-fold')!.setAttribute('opacity', String(Math.max(0, ear * 2 - 1)))
+  }
+  const [angle, scale] = buddyPose
+  const breath = 1 + 0.05 * ear * Math.sin(now / 170)
+  group.setAttribute('transform', `translate(${buddyAt[0]} ${buddyAt[1]}) rotate(${angle * (1 - ear)}) scale(${scale * breath})`)
+}
+
+/** Eases between pen and ear; returns whether another frame is needed. */
+function morph(now: number): boolean {
+  const target = listening ? 1 : 0
+  if (!buddyAt) {
+    // Nothing to animate here; show the right shape whenever the buddy appears.
+    earAmount = target
+    return false
+  }
+  if (earAmount === target && !listening) return false
+  const step = Math.min(32, Math.max(0, now - lastFrame)) / MORPH_MS
+  earAmount = target > earAmount ? Math.min(target, earAmount + step) : Math.max(target, earAmount - step)
+  placeBuddy(now)
+  // A listening ear keeps breathing.
+  return listening || earAmount !== target
+}
+
+function flight(from: Point, to: Point): (progress: number) => void {
   return (progress) => {
     const pose = sampleFlight(from, to, progress)
-    moveBuddy(pose.point, pose.angle, color, pose.scale, pose.glow)
+    moveBuddy(pose.point, pose.angle, pose.scale, pose.glow)
   }
 }
 
@@ -290,14 +327,14 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   for (const [group, mark] of marks.entries()) {
     if (mark.kind === 'clear') {
       const at = actions.at(-1)?.to ?? origin
-      actions.push({ group, from: at, to: at, seconds: 0, color: INK, begin: () => () => clearScene() })
+      actions.push({ group, from: at, to: at, seconds: 0, begin: () => () => clearScene() })
     } else if (mark.kind === 'point') {
       actions.push({
-        group, from: [mark.x, mark.y], to: [mark.x, mark.y], seconds: 0.14, color: INK,
+        group, from: [mark.x, mark.y], to: [mark.x, mark.y], seconds: 0.14,
         begin: () => {
           const label = mark.label ? showLabel(mark.x, mark.y, mark.label) : undefined
           return (progress) => {
-            moveBuddy([mark.x, mark.y], -35, INK)
+            moveBuddy([mark.x, mark.y], IDLE_ANGLE)
             label?.setAttribute('opacity', String(progress))
           }
         },
@@ -309,13 +346,11 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
   const start = Math.max(now, animations.length ? plannedEnd : 0)
   // Time spent queued behind earlier beats comes out of this beat's budget.
   const timeline = scheduleBeat(actions, origin, beatBudget(durationMs, start - now))
-  for (const [index, entry] of timeline.entries()) {
+  for (const entry of timeline) {
     if (entry.kind === 'gesture') {
       animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: actions[entry.index]!.begin })
     } else {
-      const next = timeline[index + 1]
-      const color = next?.kind === 'gesture' ? actions[next.index]!.color : INK
-      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: () => flight(entry.from, entry.to, color) })
+      animations.push({ start: start + entry.startMs, durationMs: entry.durationMs, begin: () => flight(entry.from, entry.to) })
     }
   }
   const end = timeline.at(-1)
@@ -376,6 +411,9 @@ function apply(command: OverlayCommand): void {
       return
     case 'offerClear':
       return offerClear()
+    case 'listening':
+      listening = command.on
+      return wake()
     case 'clear':
       hideClear()
       fadeStarted = undefined

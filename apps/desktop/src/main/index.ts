@@ -40,9 +40,10 @@ function createGesturePresenter(
       const session = talk()
       if (!session) return show({ kind: 'active', label: 'Add your OpenAI key first' })
       if (message.phase === 'started') {
-        overlays.ring(screen.getCursorScreenPoint())
+        overlays.listen(true)
         return session.holdStarted()
       }
+      overlays.listen(false)
       overlays.clear()
       return message.phase === 'ended' ? session.holdEnded() : session.holdCancelled()
     }

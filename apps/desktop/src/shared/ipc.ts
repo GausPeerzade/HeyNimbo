@@ -36,6 +36,8 @@ export type OverlayCommand =
   | { kind: 'clear'; from?: OverlayRing }
   /** The OS cursor on this display; the idle buddy rides next to it. */
   | { kind: 'cursor'; at: OverlayRing }
+  /** Push-to-talk is held: the buddy becomes an ear until it is released. */
+  | { kind: 'listening'; on: boolean }
   /** The answer is done: show a small Clear button beside the drawings. */
   | { kind: 'offerClear' }
   /** Sent only by an unpackaged main process. */

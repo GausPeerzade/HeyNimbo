@@ -250,6 +250,11 @@ export class OverlayManager {
     this.lastCursor = undefined
   }
 
+  /** Every overlay learns, so whichever display has the buddy shows the ear. */
+  listen(on: boolean): void {
+    for (const id of this.windows.keys()) this.send(id, { kind: 'listening', on })
+  }
+
   /** The answer is over: offer a Clear button, and fade the drawing if it is
    *  still up after a while. */
   answerDone(lingerMs = 60_000): void {

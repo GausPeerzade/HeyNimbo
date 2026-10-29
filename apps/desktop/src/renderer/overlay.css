@@ -10,8 +10,11 @@ html, body { margin: 0; width: 100%; height: 100%; background: transparent; over
 .marker { fill: #ffd84d; opacity: 0.45; }
 .note { fill: #2f6bff; font: 24px "Chalkboard SE", "Marker Felt", "Segoe Print", "Comic Sans MS", cursive; }
 
-/* The triangle's origin is its tip, so transforms cannot detach it from ink. */
+/* The buddy has its own color, apart from the ink it draws. Its origin is the
+   pen's tip, so transforms cannot detach it from ink. */
+.buddy { color: #f43f8e; }
 .buddy-body { fill: currentColor; stroke-linejoin: round; filter: drop-shadow(0 0 var(--glow, 8px) currentColor); }
+.buddy-fold { fill: none; stroke: rgb(255 255 255 / 0.92); stroke-width: 1.6; stroke-linecap: round; }
 .label rect { fill: #2f6bff; filter: drop-shadow(0 0 4px rgb(47 107 255 / 0.3)); }
 .label text { fill: #fff; font: 500 13px -apple-system, "Segoe UI", sans-serif; }
 
