@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { app, safeStorage } from 'electron'
 import type { KeyProvider } from '../shared/providers'
 
-export type SecretName = `${KeyProvider}-key` | 'chatgpt-auth'
+export type SecretName = `${KeyProvider}-key` | 'chatgpt-auth' | 'brave-search-key'
 const secretFile = (name: SecretName): string => join(app.getPath('userData'), `${name}.bin`)
 export async function loadSecret(name: SecretName): Promise<string | undefined> {
   try { return safeStorage.decryptString(await readFile(secretFile(name))) } catch { return undefined }

@@ -1,5 +1,6 @@
 import type { Mark } from './beats'
 import type { ConnectionSettings, ConnectionSnapshot, ConnectionRequest } from './providers'
+import type { SearchConfig } from './agent-protocol'
 
 export type Retention = 0 | 7 | 30 | 90 | 'forever'
 export type SpeakingVoice = 'marin' | 'cedar' | 'alloy' | 'coral'
@@ -13,6 +14,8 @@ export interface AppSettings {
   retention: Retention
   connection?: ConnectionSettings
   homeBounds?: { x: number; y: number; width: number; height: number }
+  /** Agent (Do) settings. Absent = no web search backend configured. */
+  agent?: { search?: SearchConfig }
 }
 export interface DrawingScene {
   version: 1

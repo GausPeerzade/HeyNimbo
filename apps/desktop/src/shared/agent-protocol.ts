@@ -84,6 +84,17 @@ export type AgentRequest =
   /** Main shows a native folder picker and returns an opaque grant ID. */
   | { kind: 'pickFolder' }
 
+/** Results of `AgentApi.request`, by request kind. Main forwards host results unchanged. */
+export interface AgentResults {
+  start: { runId: string }
+  list: { runs: RunSummary[] }
+  events: { events: AgentEvent[] }
+  /** Only text media types are previewable; content is capped at 1 MB. */
+  artifact: { name: string; mediaType: string; bytes: number; text: string }
+  pickFolder: { grant: { id: string; label: string } } | { cancelled: true }
+  approve: { ok: true }; answer: { ok: true }; allowMix: { ok: true }; cancel: { ok: true }; continue: { ok: true }; delete: { ok: true }; stopAll: { ok: true }
+}
+
 /** Folder access resolved by main from a native picker; only main and host see paths. */
 export interface FolderGrant { id: string; root: string; label: string }
 
