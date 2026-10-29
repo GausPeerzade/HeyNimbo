@@ -2,7 +2,16 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'agent-host': resolve(__dirname, 'src/agent/host/entry.ts'),
+        },
+      },
+    },
+  },
   preload: {
     build: {
       // Sandboxed preloads cannot load shared chunks, so each is self-contained.

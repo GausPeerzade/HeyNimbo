@@ -1,5 +1,8 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, utilityProcess } from 'electron'
+import { AgentSupervisor } from './agent-supervisor'
+import { credentialForAgent, registerAgentIpc } from './agent-ipc'
+import type { AnswerConnection } from './answer-provider'
 import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from '../shared/app'
 import { PROVIDER_NAMES, type ConnectionRequest, type ConnectionResult, type ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
@@ -20,6 +23,7 @@ export interface ShellActions {
   settingsChanged(settings: AppSettings, previous: AppSettings): void
   connectionRequest?(request: ConnectionRequest): Promise<ConnectionResult>
   connectionSnapshot?(): ConnectionSnapshot
+  agentConnection?(): AnswerConnection
   validateSettings?(settings: AppSettings): Promise<AppSettings>
   permissions(): AppSnapshot['permissions']
 }
@@ -50,12 +54,25 @@ export class AppShell {
   private tray: Tray | undefined
   private publishTimer: NodeJS.Timeout | undefined
   private pruneTimer: NodeJS.Timeout | undefined
+  private agent?: AgentSupervisor
+  private agentIpc?: ReturnType<typeof registerAgentIpc>
   private status = ''
   private busy = false
   keyPresent = false
   onChanged?: (snapshot: AppSnapshot) => void
 
   constructor(private readonly actions: ShellActions, private readonly preview = false) {
+    if (actions.agentConnection && !preview) {
+      const connections = { answer: actions.agentConnection }
+      this.agent = new AgentSupervisor({
+        spawn: () => utilityProcess.fork(join(__dirname, 'agent-host.js'), [], { serviceName: 'HeyNimbo Agent', stdio: 'ignore' }),
+        credentials: (name, allowed) => credentialForAgent(name, allowed, connections, () => this.settings.get()),
+        search: () => this.settings.get().agent?.search,
+        onPush: push => this.agentIpc?.push(push),
+        dataDir: app.getPath('userData'),
+      })
+      this.agentIpc = registerAgentIpc({ home: () => this.home, settings: () => this.settings.get(), connections, supervisor: this.agent })
+    }
     ipcMain.handle(AppChannels.request, (event, request: unknown) => {
       if (!isPageSender(event, this.home, 'home') && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
       const parsed = parseAppRequest(request)
@@ -224,5 +241,5 @@ export class AppShell {
     const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
     return result.response === 1
   }
-  close(): void { clearTimeout(this.publishTimer); clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
+  close(): void { this.agentIpc?.dispose(); this.agent?.dispose(); clearTimeout(this.publishTimer); clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
 }
