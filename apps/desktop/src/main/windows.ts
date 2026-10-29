@@ -128,7 +128,7 @@ export function sendNotchStatus(window: BrowserWindow, status: NotchStatus): voi
   if (!window.isDestroyed()) window.webContents.send(Channels.notchStatus, status)
 }
 
-function createOverlayWindow(display: Display): BrowserWindow {
+export function createOverlayWindow(display: Display): BrowserWindow {
   const window = new BrowserWindow({
     ...display.bounds,
     type: process.platform === 'darwin' ? 'panel' : undefined,

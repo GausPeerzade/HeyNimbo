@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { app, Menu } from 'electron'
 
 /** Call before taking an instance lock or opening any persistent store. */
-export function isolateDevProfile(name: 'draw-demo' | 'home-preview' | 'model-gallery' | 'model-eval'): () => void {
+export function isolateDevProfile(name: 'draw-demo' | 'home-preview' | 'model-gallery' | 'model-eval' | 'model-show'): () => void {
   if (app.isPackaged) return () => {}
   const directory = mkdtempSync(`/tmp/nimbo-${name}-`)
   app.setPath('userData', directory)
