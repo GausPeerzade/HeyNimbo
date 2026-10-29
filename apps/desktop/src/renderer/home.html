@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'"/><link rel="stylesheet" href="./home.css"/><title>NimboGuide</title></head>
+<body>
+<a class="skip" href="#question">Skip to composer</a>
+<aside id="sidebar" aria-label="Conversations">
+  <div class="sidebar-title" translate="no">NimboGuide</div>
+  <input id="search" type="search" name="conversation-search" aria-label="Search conversations" placeholder="Search conversations…" autocomplete="off"/>
+  <button id="new">New conversation <kbd>⌘N</kbd></button>
+  <nav id="conversations" aria-label="Conversation history"></nav>
+  <button id="settings" class="sidebar-footer">Settings <kbd>⌘,</kbd></button>
+</aside>
+<main>
+  <header class="toolbar"><button id="toggle" class="icon" aria-label="Toggle sidebar" title="Toggle sidebar"></button><h1 id="title">New conversation</h1><form id="rename-form" hidden><input id="rename" name="title" aria-label="Conversation title" maxlength="100" autocomplete="off"/></form><button id="new-top" class="icon" aria-label="New conversation" title="New conversation (⌘N)"></button></header>
+  <div id="transcript" tabindex="0" aria-label="Conversation transcript"></div>
+  <div class="composer-area">
+    <p id="feedback" role="status" aria-live="polite"></p>
+    <form id="composer"><label class="sr-only" for="question">Ask NimboGuide</label><textarea id="question" name="question" rows="2" maxlength="16000" placeholder="Ask about your screen…" autocomplete="off" autofocus></textarea><div class="composer-controls"><span id="screen-context">Uses your screen for this turn</span><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
+    <div class="composer-note"><span>Hold Control + Option to ask by voice</span><span id="saving">Saved locally for 30 days</span></div>
+  </div>
+</main><script type="module" src="./home.ts"></script></body></html>

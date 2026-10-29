@@ -1,5 +1,9 @@
-import { app, screen, type BrowserWindow } from 'electron'
-import type { GestureMonitor } from '@nimboguide/native'
+import { app, screen, systemPreferences, type BrowserWindow } from 'electron'
+import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@nimboguide/native'
+import { AppShell } from './app-shell'
+import { NotchPeek } from './notch-peek'
+import { configureHomePreview, runHomePreview } from './home-preview'
+import { devFlag } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
 import { AudioWindow, ensureMicrophoneAccess } from './audio-window'
 import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
@@ -10,7 +14,7 @@ import { limitDrawDemoRuntime, scheduleDrawDemo } from './draw-demo'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
 import { TalkSession } from './voice/talk'
-import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus } from './windows'
+import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus, setNotchVisibility } from './windows'
 
 const LABELS: Partial<Record<GestureMessage['action'], string>> = {
   dictate: 'Dictating…',
@@ -63,17 +67,18 @@ function createGesturePresenter(
 }
 
 /** Builds the voice pipeline once a key is available. */
-function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow): TalkSession {
+function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell): TalkSession {
   void ensureMicrophoneAccess()
   const ears = new Ears(key)
-  const mouth = new Mouth(key)
+  const mouth = new Mouth(key, shell.settings.get().voice)
   const session = new TalkSession({
     key,
+    conversations: shell.conversations,
     ears,
     mouth,
     audio,
     capture: captureCursorDisplay,
-    onStatus: (label) => sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()),
+    onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
       answerDone: () => overlays.answerDone(),
@@ -85,9 +90,13 @@ function startTalking(key: string, notch: BrowserWindow, overlays: OverlayManage
 }
 
 let monitor: GestureMonitor | undefined
+configureHomePreview()
 limitDrawDemoRuntime()
+const ownsInstance = devFlag('NIMBO_DEBUG_HOME_PREVIEW') || app.requestSingleInstanceLock()
+if (!ownsInstance) app.quit()
 
-app.whenReady().then(async () => {
+if (ownsInstance) app.whenReady().then(async () => {
+  if (devFlag('NIMBO_DEBUG_HOME_PREVIEW')) return runHomePreview()
   app.dock?.hide()
   const notch = createNotchWindow()
   const overlays = new OverlayManager()
@@ -104,7 +113,35 @@ app.whenReady().then(async () => {
   scheduleExclusionSelfTest((point) => overlays.ring(point))
 
   let talk: TalkSession | undefined
+  let key: string | undefined
+  const shell = new AppShell({
+    ask: (question) => { overlays.clear(); talk?.askText(question) },
+    stop: () => { talk?.holdCancelled(); overlays.listen(false); overlays.clear() },
+    clear: () => overlays.clear(),
+    replaceKey: () => openSetupWindow((saved) => { key = saved; reconnect() }),
+    settingsChanged: (settings, previous) => {
+      setNotchVisibility(notch, settings.showNotch)
+      audio.send({ kind: 'mute', muted: settings.muted })
+      if (settings.voice !== previous.voice) reconnect()
+    },
+    permissions: () => ({
+      microphone: systemPreferences.getMediaAccessStatus('microphone'),
+      screen: hasScreenCaptureAccess() ? 'granted' : 'not granted',
+      input: hasInputMonitoringAccess() ? 'granted' : 'not granted',
+    }),
+  })
   const audio = new AudioWindow((event) => talk?.onAudioEvent(event))
+  const reconnect = (): void => {
+    talk?.close()
+    if (key) talk = startTalking(key, notch, overlays, audio, shell)
+    shell.keyPresent = Boolean(key); shell.publish()
+  }
+  const peek = new NotchPeek(notch, shell)
+  shell.onChanged = snapshot => peek.publish(snapshot)
+  if (!app.getLoginItemSettings().wasOpenedAtLogin) shell.openHome()
+  setNotchVisibility(notch, shell.settings.get().showNotch)
+  audio.send({ kind: 'mute', muted: shell.settings.get().muted })
+  app.on('before-quit', () => { monitor?.stop(); talk?.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
   overlays.onStrokeStarted = (durationMs) => audio.send({ kind: 'scribble', durationMs })
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {
@@ -115,9 +152,8 @@ app.whenReady().then(async () => {
     sendNotchStatus(notch, { kind: 'needsPermission', permission: 'inputMonitoring' })
   else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 
-  const key = await loadOpenAIKey()
-  if (key) talk = startTalking(key, notch, overlays, audio)
-  else openSetupWindow((saved) => (talk = startTalking(saved, notch, overlays, audio)))
+  key = await loadOpenAIKey()
+  reconnect()
 })
 
 // A menu-bar style app keeps running with no focused window.

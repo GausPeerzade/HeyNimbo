@@ -5,7 +5,8 @@ import { Channels, type NotchStatus, type OverlayCommand, type OverlayEvent } fr
 import { displayFor, toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { devFlag, devSetting } from './dev'
 
-const NOTCH_SIZE = { width: 240, height: 38 }
+const NOTCH_SIZE = { width: 384, height: 320 }
+let notchVisible = true
 const INTERACTIVE_REGION_ID = new RegExp(`^(?:clear|card:${CARD_ID_PATTERN})$`)
 /** Three card regions and the Clear button per display. */
 const MAX_INTERACTIVE_REGIONS = 4
@@ -21,7 +22,7 @@ function isInteractiveRegionEvent(payload: unknown): payload is Extract<OverlayE
 let notchStatus: NotchStatus = { kind: 'idle' }
 
 /** Each window gets the narrowest preload it needs. */
-export type Preload = 'index' | 'setup' | 'voice'
+export type Preload = 'index' | 'setup' | 'voice' | 'app'
 
 export function secureWebPreferences(preload: Preload = 'index'): WebPreferences {
   return {
@@ -33,7 +34,7 @@ export function secureWebPreferences(preload: Preload = 'index'): WebPreferences
   }
 }
 
-export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice'): Promise<void> {
+export function loadPage(window: BrowserWindow, page: 'notch' | 'overlay' | 'setup' | 'voice' | 'home' | 'settings'): Promise<void> {
   // Only an unpackaged build may load pages from the dev server.
   const devServer = devSetting('ELECTRON_RENDERER_URL')
   return devServer ? window.loadURL(`${devServer}/${page}.html`) : window.loadFile(join(__dirname, `../renderer/${page}.html`))
@@ -49,7 +50,7 @@ function showPassivePage(window: BrowserWindow, page: 'notch' | 'overlay'): void
   })
   const painted = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()))
   void Promise.all([loadPage(window, page), painted]).then(() => {
-    if (!failed && !window.isDestroyed()) window.showInactive()
+    if (!failed && !window.isDestroyed() && (page !== 'notch' || notchVisible)) window.showInactive()
   }).catch((error: unknown) => {
     if (!window.isDestroyed()) window.hide()
     console.warn(`[window] ${page} failed to load: ${error instanceof Error ? error.message : String(error)}`)
@@ -94,11 +95,18 @@ export function createNotchWindow(): BrowserWindow {
     show: false,
     webPreferences: secureWebPreferences(),
   })
+  window.setIgnoreMouseEvents(true, { forward: true })
   positionNotch(window)
   floatAboveEverything(window)
   window.webContents.on('did-finish-load', () => window.webContents.send(Channels.notchStatus, notchStatus))
   showPassivePage(window, 'notch')
   return window
+}
+
+export function setNotchVisibility(window: BrowserWindow, visible: boolean): void {
+  notchVisible = visible
+  if (!visible) window.hide()
+  else if (!window.webContents.isLoading()) window.showInactive()
 }
 
 export function sendNotchStatus(window: BrowserWindow, status: NotchStatus): void {
@@ -303,6 +311,12 @@ export class OverlayManager {
       window.setIgnoreMouseEvents(true, { forward: true })
       this.send(id, { kind: 'clear', from: this.cursorOnDisplay(id) })
     }
+  }
+
+  close(): void {
+    this.stopFollowing(); clearTimeout(this.fadeTimer)
+    for (const window of this.windows.values()) window.destroy()
+    this.windows.clear()
   }
 
   private cursorOnDisplay(id: number): { x: number; y: number } | undefined {

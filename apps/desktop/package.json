@@ -8,7 +8,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "brand": "electron scripts/brand.cjs",
+    "dist:mac": "pnpm build && electron-builder --mac dir --arm64"
   },
   "dependencies": {
     "@nimboguide/native": "workspace:*",
@@ -19,9 +21,55 @@
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
-  }
+  },
+  "build": {
+    "appId": "dev.nimboguide.desktop",
+    "productName": "NimboGuide",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/brand",
+        "to": "brand",
+        "filter": [
+          "*.png"
+        ]
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE"
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/brand/NimboGuide.icns",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "NimboGuide uses your microphone only when you ask by voice. Your speech is sent to OpenAI to transcribe your question."
+      },
+      "category": "public.app-category.productivity"
+    }
+  },
+  "description": "A screen-aware voice and drawing guide for macOS."
 }
