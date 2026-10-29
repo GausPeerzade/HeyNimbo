@@ -384,6 +384,8 @@ For file operations reject traversal/symlink escapes and use race-resistant hand
 
 ### 11.4 Stop is an execution operation
 
+The main-owned emergency shortcut is `Command+Option+Shift+.` (no Control, so no intermediate chord triggers Explain hold-to-talk or dictate).
+
 Revoke capabilities first; stop new dispatch; abort model requests; invalidate approvals; close browser work; terminate supervised processes with bounded escalation; verify/reap descendants. A sent signal or `AbortSignal` alone is not proof of termination. Detached descendants and macOS packaged containment are explicit Phase 0 blockers. If containment cannot be proven, disable untrusted local code and offer a properly isolated fallback—never quietly run it on the host.
 
 Already committed remote actions remain committed or uncertain. Say what was stopped and what may already have happened. A “Stop all” button and an always-available emergency shortcut must work independently of the agent loop and current window focus. Implement the main-owned revocation/supervisor path in **Phase 2 before coding or authenticated writes**, and test it while another app is focused and the agent host is unresponsive. Phase 6 adds native input-state release and human-takeover semantics; it does not introduce the first emergency stop.

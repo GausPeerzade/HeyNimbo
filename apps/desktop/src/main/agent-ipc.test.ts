@@ -134,7 +134,8 @@ it('forwards narrow task requests and delivers Stop-all from the global shortcut
   await handler(event, { kind: 'stopAll' })
   expect(supervisor.stopAll).toHaveBeenCalledTimes(1)
   const [accelerator, callback] = electron.register.mock.calls[0]! as unknown as [string, () => void]
-  expect(accelerator).toBe('Control+Option+Command+.')
+  expect(accelerator).toBe('Command+Option+Shift+.')
+  expect(accelerator).not.toContain('Control')
   frame.url = 'https://not-focused.invalid'
   callback()
   await Promise.resolve()

@@ -34,8 +34,8 @@ interface AgentIpcDeps {
   connections: Pick<Connections, 'answer'>
   supervisor: Pick<AgentSupervisor, 'request' | 'stopAll'>
 }
-/** Main-owned emergency stop: Control + Option + Command + . works in other apps. */
-export const AGENT_STOP_SHORTCUT = 'Control+Option+Command+.'
+/** Main-owned emergency stop avoids every Control-based Explain gesture. */
+export const AGENT_STOP_SHORTCUT = 'Command+Option+Shift+.'
 export function registerAgentIpc(deps: AgentIpcDeps) {
   const grants = new Map<string, FolderGrant>()
   let disposed = false
