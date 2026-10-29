@@ -1,10 +1,11 @@
 import { RUN_STATUSES, isTerminal, parseAgentEvent, parseAgentRequest, type AgentApi, type AgentEvent, type AgentPush, type HostState, type RunMode, type RunSummary } from '../shared/agent-protocol'
 import { button, element } from './app-dom'
-import { AgentTimeline, type Scheduler } from './agent-timeline'
+import { AgentTimeline, safeAgentLabel, type Scheduler } from './agent-timeline'
 
 interface ViewElements { panel: HTMLElement; folders: HTMLElement; stopAll: HTMLButtonElement }
 interface ViewOptions { schedule?: Scheduler }
 export const STATUS_LABELS: Record<RunSummary['status'], string> = { queued: 'Queued', running: 'Running', waiting_approval: 'Waiting for approval', waiting_user: 'Waiting for you', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
+const canContinue = (run?: RunSummary): boolean => run?.status === 'interrupted' || (run?.status === 'failed' && run.error?.code === 'provider')
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value)
 function runsResult(value: unknown): RunSummary[] {
@@ -116,6 +117,7 @@ export class AgentView {
       try {
         const runs = runsResult({ runs: push.runs }), events = push.events.map(parseAgentEvent).filter(event => event.runId === this.selected)
         this.upsert(runs); if (events.length) this.timeline.append(events); if (runs.length) this.schedule()
+        for (const partial of push.partials ?? []) if (partial.runId === this.selected) this.timeline.partial(partial.step, partial.text)
       }
       catch { this.status.textContent = 'Could not update tasks. Try again.' }
     }
@@ -143,8 +145,8 @@ export class AgentView {
         if (this.mode !== 'local') return
         this.grants.delete(id); this.renderFolders()
       })
-      remove.setAttribute('aria-label', `Remove folder ${label}`); remove.disabled = this.mode === 'web'
-      chip.append(element('span', '', label), remove); this.chips.append(chip)
+      remove.setAttribute('aria-label', `Remove folder ${safeAgentLabel(label)}`); remove.disabled = this.mode === 'web'
+      chip.append(element('span', '', safeAgentLabel(label)), remove); this.chips.append(chip)
     }
     this.chips.setAttribute('aria-disabled', String(this.mode === 'web'))
   }
@@ -207,7 +209,7 @@ export class AgentView {
   }
   private async command(kind: 'cancel' | 'continue' | 'delete'): Promise<void> {
     const run = this.selectedRun
-    if (!run || this.acting.has(run.id) || (kind === 'cancel' && isTerminal(run.status)) || (kind === 'continue' && run.status !== 'interrupted')) return
+    if (!run || this.acting.has(run.id) || (kind === 'cancel' && isTerminal(run.status)) || (kind === 'continue' && !canContinue(run))) return
     if (kind === 'delete' && !confirm('Delete this task and its artifacts?')) return
     this.acting.add(run.id); this.schedule()
     try {
@@ -247,7 +249,7 @@ export class AgentView {
     }
     const selected = this.selectedRun
     this.stop.hidden = !selected || isTerminal(selected.status)
-    this.resume.hidden = selected?.status !== 'interrupted'; this.remove.hidden = !selected
+    this.resume.hidden = !canContinue(selected); this.remove.hidden = !selected
     this.stop.disabled = this.resume.disabled = this.remove.disabled = this.acting.has(this.selected)
     if (!selected) this.heading.textContent = 'Select a task'
     if (selected) {

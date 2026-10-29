@@ -1,6 +1,9 @@
 import type { AgentEvent, AgentRequest } from '../shared/agent-protocol'
 import { button, element } from './app-dom'
 
+/** Authority labels must not conceal suffixes or reorder surrounding UI. */
+export const safeAgentLabel = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, char => `\\u{${char.codePointAt(0)!.toString(16)}}`)
+
 export type Scheduler = (callback: () => void) => void
 interface TimelineOptions { request: (value: AgentRequest) => Promise<unknown>; schedule?: Scheduler; announce?: (text: string) => void }
 function insertionIndex(sequences: readonly number[], seq: number): number {
@@ -107,7 +110,7 @@ export class AgentTimeline {
     // latest timeline is the only way to restore interactive owner controls.
     if (this.direction === 'earlier' && (p.type === 'approval.requested' || p.type === 'question' || p.type === 'tool.denied')) {
       const card = element('section', 'agent-card')
-      card.append(element('pre', '', p.type === 'approval.requested' ? p.preview : p.type === 'question' ? p.text : p.reason), element('p', 'muted', 'Earlier request · select the task again to view current requests'))
+      card.append(element('pre', '', p.type === 'approval.requested' ? safeAgentLabel(p.preview) : p.type === 'question' ? p.text : p.reason), element('p', 'muted', 'Earlier request · select the task again to view current requests'))
       return card
     }
     if (p.type === 'question') return this.question(event, p)
@@ -129,7 +132,7 @@ export class AgentTimeline {
       return element('pre', `agent-event agent-${p.type.replace('.', '-')}`, text)
     }
     const card = element('section', 'agent-card'), state = element('p')
-    card.append(element('pre', '', p.preview), state)
+    card.append(element('pre', '', safeAgentLabel(p.preview)), state)
     let sent = false
     const actions = (['approved', 'denied'] as const).map(decision => button(decision === 'approved' ? 'Approve' : 'Deny', () => {
       if (sent || !this.interactive || this.decisions.has(p.approvalId)) return
@@ -187,7 +190,7 @@ export class AgentTimeline {
   }
   private artifact(event: AgentEvent, p: Extract<AgentEvent['payload'], { type: 'artifact' }>): HTMLElement {
     const card = element('section', 'agent-card'), generation = this.generation
-    const open = button(`${p.name} · ${p.bytes} bytes`, () => {
+    const open = button(`${safeAgentLabel(p.name)} · ${p.bytes} bytes`, () => {
       if (open.disabled) return
       this.clearPreview(); const previewGeneration = this.previewGeneration
       open.disabled = true
@@ -195,7 +198,7 @@ export class AgentTimeline {
         if (this.disposed || generation !== this.generation || previewGeneration !== this.previewGeneration) { open.disabled = false; return }
         if (!result || typeof result !== 'object' || !('text' in result) || typeof result.text !== 'string' || result.text.length > 1_048_576) throw new Error('Invalid preview')
         const text = result.text
-        const nodes = [element('pre', 'agent-preview', text), button('Copy', () => {
+        const nodes = [element('pre', 'agent-preview', safeAgentLabel(text)), button('Copy', () => {
           void navigator.clipboard.writeText(text).catch(() => this.options.announce?.('Could not copy this preview.'))
         })]
         this.preview = { nodes, open }; card.append(...nodes)
