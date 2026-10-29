@@ -121,6 +121,12 @@ export type AgentPush =
 
 export const AgentChannels = { request: 'heynimbo:agent-request', push: 'heynimbo:agent-push' } as const
 
+/** Shape exposed by the Home preload as `window.heynimboApp.agent`. */
+export interface AgentApi {
+  request(request: AgentRequest): Promise<unknown>
+  onPush(listener: (push: AgentPush) => void): () => void
+}
+
 /** Envelope on the main ↔ host MessagePort. */
 export type MainToHost =
   | { v: 1; kind: 'init'; dataDir: string }

@@ -1,7 +1,17 @@
 // Internal contracts between agent-host modules. Each module is built and
 // tested independently against these interfaces; the coordinator composes them.
-// Nothing here may import Electron: the host runs in a utility process and,
-// later, headless.
+// Nothing under src/agent may import Electron: the host runs in a utility
+// process and, later, headless.
+//
+// Module ownership and export names (fixed so modules compose without edits):
+//   src/agent/store.ts        SqliteAgentStore(path), MemoryAgentStore()      implements AgentStore
+//   src/agent/artifacts.ts    FileArtifactStore(dir), MemoryArtifactStore()   implements ArtifactStore
+//   src/agent/tools/files.ts  localTools(): AgentTool[]   (list_files, read_file, search_files) + artifactTools(): AgentTool[] (save_artifact)
+//   src/agent/tools/web.ts    webTools(options): AgentTool[]  (web_search, fetch_url)
+//   src/agent/net-policy.ts   isPublicAddress(ip), safeFetch(...)
+//   src/agent/runtime.ts      createAgentRuntime(deps: RuntimeDeps): AgentRuntime
+//   src/agent/host/serve.ts   serveHost(port, compose)  (utility-process side of the MessagePort)
+//   src/main/agent-supervisor.ts  AgentSupervisor (main side: lazy spawn, kill, credential scoping)
 import type { LanguageModel } from 'ai'
 import type { AgentEvent, AgentEventPayload, FolderGrant, HostCommand, ModelSelection, Persistence, RunBudget, RunMode, RunStatus, RunSummary, RunUsage, AgentError, SearchConfig } from '../shared/agent-protocol'
 
