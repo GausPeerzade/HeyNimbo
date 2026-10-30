@@ -133,7 +133,8 @@ async function ask(): Promise<void> {
   // An answer appears in the conversation, so asking from the Tasks view returns to it.
   if (agentView?.active) showTasks(false)
   const result = await request({ kind: 'ask', question: value })
-  if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { if (question.value === value) question.value = ''; drafts.delete(conversation ?? '') }
+  // Clear only the composer that still shows the sent question in the conversation it was sent from.
+  if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { if (composerId === conversation && question.value === value) question.value = ''; drafts.delete(conversation ?? '') }
 }
 document.getElementById('composer')!.onsubmit = event => { event.preventDefault(); void ask() }
 question.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void ask() } }

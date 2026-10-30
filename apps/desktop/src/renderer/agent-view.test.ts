@@ -209,6 +209,61 @@ it('opens a retained task outside the loaded page by ID and never answers the li
   expect(current()).toEqual(['older_target'])
   view.dispose()
 })
+it.each(['cached link', 'row click'] as const)('a slow task link never overrides a newer %s', async newer => {
+  let resolveSlow!: (value: unknown) => void
+  respond = async value => value.kind === 'list' ? { runs: [run('cached', 100)] } : value.kind === 'run' ? new Promise(resolve => { resolveSlow = resolve }) : { events: [] }
+  const view = setup(); view.open('slow'); await settle()
+  const current = () => panel.querySelectorAll('button').filter(node => node.attributes['aria-current'] === 'true').map(node => node.dataset.runId)
+  expect(current()).toEqual([])
+  if (newer === 'cached link') view.open('cached')
+  else panel.querySelectorAll('button').find(node => node.dataset.runId === 'cached')!.onclick!()
+  await settle(); expect(current()).toEqual(['cached'])
+  resolveSlow({ run: run('slow', 1) }); await settle()
+  expect(current()).toEqual(['cached'])
+  view.dispose()
+})
+it('keeps a failed link unanswered even when the task list arrives afterwards', async () => {
+  let resolveList!: (value: unknown) => void
+  respond = async value => value.kind === 'list' ? new Promise(resolve => { resolveList = resolve }) : value.kind === 'run' ? Promise.reject(new Error('Run not found.')) : { events: [] }
+  const view = setup(); view.open('missing'); await settle()
+  const status = () => panel.querySelectorAll('p').find(node => node.className === 'agent-status')?.textContent
+  expect(status()).toBe('This task is no longer available.')
+  resolveList({ runs: [run('unrelated')] }); await settle()
+  expect(panel.querySelectorAll('button').filter(node => node.attributes['aria-current'] === 'true')).toEqual([])
+  expect(status()).toBe('This task is no longer available.')
+  expect(requests.some(value => value.kind === 'events')).toBe(false)
+  // Opening Tasks without a link is a new navigation; the list may pick a task again.
+  respond = async value => value.kind === 'list' ? { runs: [run('unrelated')] } : { events: [] }
+  view.open(); button('Load newest').onclick!(); await settle()
+  expect(panel.querySelectorAll('button').filter(node => node.attributes['aria-current'] === 'true').map(node => node.dataset.runId)).toEqual(['unrelated'])
+  view.dispose()
+})
+it('selects a linked task older than a full 1000-task window instead of evicting it', async () => {
+  const cached = Array.from({ length: 1000 }, (_, i) => run(`cached_${i}`, 5000 - i))
+  respond = async value => value.kind === 'list' ? { runs: value.before === undefined ? cached.slice(0, 50) : cached.filter(item => item.updated < value.before!).slice(0, 50), more: true } : value.kind === 'run' ? { run: run('ancient', 1) } : { events: [] }
+  const view = setup(); view.setActive(true); await settle()
+  for (let page = 0; page < 19; page++) { button('Load older').onclick!(); await settle() }
+  expect(panel.querySelectorAll('button').filter(node => node.dataset.runId)).toHaveLength(1000)
+  view.open('ancient'); await settle(); await settle()
+  expect(panel.querySelectorAll('button').filter(node => node.attributes['aria-current'] === 'true').map(node => node.dataset.runId)).toEqual(['ancient'])
+  expect(requests).toContainEqual({ kind: 'events', runId: 'ancient', afterSeq: 0, limit: 200 })
+  expect(panel.querySelectorAll('button').filter(node => node.dataset.runId)).toHaveLength(1000)
+  view.dispose()
+})
+it('keeps another conversation draft that happens to match a question still being sent', async () => {
+  const { nodes, publish } = await home(api)
+  const q = nodes.get('question')!, other = (id: string) => ({ ...fixtureSnapshot(), currentId: id })
+  let accept!: (value: unknown) => void
+  ;(window as unknown as { heynimboApp: { request: (value: unknown) => Promise<unknown> } }).heynimboApp.request = async () => new Promise(resolve => { accept = resolve })
+  publish(other('b')); q.value = 'Same question'; q.oninput!()
+  publish(other('a')); q.value = 'Same question'; q.oninput!()
+  nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
+  publish(other('b'))
+  accept({ accepted: true }); await settle()
+  expect(q.value).toBe('Same question')
+  publish(other('a')); expect(q.value).toBe('')
+  publish(other('b')); expect(q.value).toBe('Same question')
+})
 it('opens the exact task from a turn card and from a main navigation, and hides Tasks when the agent preload is absent', async () => {
   const runs = [run('first', 200), run('run_7', 100)]
   respond = async value => value.kind === 'list' ? { runs } : value.kind === 'run' ? { run: runs.find(item => item.id === value.runId) } : value.kind === 'events' ? { events: [] } : { ok: true }

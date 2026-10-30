@@ -30,6 +30,7 @@ vi.mock('electron', async () => {
     isFullScreen() { return this.fullScreen }
     getNormalBounds() { return this.bounds }
     isFocused() { return this.focused }
+    isVisible() { return this.shown }
     restore() { this.minimized = false }
     show() { this.shown = true }
     focus() { this.focused = true }
@@ -88,14 +89,41 @@ it('brings Home forward once per wait when a background task needs the owner, an
   notice('running'); notice('waiting_user')
   expect(open).toHaveBeenCalledTimes(2)
 })
-it('Delete all withdraws the current answer and every undecided task handoff before purging', async () => {
+it('Delete all withdraws the current answer and every undecided task handoff, then deletes history, then purges tasks', async () => {
   const { shell, event, actions } = fixture()
   const order: string[] = []
+  const seeded = shell.conversations.begin('Private question', 'text')
+  const conversation = shell.conversations.currentId!
+  shell.conversations.finish(seeded, 'complete')
   actions.stop.mockImplementation(() => { order.push('stop') })
+  const deleteAll = shell.conversations.deleteAll.bind(shell.conversations)
+  vi.spyOn(shell.conversations, 'deleteAll').mockImplementation(() => { order.push('delete history'); deleteAll() })
   Object.assign(shell, { agent: { revokeAuthority: () => order.push('revoke'), purge: vi.fn(async () => { order.push('purge') }), dispose() {} } })
   mocks.confirm.mockResolvedValue({ response: 1 })
   await mocks.handler?.(event, { kind: 'deleteAll' })
-  expect(order).toEqual(['stop', 'revoke', 'purge'])
+  expect(order).toEqual(['stop', 'revoke', 'delete history', 'purge'])
+  expect(shell.conversations.history.exists(conversation)).toBe(false)
+})
+it('brings Home forward and waits until it is visible before a task decision is shown on it', async () => {
+  const { shell } = fixture()
+  Object.assign(shell, { preview: false })
+  shell.home = undefined
+  const pending = shell.presentHome()
+  const home = shell.home! as unknown as { shown: boolean; emit(event: string): void }
+  expect(home.shown).toBe(false)
+  home.emit('ready-to-show')
+  await expect(pending).resolves.toBe(shell.home)
+  expect(home.shown).toBe(true)
+  // Already visible: no wait for an event that has already happened.
+  await expect(shell.presentHome()).resolves.toBe(shell.home)
+  // A window closed before it ever showed cannot hold a decision.
+  shell.home = undefined
+  const closing = shell.presentHome(), unseen = shell.home! as unknown as { emit(event: string): void; isDestroyed(): boolean }
+  unseen.isDestroyed = () => true
+  unseen.emit('closed')
+  await expect(closing).resolves.toBeUndefined()
+  Object.assign(shell, { preview: true })
+  await expect(shell.presentHome()).resolves.toBeUndefined()
 })
 async function seedAgentHistory() {
   const paths = agentPaths(mocks.dir), store = new SqliteAgentStore(paths.db), artifacts = new FileArtifactStore(paths.artifacts)

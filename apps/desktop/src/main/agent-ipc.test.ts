@@ -57,10 +57,12 @@ function setup(overrides: Partial<AppSettings> = {}, minimalModel = false) {
   const commands: HostCommand[] = []
   const supervisor = { request: async (command: HostCommand) => { commands.push(command); return { runId: 'run' } }, stopAll: vi.fn(async () => ({ ok: true as const })) }
   const answer = () => ({ provider: 'openai' as const, model: 'test-model', ...(minimalModel ? {} : { effort: 'low' as const, baseURL: 'https://model.invalid' }), vision: true, credential: async () => 'not-for-renderer' })
-  const ipc = registerAgentIpc({ home: () => home, settings: () => settings, connections: { answer }, supervisor })
+  // Main brings Home forward so every decision is a sheet that withdrawal can close.
+  const present = vi.fn(async (): Promise<BrowserWindow | undefined> => { window.isVisible = () => true; return home })
+  const ipc = registerAgentIpc({ home: () => home, settings: () => settings, connections: { answer }, supervisor, present })
   cleanups.push(() => ipc.dispose())
   const handler = electron.handle.mock.calls.find(call => call[0] === AgentChannels.request)![1] as (event: IpcMainInvokeEvent, request: unknown) => Promise<unknown>
-  return { ipc, event, frame, commands, handler, supervisor, contents, settings, window }
+  return { ipc, event, frame, commands, handler, supervisor, contents, settings, window, present, home }
 }
 it('admits only one native confirmation across three live runs and both confirmation kinds', async () => {
   const { ipc, handler, event, commands } = setup()
@@ -264,33 +266,42 @@ it('grants exactly the canonical folder the owner picks in a native sheet that n
   const root = join(dir, 'chosen'); await mkdir(root)
   const link = join(dir, 'alias'); await symlink(root, link)
   electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [link] })
-  const { ipc, commands } = setup()
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  const { ipc, commands, home } = setup()
   const result = await ipc.start({ goal: 'List TODOs \u202E in my project', mode: 'local' })
   expect(result).toEqual({ runId: 'run' })
+  const [sheetParent, sheet] = electron.showMessageBox.mock.calls[0]! as unknown as [unknown, Electron.MessageBoxOptions]
+  expect(sheetParent).toBe(home)
+  expect(sheet).toMatchObject({ message: 'Let this task read a folder?', buttons: ['Cancel', 'Choose folder…'], defaultId: 0, cancelId: 0, signal: expect.any(AbortSignal) })
+  expect(sheet.detail).toContain('List TODOs \\u{202e} in my project')
   const [parent, options] = electron.showOpenDialog.mock.calls[0]! as unknown as [unknown, Electron.OpenDialogOptions]
-  expect(parent).toBeDefined()
+  expect(parent).toBe(home)
   expect(options).toMatchObject({ properties: ['openDirectory'], buttonLabel: 'Allow access' })
   expect(options.message).toContain('List TODOs \\u{202e} in my project')
   const canonical = await realpath(root), identity = await stat(canonical, { bigint: true })
   expect(commands).toEqual([expect.objectContaining({ kind: 'start', mode: 'local', grants: [{ id: expect.any(String), root: canonical, label: basename(canonical), identity: `${identity.dev}:${identity.ino}` }] })])
   expect(JSON.stringify(result)).not.toContain(dir)
 })
-it('treats a cancelled picker as no task and a file or missing selection as a hidden failure', async () => {
+it('treats a cancelled sheet or picker as no task and a file or missing selection as a hidden failure', async () => {
   const { ipc, commands } = setup()
+  await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true })
+  expect(electron.showOpenDialog).not.toHaveBeenCalled()
   for (const selection of [{ canceled: true, filePaths: [] }, { canceled: false, filePaths: [] }]) {
+    electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
     electron.showOpenDialog.mockResolvedValueOnce(selection)
     await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true })
   }
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
   const file = join(dir, 'file'); writeFileSync(file, 'fixture')
   for (const path of [file, join(dir, 'missing')]) {
+    electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
     electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] })
     await expect(ipc.start({ goal: 'Read', mode: 'local' })).rejects.toThrow('Could not grant folder access.')
   }
   expect(commands).toEqual([])
 })
 it('asks the owner before a proposed web task reaches the host, showing the exact goal and what may leave the Mac', async () => {
-  const { ipc, commands } = setup()
+  const { ipc, commands, present } = setup()
   const goal = 'Open https://collector.invalid/c?token=SYNTHETIC_7f3981 \u202E to check it'
   await expect(ipc.start({ goal, mode: 'web' })).resolves.toEqual({ cancelled: true })
   expect(commands).toEqual([]); expect(electron.showOpenDialog).not.toHaveBeenCalled()
@@ -302,28 +313,47 @@ it('asks the owner before a proposed web task reaches the host, showing the exac
   electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
   await expect(ipc.start({ goal, mode: 'web' })).resolves.toEqual({ runId: 'run' })
   expect(commands).toEqual([expect.objectContaining({ kind: 'start', goal, mode: 'web' })])
+  // Home was already visible, so it was not pulled forward again.
+  expect(present).not.toHaveBeenCalled()
 })
-it('brings an unparented decision forward when Home is hidden, admits one decision at a time, and closes it when the proposal is withdrawn', async () => {
-  const { ipc, commands, window } = setup()
+// Parented macOS sheets honour AbortSignal; unparented alerts are synchronous and cannot be closed.
+const closableSheet = (...args: unknown[]) => new Promise<{ response: number }>((_resolve, reject) => { (args[1] as { signal: AbortSignal }).signal.addEventListener('abort', () => reject(new Error('PRIVATE_NATIVE_ABORT'))) })
+it.each(['web', 'local'] as const)('brings Home forward for a %s decision, never shows an unparented dialog, and closes the sheet when the proposal is withdrawn', async mode => {
+  const { ipc, handler, event, commands, window, present, home } = setup()
   window.isVisible = () => false
   const proposal = new AbortController()
-  electron.showMessageBox.mockImplementationOnce((...args: unknown[]) => new Promise((_resolve, reject) => { (args.at(-1) as { signal: AbortSignal }).signal.addEventListener('abort', () => reject(new Error('PRIVATE_NATIVE_ABORT'))) }))
-  const pending = ipc.start({ goal: 'Research', mode: 'web', signal: proposal.signal })
-  expect(electron.focus).toHaveBeenCalledWith({ steal: true })
-  expect(electron.showMessageBox.mock.calls[0]).toHaveLength(1)
+  electron.showMessageBox.mockImplementationOnce(closableSheet)
+  const pending = ipc.start({ goal: 'Research', mode, signal: proposal.signal })
+  await vi.waitFor(() => expect(electron.showMessageBox).toHaveBeenCalledOnce())
+  expect(present).toHaveBeenCalledOnce()
+  expect(electron.showMessageBox.mock.calls[0]![0]).toBe(home)
   await expect(ipc.start({ goal: 'Other', mode: 'local' })).rejects.toThrow('Finish the open confirmation first.')
   proposal.abort()
   await expect(pending).rejects.toThrow('Task expired.')
   expect(commands).toEqual([]); expect(electron.showOpenDialog).not.toHaveBeenCalled()
+  // The slot is free again: an unrelated step approval can be confirmed right away.
+  ipc.push({ kind: 'events', runs: [], events: [{ runId: 'other', seq: 1, id: 'e1', at: 0, payload: { type: 'approval.requested', approvalId: 'a', callId: 'c', tool: 'save_artifact', preview: 'Save', digest: 'd' } }] })
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+  await handler(event, { kind: 'approve', runId: 'other', approvalId: 'a', decision: 'approved' })
+  expect(commands).toEqual([{ kind: 'approve', runId: 'other', approvalId: 'a', decision: 'approved' }])
   await expect(ipc.start({ goal: 'Already withdrawn', mode: 'web', signal: proposal.signal })).rejects.toThrow('Task expired.')
+})
+it('fails closed instead of showing an unclosable dialog when Home cannot be shown', async () => {
+  const { ipc, commands, window, present } = setup()
+  window.isVisible = () => false
+  present.mockResolvedValueOnce(undefined)
+  await expect(ipc.start({ goal: 'Research', mode: 'web' })).rejects.toThrow('Could not confirm this task.')
+  expect(electron.showMessageBox).not.toHaveBeenCalled(); expect(commands).toEqual([])
 })
 it.each(['stopAll', 'revoke', 'shortcut', 'dispose', 'withdrawn'] as const)('withdraws a task whose folder picker was open during %s', async action => {
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
   const { ipc, handler, event, commands } = setup()
   let finish!: (value: { canceled: boolean; filePaths: string[] }) => void
+  electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
   electron.showOpenDialog.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
   const proposal = new AbortController()
   const pending = ipc.start({ goal: 'Read', mode: 'local', signal: proposal.signal })
+  await vi.waitFor(() => expect(electron.showOpenDialog).toHaveBeenCalledOnce())
   await expect(ipc.start({ goal: 'Another', mode: 'local' })).rejects.toThrow('Finish the open confirmation first.')
   if (action === 'withdrawn') proposal.abort()
   if (action === 'stopAll') await handler(event, { kind: 'stopAll' })
@@ -333,7 +363,7 @@ it.each(['stopAll', 'revoke', 'shortcut', 'dispose', 'withdrawn'] as const)('wit
   finish({ canceled: false, filePaths: [dir] })
   await expect(pending).rejects.toThrow('Task expired.')
   expect(commands.filter(command => command.kind === 'start')).toEqual([])
-  if (action !== 'dispose') { electron.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] }); await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true }) }
+  if (action !== 'dispose') { electron.showMessageBox.mockResolvedValueOnce({ response: 1 }); electron.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] }); await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true }) }
 })
 it('rejects a host reply without a run ID and omits absent model and search options', async () => {
   const { ipc, commands, supervisor } = setup({}, true)

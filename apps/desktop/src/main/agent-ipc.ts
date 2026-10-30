@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { app, dialog, globalShortcut, ipcMain, type BrowserWindow } from 'electron'
+import { dialog, globalShortcut, ipcMain, type BrowserWindow } from 'electron'
 import type { AppSettings } from '../shared/app'
 import { AgentChannels, DEFAULT_BUDGET, isTerminal, parseAgentRequest, persistenceFor, type AgentPush, type AgentRequest, type FolderGrant, type RunMode, type RunSummary, type AgentEvent } from '../shared/agent-protocol'
 import type { AgentSupervisor } from './agent-supervisor'
@@ -33,6 +33,8 @@ interface AgentIpcDeps {
   settings(): AppSettings
   connections: Pick<Connections, 'answer'>
   supervisor: Pick<AgentSupervisor, 'request' | 'stopAll'>
+  /** Shows Home (creating it if needed) and resolves once it is visible, or undefined if it cannot be. */
+  present?(): Promise<BrowserWindow | undefined>
 }
 /** A task an answer proposed. Only main turns it into authority, after the owner decides. */
 export interface TaskStart {
@@ -79,33 +81,40 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
     const { provider, model, effort, baseURL } = deps.connections.answer()
     return { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }
   }
-  /** Proposals usually come from a spoken question with Home hidden or closed. A sheet on a hidden
-   *  window would be invisible, so the decision is then app-modal and brought forward. */
-  const owner = (): BrowserWindow | undefined => {
+  /** Decisions are always sheets on a visible Home: on macOS only parented dialogs can be closed when a
+   *  proposal is withdrawn (unparented alerts run synchronously). Proposals usually follow a spoken
+   *  question with Home hidden, so main brings it forward first, and fails closed if it cannot. */
+  const owner = async (): Promise<BrowserWindow> => {
+    const visible = (window: BrowserWindow | undefined): window is BrowserWindow => Boolean(window && !window.isDestroyed() && window.isVisible())
     const home = deps.home()
-    if (home && !home.isDestroyed() && home.isVisible()) return home
-    app.focus({ steal: true })
-    return undefined
+    if (visible(home)) return home
+    const shown = await deps.present?.()
+    if (!visible(shown)) throw new Error('Could not confirm this task.')
+    return shown
   }
-  /** The owner's decision before any host, model or network work: Start/Cancel for web (its goal can
-   *  carry screen or conversation details out), the task-naming folder picker for files. One native
-   *  decision at a time, shared with approvals; withdrawal and Stop-all close it. */
+  /** The owner's decision before any host, model or network work, as a sheet that withdrawal and
+   *  Stop-all close: Start/Cancel for web (its goal can carry screen or conversation details out),
+   *  Choose folder/Cancel for files. One native decision at a time, shared with approvals. */
   const decide = async (task: TaskStart): Promise<FolderGrant | boolean> => {
     if (confirmation) throw new Error('Finish the open confirmation first.')
     const controller = new AbortController(), withdraw = (): void => controller.abort()
     task.signal?.addEventListener('abort', withdraw, { once: true })
     confirmation = { runId: '', controller }
     try {
-      const parent = owner()
-      if (task.mode === 'web') {
-        const options: Electron.MessageBoxOptions = { type: 'question', message: 'Start a web task?', detail: `Task: ${safe(task.goal)}\n\nHeyNimbo will search and read websites for this task. The task text, including details from your screen or conversation, can be sent to search providers and websites.`, buttons: ['Cancel', 'Start web task'], defaultId: 0, cancelId: 0, signal: controller.signal }
-        let result: Electron.MessageBoxReturnValue
-        try { result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options) }
-        catch { throw new Error(controller.signal.aborted ? 'Task expired.' : 'Could not confirm this task.') }
-        return result.response === 1
-      }
-      const options: Electron.OpenDialogOptions = { title: 'Choose a folder for this task', message: `HeyNimbo can read files in this folder for: ${safe(task.goal)}`, buttonLabel: 'Allow access', properties: ['openDirectory'] }
-      const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+      const parent = await owner()
+      if (controller.signal.aborted) throw new Error('Task expired.')
+      const web = task.mode === 'web'
+      const options: Electron.MessageBoxOptions = web
+        ? { type: 'question', message: 'Start a web task?', detail: `Task: ${safe(task.goal)}\n\nHeyNimbo will search and read websites for this task. The task text, including details from your screen or conversation, can be sent to search providers and websites.`, buttons: ['Cancel', 'Start web task'], defaultId: 0, cancelId: 0, signal: controller.signal }
+        : { type: 'question', message: 'Let this task read a folder?', detail: `Task: ${safe(task.goal)}\n\nYou choose the folder next. The task can read files only inside it.`, buttons: ['Cancel', 'Choose folder…'], defaultId: 0, cancelId: 0, signal: controller.signal }
+      let answer: Electron.MessageBoxReturnValue
+      try { answer = await dialog.showMessageBox(parent, options) }
+      catch { throw new Error(controller.signal.aborted ? 'Task expired.' : 'Could not confirm this task.') }
+      if (controller.signal.aborted) throw new Error('Task expired.')
+      if (answer.response !== 1 || web) return answer.response === 1
+      // The picker cannot be closed programmatically, but it only opens because the owner just chose
+      // it; a withdrawal or Stop-all while it is open still cancels the task afterwards.
+      const result = await dialog.showOpenDialog(parent, { title: 'Choose a folder for this task', message: `HeyNimbo can read files in this folder for: ${safe(task.goal)}`, buttonLabel: 'Allow access', properties: ['openDirectory'] })
       if (result.canceled || !result.filePaths[0]) return false
       try {
         const root = await realpath(result.filePaths[0])

@@ -77,7 +77,7 @@ export class AppShell {
         onPush: push => { this.agentIpc?.push(push); this.notice(push) },
         dataDir: app.getPath('userData'),
       })
-      this.agentIpc = registerAgentIpc({ home: () => this.home, settings: () => this.settings.get(), connections, supervisor: this.agent })
+      this.agentIpc = registerAgentIpc({ home: () => this.home, settings: () => this.settings.get(), connections, supervisor: this.agent, present: () => this.presentHome() })
     }
     ipcMain.handle(AppChannels.request, (event, request: unknown) => {
       if (!isPageSender(event, this.home, 'home') && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
@@ -160,6 +160,19 @@ export class AppShell {
       if (turnId) this.home.webContents.send(AppChannels.navigate, { turnId })
     }
     return this.home
+  }
+  /** Brings Home forward for a decision sheet and resolves once it is visible (undefined if it never shows). */
+  async presentHome(): Promise<BrowserWindow | undefined> {
+    if (this.preview) return undefined
+    const window = this.openHome()
+    if (window.isVisible()) return window
+    // A new window shows on ready-to-show; this listener runs after the one that presents it.
+    await new Promise<void>(resolve => {
+      const done = (): void => { clearTimeout(timer); window.removeListener('ready-to-show', done); window.removeListener('closed', done); resolve() }
+      const timer = setTimeout(done, 10_000)
+      window.once('ready-to-show', done); window.once('closed', done)
+    })
+    return !window.isDestroyed() && window.isVisible() ? window : undefined
   }
   openSettings(category?: string): BrowserWindow {
     if (!this.preferences) {

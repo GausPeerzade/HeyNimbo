@@ -43,8 +43,9 @@ export class AgentView {
   private selectedRun?: RunSummary
   private generation = 0
   private pendingSelect = ''
-  /** A linked task being resolved; the list must not auto-select another task meanwhile. */
-  private target = ''
+  /** Set by a task link: the list must not answer it with another task. */
+  private linked = false
+  /** Bumped by every navigation so a slower link lookup cannot override a newer choice. */
   private links = 0
   private readonly runs = new Map<string, RunSummary>()
   private readonly rows = new Map<string, { node: HTMLButtonElement; goal: HTMLElement; status: HTMLElement }>()
@@ -84,21 +85,23 @@ export class AgentView {
   }
   get active(): boolean { return this.enabled }
   /** Shows the task list, optionally selecting a task an answer started. A link may point
-   *  outside the loaded page, so it is resolved by ID and never answered with another task. */
+   *  outside the loaded page, so it is resolved by ID and never answered with another task:
+   *  until the owner navigates again, the list does not auto-select anything else. */
   open(runId?: string): void {
-    if (runId && validId(runId)) this.target = runId
+    const linked = Boolean(runId && validId(runId))
+    this.linked = linked
     this.setActive(true)
-    if (!runId || !validId(runId)) return
-    if (this.runs.has(runId)) { this.target = ''; this.select(runId); return }
+    if (!linked || !runId) return
+    if (this.runs.has(runId)) { this.select(runId); return }
     const link = ++this.links
     void this.api.request({ kind: 'run', runId }).then(value => {
       if (this.disposed || link !== this.links) return
       const [run] = runsResult({ runs: [record(value).run] })
       if (run?.id !== runId) throw new Error('Invalid task')
-      this.target = ''; this.upsert([run]); this.select(runId); this.schedule()
+      this.upsert([run], false, runId); this.select(runId)
     }).catch(() => {
       if (this.disposed || link !== this.links) return
-      this.target = ''; this.status.textContent = 'This task is no longer available.'
+      this.status.textContent = 'This task is no longer available.'; this.statusKey = 'unavailable'
     })
   }
   setActive(active: boolean): void {
@@ -121,15 +124,17 @@ export class AgentView {
       catch { this.status.textContent = 'Could not update tasks. Try again.' }
     }
   }
-  private upsert(runs: RunSummary[], older = false): void {
+  /** `keep` (a linked task) survives eviction even when it is older than the whole window. */
+  private upsert(runs: RunSummary[], older = false, keep = this.selected): void {
     for (const run of runs) {
       if (this.deleted.has(run.id)) continue
       if (!this.runs.has(run.id) || this.runs.get(run.id)!.updated <= run.updated) this.runs.set(run.id, run)
       if (this.selectedRun?.id === run.id && this.selectedRun.updated <= run.updated) this.selectedRun = run
     }
     if (this.runs.size > 1000) {
-      const sorted = [...this.runs.values()].sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id))
-      const outside = older ? sorted.slice(0, -1000) : sorted.slice(1000)
+      const sorted = [...this.runs.values()].filter(run => run.id !== keep).sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id))
+      const room = this.runs.has(keep) ? 999 : 1000
+      const outside = older ? sorted.slice(0, -room) : sorted.slice(room)
       for (const run of outside) this.runs.delete(run.id)
     }
     if (this.pendingSelect && this.runs.has(this.pendingSelect)) { this.select(this.pendingSelect); this.pendingSelect = '' }
@@ -143,7 +148,7 @@ export class AgentView {
       if (this.disposed) return
       this.upsert(runs, this.before !== undefined); this.before = runs.length ? Math.min(...runs.map(run => run.updated)) : this.before
       const first = runs.find(run => this.runs.has(run.id))
-      if (!this.selected && !this.target && first) this.select(first.id)
+      if (!this.selected && !this.linked && first) this.select(first.id)
       this.older.hidden = !runs.length || !morePages(page, runs.length, 50); this.schedule()
     } catch { this.status.textContent = 'Could not load tasks. Try again.' }
     finally { this.listing = false; this.older.disabled = false }
@@ -151,6 +156,7 @@ export class AgentView {
   private select(runId: string): void {
     const run = this.runs.get(runId)
     if (!run) return
+    this.links++
     this.selected = runId; this.selectedRun = run; const generation = ++this.generation
     this.statusKey = `${run.id}:${run.status}`; this.status.textContent = STATUS_LABELS[run.status]
     this.timeline.reset(runId, run.mixed); this.timeline.setInteractive(false)
