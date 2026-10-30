@@ -187,9 +187,11 @@ if (ownsInstance) app.whenReady().then(async () => {
     monitor = started.monitor
     ensureScreenCaptureAccess()
     sendNotchStatus(notch, restingStatus())
-  } else if (started.reason === 'inputMonitoring')
+  } else if (started.reason === 'inputMonitoring') {
     sendNotchStatus(notch, { kind: 'needsPermission', permission: 'inputMonitoring' })
-  else sendNotchStatus(notch, { kind: 'active', label: started.reason })
+    // The notch can be hidden in Settings; without this the hold chord silently does nothing.
+    shell.setStatus('Hold-to-talk unavailable: turn on HeyNimbo in System Settings → Privacy & Security → Input Monitoring, then reopen HeyNimbo.')
+  } else sendNotchStatus(notch, { kind: 'active', label: started.reason })
 
   try { await connections.load() } catch { shell.setStatus('Connection storage unavailable; reconnect in Settings.') }
   reconnect()

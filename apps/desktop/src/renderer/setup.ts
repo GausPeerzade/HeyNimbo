@@ -10,7 +10,7 @@ provider.onchange = () => {
   input.value = ''; status.textContent = ''
   input.hidden = provider.value === 'chatgpt'; document.getElementById('key-label')!.hidden = input.hidden
   save.textContent = input.hidden ? 'Continue with ChatGPT' : `Connect ${PROVIDER_NAMES[provider.value as KeyProvider]}`
-  document.getElementById('features')!.textContent = input.hidden ? 'Use your eligible Plus or Pro plan for answers at no charge from HeyNimbo. Voice needs a separate OpenAI API key.' : 'Your key is encrypted locally with macOS Keychain; it is sent only to its provider. API requests are billed to your account. An OpenAI key enables voice with any answer provider.'
+  document.getElementById('features')!.textContent = input.hidden ? 'Use your eligible Plus or Pro plan for answers at no charge from HeyNimbo. Voice needs a separate OpenAI API key.' : 'Your key is saved only on this Mac, in a file only your user account can read; it is sent only to its provider. API requests are billed to your account. An OpenAI key enables voice with any answer provider.'
 }
 document.getElementById('more')!.onclick = () => { void window.heynimboSetup.connect({ kind: 'settings' }) }
 form.addEventListener('submit', event => {

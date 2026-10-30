@@ -53,11 +53,20 @@ bounded retry, and clears local access, refresh and ID tokens even when remote
 revocation cannot be confirmed. The UI then directs the user to ChatGPT Settings.
 Multiple registrations remain separate, with stable labels even if emails match.
 
-Every key and OAuth record is encrypted by main-process Electron `safeStorage`
-and atomically written owner-only (`0600`). Unavailable/insecure storage is
-rejected. The existing `userData/openai-key.bin` is reused **in place**; no real
-credential was inspected, copied or re-entered during implementation. Other key
-files are provider-specific, and OAuth credentials live in `chatgpt-auth.bin`.
+Every key and OAuth record lives in one file, `userData/credentials.json`,
+written atomically and owner-only (`0600`) inside the owner-only (`0700`) app
+data folder. This is the model Pi (`~/.pi/agent/auth.json`), OpenCode
+(`auth.json`), Codex's file store (`~/.codex/auth.json`) and Hermes
+(`~/.hermes/.env`) use. HeyNimbo does not use the macOS Keychain: an unsigned
+or ad-hoc-signed build gets a new code identity on every rebuild, so Keychain
+access asked for the login password at every launch. Agent file tools refuse
+`credentials.json`/`auth.json` names even inside a granted folder.
+
+Keys saved by older builds (`<name>.bin`, Electron `safeStorage`) are moved
+into `credentials.json` on first load with one Keychain read each, then
+deleted. The first denied read ends migration permanently: that file and any
+not yet read are renamed `<name>.bin.unmigrated` (kept, never read again) and
+those keys are re-entered in Settings.
 Compatible keys include the normalized full endpoint URL inside the encrypted
 credential record. Discovery, pre-save validation and answer requests use a saved
 key only when that full endpoint matches; changing host, port or path never

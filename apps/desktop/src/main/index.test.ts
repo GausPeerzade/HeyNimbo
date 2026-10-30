@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   shellActions: undefined as { settingsChanged(settings: { voice: string; showNotch: boolean; muted: boolean }, previous: { voice: string }): void } | undefined,
   audio: vi.fn(), ears: vi.fn(), mouth: vi.fn(), talk: vi.fn(), gestures: vi.fn(), key: vi.fn(), setup: vi.fn(),
   quit: vi.fn(), exit: vi.fn(), lock: vi.fn(() => true), preview: vi.fn(), paths: vi.fn(), shell: vi.fn(), gallery: vi.fn(), evaluation: vi.fn(), show: vi.fn(),
-  policy: vi.fn(), menu: vi.fn(), dockHide: vi.fn(),
+  policy: vi.fn(), menu: vi.fn(), dockHide: vi.fn(), setStatus: vi.fn(),
   mkdtemp: vi.fn(() => '/tmp/heynimbo-draw-demo-fixture'), removeProfile: vi.fn(),
   overlays: { sync: vi.fn(), clear: vi.fn(), drawBeat: vi.fn(), fadeSoon: vi.fn(), answerDone: vi.fn(), startFollowing: vi.fn(), listen: vi.fn(), onStrokeStarted: undefined },
 }))
@@ -26,7 +26,7 @@ vi.mock('./home-preview', () => ({ configureHomePreview: vi.fn(), runHomePreview
 vi.mock('./model-gallery', async (load) => ({ ...await load<typeof import('./model-gallery')>(), runModelGallery: mocks.gallery }))
 vi.mock('./model-eval', async (load) => ({ ...await load<typeof import('./model-eval')>(), runModelEval: mocks.evaluation }))
 vi.mock('./model-show', async (load) => ({ ...await load<typeof import('./model-show')>(), runModelShow: mocks.show }))
-vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: vi.fn() } }) }))
+vi.mock('./app-shell', () => ({ AppShell: vi.fn(function (actions) { mocks.shell(); mocks.shellActions = actions; return { settings: { get: () => ({ voice: 'marin', showNotch: true, muted: false }) }, conversations: {}, openHome: vi.fn(), publish: vi.fn(), setStatus: mocks.setStatus } }) }))
 vi.mock('./notch-peek', () => ({ NotchPeek: vi.fn(function () { return { publish: vi.fn() } }) }))
 vi.mock('./audio-window', () => ({ AudioWindow: mocks.audio, ensureMicrophoneAccess: vi.fn(), microphoneAccessStatus: vi.fn(() => 'granted') }))
 vi.mock('./capture', () => ({ captureCursorDisplay: vi.fn(), ensureScreenCaptureAccess: vi.fn(), restingStatus: vi.fn(), scheduleExclusionSelfTest: vi.fn() }))
@@ -181,6 +181,21 @@ it('reconnect resets overlay listening before installing the replacement session
   expect(close).toHaveBeenCalledOnce()
   expect(mocks.overlays.listen).toHaveBeenCalledWith(false)
   expect(mocks.overlays.listen.mock.invocationCallOrder[0]!).toBeLessThan(mocks.talk.mock.invocationCallOrder.at(-1)!)
+})
+
+it.each([true, false])('tells the owner in Home, not only the notch, when hold-to-talk lacks Input Monitoring (granted: %s)', async granted => {
+  vi.resetModules(); vi.clearAllMocks()
+  mocks.talk.mockImplementation(function () { return { holdStarted: vi.fn() } })
+  mocks.audio.mockImplementation(function () { return { send: vi.fn() } })
+  for (const voice of [mocks.ears, mocks.mouth, mocks.builtinEars, mocks.builtinMouth]) voice.mockImplementation(function () { return { warm: vi.fn() } })
+  mocks.gestures.mockReturnValue(granted ? { ok: true, monitor: { stop: vi.fn() } } : { ok: false, reason: 'inputMonitoring' })
+  mocks.key.mockResolvedValue('sk-test')
+  vi.spyOn(console, 'info').mockImplementation(() => {})
+  await import('./index'); await vi.waitFor(() => expect(mocks.talk).toHaveBeenCalled())
+  // The notch can be hidden in Settings, so the reason must also reach Home.
+  const notices = mocks.setStatus.mock.calls.map(([label]) => String(label))
+  if (granted) expect(notices.filter(label => label.includes('Input Monitoring'))).toEqual([])
+  else expect(notices).toContain('Hold-to-talk unavailable: turn on HeyNimbo in System Settings → Privacy & Security → Input Monitoring, then reopen HeyNimbo.')
 })
 
 it('shows an actionable voice message without displaying the listening ear for a typed-only connection', async () => {

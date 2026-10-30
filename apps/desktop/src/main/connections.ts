@@ -132,7 +132,7 @@ export class Connections {
           this.savedAt.set(request.provider, await secretSavedAt(`${request.provider}-key`) ?? Date.now())
           // Saving a key must not change the answer's billing path.
           if (options.selectSavedProvider) this.settings.set({ ...this.settings.get(), connection: { ...config, provider: request.provider } })
-          message = 'Key tested and stored securely on this Mac.'; break
+          message = 'Key tested and saved on this Mac.'; break
         }
         case 'removeKey': await removeSecret(`${request.provider}-key`); if (request.provider === 'compatible') this.compatibleKey = undefined; this.keys.delete(request.provider); this.savedAt.delete(request.provider); this.catalogs.delete(this.catalogKey(request.provider)); message = 'Key removed.'; break
         case 'useForAnswers': this.settings.set({ ...this.settings.get(), connection: { ...this.config, provider: request.provider } }); break

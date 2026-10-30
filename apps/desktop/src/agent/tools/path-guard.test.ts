@@ -40,7 +40,9 @@ describe('grant path resolution', () => {
   })
 
   it('denies credential names and aliases even when a home-like directory was granted', async () => {
-    const denied = ['.env', '.env.local', 'cert.pem', 'signing.KEY', 'id_rsa.pub', '.ssh/config', '.aws/credentials', '.git/config', '.npmrc', '.netrc', 'login.keychain-db', 'Library/Keychains/login']
+    // Agent key stores too: HeyNimbo's own file and Pi/OpenCode/Codex/Claude Code auth files.
+    const denied = ['.env', '.env.local', 'cert.pem', 'signing.KEY', 'id_rsa.pub', '.ssh/config', '.aws/credentials', '.git/config', '.npmrc', '.netrc', 'login.keychain-db', 'Library/Keychains/login',
+      'Application Support/HeyNimbo/credentials.json', 'HeyNimbo/credentials.json.unreadable', '.pi/agent/auth.json', '.local/share/opencode/auth.json', '.codex/auth.json', '.claude/.credentials.json']
     for (const path of denied) {
       await mkdir(join(grant.root, path, '..'), { recursive: true })
       await writeFile(join(grant.root, path), 'synthetic credential')

@@ -26,6 +26,8 @@ export function deniedName(path: string): boolean {
   const parts = path.toLowerCase().split('/')
   return parts.some((part, i) => part.startsWith('.env') || /\.(pem|key)$/.test(part)
     || part.startsWith('id_rsa') || ['.ssh', '.aws', '.npmrc', '.netrc', 'keychains'].includes(part)
+    // Plaintext agent key stores: HeyNimbo's credentials.json and Pi/OpenCode/Codex/Claude Code auth files.
+    || /^\.?(credentials|auth)\.json/.test(part)
     || part.includes('.keychain') || (part === 'config' && parts[i - 1] === '.git'))
 }
 
