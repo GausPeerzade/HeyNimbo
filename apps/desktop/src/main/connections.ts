@@ -3,7 +3,7 @@ import { PROVIDERS, RECOMMENDED_MODELS, defaultConnectionSettings, recommendedMo
 import { ChatGPTAuth } from './chatgpt-auth'
 import { loadSecret, removeSecret, saveSecret, secretSavedAt } from './secrets'
 import { validateBaseURL } from './provider-settings'
-import { listProviderModels } from './model-catalog'
+import { KEY_REJECTED, listProviderModels } from './model-catalog'
 import type { AnswerConnection } from './answer-provider'
 import type { SettingsStore } from './settings'
 import { allowSpeechRecognition, selectVoiceEngine } from './voice/engine'
@@ -15,6 +15,8 @@ export class Connections {
   private catalogs = new Map<string, ModelInfo[]>()
   private savedAt = new Map<KeyProvider, number>()
   private mutating = false
+  /** An OpenAI key the voice service rejected; voice uses the Mac's own speech until a new key is saved. */
+  private rejectedVoiceKey?: string
   constructor(private readonly settings: Pick<SettingsStore, 'get' | 'set'>, private readonly changed: () => void, private readonly openSettings: () => void = () => {}) {}
   async load(): Promise<void> {
     for (const provider of PROVIDERS) if (provider !== 'chatgpt') {
@@ -33,7 +35,8 @@ export class Connections {
     await this.auth.load()
   }
   get config(): ConnectionSettings { return this.settings.get().connection ?? defaultConnectionSettings() }
-  get voiceKey(): string | undefined { return this.keys.get('openai') }
+  get voiceKey(): string | undefined { const key = this.keys.get('openai'); return key === this.rejectedVoiceKey ? undefined : key }
+  rejectVoiceKey(): void { this.rejectedVoiceKey = this.keys.get('openai') }
   get voiceEngine(): ReturnType<typeof selectVoiceEngine> { return selectVoiceEngine(this.voiceKey) }
   private catalogKey(provider: ProviderId, config = this.config): string { return provider === 'compatible' ? `${provider}:${config.baseURL}` : provider === 'chatgpt' ? `${provider}:${this.auth.active?.id}` : provider }
   snapshot(): ConnectionSnapshot {
@@ -165,7 +168,7 @@ export class Connections {
 function publicConnectionError(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
   const allowed = new Set([
-    'Secure storage is not available on this system.', 'Finish the current ChatGPT connection attempt first.', 'Unknown ChatGPT account.',
+    KEY_REJECTED, 'Finish the current ChatGPT connection attempt first.', 'Unknown ChatGPT account.',
     'Sign-in state did not match. Try again.', 'ChatGPT sign-in was declined. You can try again or add an API key.', 'ChatGPT sign-in failed. Try again.',
     'ChatGPT registration was incomplete or did not match.', 'Missing or invalid authorization code.', 'ChatGPT sign-in timed out. Try again.',
     'Could not receive ChatGPT sign-in.', 'Could not start sign-in listener.', 'Could not reach ChatGPT. Check your connection and try again.',

@@ -24,7 +24,8 @@ export class RealtimeSocket {
     })
     this.socket.on('open', () => this.queued.splice(0).forEach((message) => this.socket.send(message)))
     this.socket.on('message', (data) => this.receive(data.toString()))
-    this.socket.on('error', (error) => onClose(error.message))
+    // A revoked key is refused at the handshake (HTTP 401) as well as by an error event once connected.
+    this.socket.on('error', (error) => onClose(/Unexpected server response: 401\b/.test(error.message) ? OPENAI_KEY_REJECTED : error.message))
     this.socket.on('close', (code, reason) => {
       this.closed = true
       onClose(`closed ${code} ${reason.toString()}`.trim())
@@ -67,6 +68,14 @@ export type SocketFactory = (
 
 export const openSocket: SocketFactory = (query, key, onEvent, onClose) =>
   new RealtimeSocket(query, key, onEvent, onClose)
+
+export const OPENAI_KEY_REJECTED = 'OpenAI rejected the saved key. Paste a new one in Settings → Connection.'
+
+/** The server's error message, or one fixed message when the key itself was rejected. */
+export function realtimeError(event: RealtimeEvent, fallback: string): string {
+  const error = event.error as { code?: string; message?: string } | undefined
+  return error?.code === 'invalid_api_key' ? OPENAI_KEY_REJECTED : error?.message ?? fallback
+}
 
 export function base64(pcm: Uint8Array): string {
   return Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength).toString('base64')

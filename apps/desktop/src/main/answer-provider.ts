@@ -7,6 +7,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { Effort, ProviderId } from '../shared/providers'
 import { noRedirectFetch } from './provider-settings'
+import { KEY_REJECTED } from './model-catalog'
 import type { Exchange, Screenshot } from './voice/brain'
 
 export interface AnswerConnection {
@@ -87,6 +88,7 @@ export async function* streamProviderAnswer(options: AnswerOptions, transport = 
       'ChatGPT plan usage is not enabled. Enable it with Continue with ChatGPT or add an API key; an eligible Plus or Pro plan is required.',
       'The selected model is not available for this connection. Choose one in Settings → Connection.',
       'Add a key for the selected answer provider in Settings → Connection.',
+      KEY_REJECTED,
     ])
     if (error instanceof Error && credentialMessages.has(error.message)) throw new Error(error.message)
     const details = error as { code?: string; data?: { error?: { code?: string }; response?: { error?: { code?: string } } } }

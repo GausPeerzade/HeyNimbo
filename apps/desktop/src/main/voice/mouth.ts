@@ -1,4 +1,4 @@
-import { openSocket, type RealtimeEvent, type SocketFactory } from '../openai/realtime'
+import { OPENAI_KEY_REJECTED, openSocket, realtimeError, type RealtimeEvent, type SocketFactory } from '../openai/realtime'
 
 const VOICE_INSTRUCTIONS =
   'You are a text-to-speech voice. Read the text you are given aloud exactly as written, in a warm, ' +
@@ -93,7 +93,7 @@ export class Mouth {
       'model=gpt-realtime-2.1-mini',
       this.key,
       (event) => this.onEvent(event),
-      (reason) => this.fail(new Error(`Speech connection ${reason}.`)),
+      (reason) => this.fail(new Error(reason === OPENAI_KEY_REJECTED ? reason : `Speech connection ${reason}.`)),
     )
     this.socket.send({
       type: 'session.update',
@@ -109,7 +109,7 @@ export class Mouth {
 
   private onEvent(event: RealtimeEvent): void {
     if (event.type === 'error') {
-      return this.fail(new Error((event.error as { message?: string } | undefined)?.message ?? 'Speech failed.'))
+      return this.fail(new Error(realtimeError(event, 'Speech failed.')))
     }
     const response = event.response as { id?: string; status?: string; metadata?: { heynimbo_line?: string } } | undefined
     const line = this.line

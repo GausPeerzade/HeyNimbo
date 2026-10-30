@@ -22,11 +22,16 @@ export function catalogModels(provider: ProviderId, body: Record<string, unknown
     return [{ id, name: String(row.display_name ?? row.displayName ?? row.name ?? id), vision: modalities ? modalities.includes('image') : knownVision(provider, id), tested: false }]
   })
 }
+/** One fixed message for a revoked or mistyped key, so it reaches the owner instead of a generic failure. */
+export const KEY_REJECTED = 'The provider rejected the saved key. Paste a new one in Settings → Connection.'
+const rejected = (provider: ProviderId, status: number): boolean => status === 401 && provider !== 'chatgpt'
+
 export async function listProviderModels(provider: ProviderId, key: string, baseURL: string, transport = noRedirectFetch): Promise<ModelInfo[]> {
   const base = provider === 'chatgpt' ? API_BASES.openai : provider === 'compatible' ? baseURL : API_BASES[provider]
   const headers = providerHeaders(provider, key)
   if (provider === 'openrouter') {
     const validation = await transport(`${base}/key`, { headers, signal: AbortSignal.timeout(10_000) })
+    if (rejected(provider, validation.status)) throw new Error(KEY_REJECTED)
     if (!validation.ok) throw new Error(`Provider model discovery failed (${validation.status}). Check your connection, key and plan eligibility.`)
   }
   const endpoint = new URL(base)
@@ -48,6 +53,7 @@ export async function listProviderModels(provider: ProviderId, key: string, base
     if (cursor) url.searchParams.set(provider === 'google' ? 'pageToken' : 'after_id', cursor)
     const response = await transport(url, { headers, signal: AbortSignal.timeout(10_000) })
     if (provider === 'compatible' && [404, 405].includes(response.status)) return []
+    if (rejected(provider, response.status)) throw new Error(KEY_REJECTED)
     if (!response.ok) throw new Error(`${provider === 'chatgpt' ? 'ChatGPT plan' : 'Provider'} model discovery failed (${response.status}). Check your connection, key and plan eligibility.`)
     const body = await response.json() as Record<string, unknown>
     models.push(...catalogModels(provider, body))

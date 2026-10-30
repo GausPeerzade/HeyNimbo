@@ -1,4 +1,4 @@
-import { base64, openSocket, type RealtimeEvent, type SocketFactory } from '../openai/realtime'
+import { base64, OPENAI_KEY_REJECTED, openSocket, realtimeError, type RealtimeEvent, type SocketFactory } from '../openai/realtime'
 
 /** The API rejects commits under 100 ms of audio; such taps are not questions. */
 const MIN_TURN_BYTES = 24_000 * 2 * 0.1
@@ -82,7 +82,7 @@ export class Ears {
       'intent=transcription',
       this.key,
       (event) => this.onEvent(event),
-      (reason) => this.settle(new Error(`Transcription connection ${reason}.`)),
+      (reason) => this.settle(new Error(reason === OPENAI_KEY_REJECTED ? reason : `Transcription connection ${reason}.`)),
     )
     this.socket.send({
       type: 'session.update',
@@ -103,7 +103,7 @@ export class Ears {
   private onEvent(event: RealtimeEvent): void {
     const pending = this.pending
     if (event.type === 'error') {
-      const message = (event.error as { message?: string } | undefined)?.message ?? 'Transcription failed.'
+      const message = realtimeError(event, 'Transcription failed.')
       if (pending) this.settle(new Error(message))
       else console.warn(`[ears] ${message}`)
     } else if (event.type === 'input_audio_buffer.committed') {
