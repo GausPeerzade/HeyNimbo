@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "brand": "electron scripts/brand.cjs",
-    "dist:mac": "pnpm build && electron-builder --mac dir --arm64"
+    "dist:mac": "pnpm build && electron-builder --mac dir --arm64 && node scripts/local-signing.mjs sign dist/mac-arm64/HeyNimbo.app",
+    "signing:setup": "node scripts/local-signing.mjs setup"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.91",

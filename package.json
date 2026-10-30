@@ -14,6 +14,7 @@
     "dev": "pnpm --filter @heynimbo/desktop dev",
     "typecheck": "pnpm --filter @heynimbo/desktop typecheck",
     "dist:mac": "pnpm --filter @heynimbo/desktop dist:mac",
+    "signing:setup": "pnpm --filter @heynimbo/desktop signing:setup",
     "dev:speech-permissions": "node scripts/prepare-dev-speech-permissions.cjs"
   }
 }
