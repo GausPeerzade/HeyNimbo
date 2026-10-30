@@ -80,7 +80,10 @@ export class NimboAgent {
     } as Model<Api>
     const known = runtime.getModel(provider, connection.model)
     if (known) return known
-    const sibling = runtime.getModels(provider)[0]
+    // The closest-named model (gpt-6.1-terra → gpt-6.1-sol), larger output limit on ties: the first
+    // listed model can be an old one whose small limit cuts reasoning models off mid-sentence.
+    const shared = (id: string): number => { let i = 0; while (i < id.length && id[i] === connection.model[i]) i++; return i }
+    const sibling = runtime.getModels(provider).reduce<Model<Api> | undefined>((best, model) => !best || shared(model.id) > shared(best.id) || (shared(model.id) === shared(best.id) && model.maxTokens > best.maxTokens) ? model : best, undefined)
     if (!sibling) throw new Error('This answer provider is not supported for tasks.')
     return { ...sibling, id: connection.model, name: connection.model, input }
   }
@@ -168,10 +171,13 @@ export class NimboAgent {
       const notify = (): void => { wake?.(); wake = undefined }
       unsubscribe = session.subscribe(event => {
         if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') { queue.push(event.assistantMessageEvent.delta); spoke = true }
-        // Each step is its own message; a line break keeps sentences and drawing lines apart.
-        else if (event.type === 'message_start' && event.message.role === 'assistant' && spoke) queue.push('\n')
-        // The last attempt decides: a retry that succeeds clears an earlier error.
-        else if (event.type === 'message_end' && event.message.role === 'assistant') failure = event.message.stopReason === 'error' ? event.message.errorMessage ?? 'error' : undefined
+        else if (event.type === 'message_end' && event.message.role === 'assistant') {
+          // Each step is its own message. A line break ends its last sentence now, so "I'll look that up"
+          // is spoken while the tool runs instead of after it, and keeps drawing lines apart.
+          if (spoke) queue.push('\n')
+          // The last attempt decides: a retry that succeeds clears an earlier error.
+          failure = event.message.stopReason === 'error' ? event.message.errorMessage ?? 'error' : event.message.stopReason === 'length' ? 'length' : undefined
+        }
         else if (event.type === 'tool_execution_start') {
           console.info(`[agent] ${event.toolName}`)
           ids.set(event.toolCallId, steps.push({ label: stepLabel(event.toolName, event.args), state: 'running' }) - 1)
@@ -195,6 +201,7 @@ export class NimboAgent {
       }
       await run
       stopped()
+      if (failure === 'length') throw new Error('The answer was cut off at the model\'s output limit. Ask again or choose a lower reasoning effort.')
       if (failure) throw new Error(/\b401\b|invalid.{0,20}(api.?key|x-api-key)|authentication/i.test(failure) ? KEY_REJECTED : 'The answer provider could not complete this request. Check the connection, selected model and usage limits in Settings.')
     } finally {
       unsubscribe(); input.signal.removeEventListener('abort', stop); cancel.abort()
