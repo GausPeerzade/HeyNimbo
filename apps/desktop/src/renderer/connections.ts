@@ -35,7 +35,7 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   const saveEndpoint = (baseURL: string): void => { void change({ baseURL, models: { ...config.models, compatible: { model: '' } } }) }
   const currentModel = state?.answerModel ?? selectedModel(config).model
   const vision = state?.answerVision ?? selectedModel(config).vision
-  const intro = element('p', 'settings-intro', 'One model for explanations, drawings and 3D. Choose how much it thinks before answering.'); fields.append(intro)
+  const intro = element('p', 'settings-intro', 'One model explains, draws, builds 3D and does tasks. Choose how much it thinks before answering.'); fields.append(intro)
   const answer = element('section', 'connection-section settings-group'); answer.id = 'connection-answer'
   const sectionTitle = element('h2', 'section-title', 'Answer preferences'); fields.append(sectionTitle)
   const providerRow = element('label', 'row'), providerSelect = element('select')
