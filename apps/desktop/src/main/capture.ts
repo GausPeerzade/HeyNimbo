@@ -10,7 +10,9 @@ import {
   type ScreenCaptures,
 } from '@heynimbo/native'
 
-/** Asks for Screen Recording once; capture then fails cleanly without it. */
+/** Asks for Screen Recording only when the owner uses it, never at launch: right after a new build
+ *  starts, macOS briefly reports no access while it re-checks the app, and asking then shows a
+ *  prompt for a grant the owner already gave. */
 export function ensureScreenCaptureAccess(): boolean {
   return hasScreenCaptureAccess() || requestScreenCaptureAccess()
 }
@@ -24,6 +26,7 @@ export function restingStatus(): NotchStatus {
 /** Captures the display under the cursor. Nothing is written to disk unless
  *  `HEYNIMBO_DEBUG_CAPTURE_DIR` is set in an unpackaged development build. */
 export async function captureCursorDisplay(): Promise<ScreenCaptures | undefined> {
+  if (!ensureScreenCaptureAccess()) return undefined
   try {
     const captures = await captureScreens({ maxLongEdge: 1280 })
     const [display] = captures.displays

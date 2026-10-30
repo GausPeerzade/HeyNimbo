@@ -6,7 +6,7 @@ import { configureHomePreview, runHomePreview } from './home-preview'
 import { devFlag, devSetting } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
 import { AudioWindow, microphoneAccessStatus } from './audio-window'
-import { captureCursorDisplay, ensureScreenCaptureAccess, restingStatus, scheduleExclusionSelfTest } from './capture'
+import { captureCursorDisplay, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
 import { Connections } from './connections'
 import { openSetupWindow } from './setup-window'
@@ -201,7 +201,6 @@ if (ownsInstance) app.whenReady().then(async () => {
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {
     monitor = started.monitor
-    ensureScreenCaptureAccess()
     sendNotchStatus(notch, restingStatus())
   } else if (started.reason === 'inputMonitoring') {
     sendNotchStatus(notch, { kind: 'needsPermission', permission: 'inputMonitoring' })
