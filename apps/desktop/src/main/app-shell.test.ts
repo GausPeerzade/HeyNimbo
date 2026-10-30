@@ -88,6 +88,15 @@ it('brings Home forward once per wait when a background task needs the owner, an
   notice('running'); notice('waiting_user')
   expect(open).toHaveBeenCalledTimes(2)
 })
+it('Delete all withdraws the current answer and every undecided task handoff before purging', async () => {
+  const { shell, event, actions } = fixture()
+  const order: string[] = []
+  actions.stop.mockImplementation(() => { order.push('stop') })
+  Object.assign(shell, { agent: { revokeAuthority: () => order.push('revoke'), purge: vi.fn(async () => { order.push('purge') }), dispose() {} } })
+  mocks.confirm.mockResolvedValue({ response: 1 })
+  await mocks.handler?.(event, { kind: 'deleteAll' })
+  expect(order).toEqual(['stop', 'revoke', 'purge'])
+})
 async function seedAgentHistory() {
   const paths = agentPaths(mocks.dir), store = new SqliteAgentStore(paths.db), artifacts = new FileArtifactStore(paths.artifacts)
   for (const [id, created] of [['old', Date.now() - 8 * 86_400_000], ['recent', Date.now()]] as const) {

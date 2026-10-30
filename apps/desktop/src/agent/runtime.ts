@@ -544,6 +544,7 @@ export function createAgentRuntime(deps: RuntimeDeps): AgentRuntime {
           }
           return count < events.length ? { events: events.slice(0, count), more: true } : { events, ...(events.length === command.limit ? { more: true } : {}) }
         }
+        case 'run': return { run: summary(find(command.runId).store.getRun(command.runId)!) }
         case 'list': {
           // Goals may be 16,000 characters, so 50 summaries can exceed one host message: stop at the byte budget.
           const runs = [...deps.memoryStore.listRuns(command.limit, command.before), ...deps.store.listRuns(command.limit, command.before)].sort((a, b) => b.updated - a.updated).slice(0, command.limit).map(summary)

@@ -39,6 +39,8 @@ export class HistoryRepository {
       PRAGMA user_version=2;
       COMMIT;
     `)
+    // A handoff still waiting for the owner when the app quit can never start now.
+    this.db.prepare(`UPDATE turns SET scene=json_set(scene,'$.tasks[0].state','failed','$.tasks[0].error',?) WHERE json_extract(scene,'$.tasks[0].state')='starting'`).run('HeyNimbo closed before this task started.')
   }
   create(now = Date.now()): string {
     const id = randomUUID()

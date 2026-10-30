@@ -60,7 +60,8 @@ export class TurnTranscript {
   private taskCard(task: TurnTask): HTMLElement {
     const card = element('aside', `turn-task ${task.state}`)
     const kind = task.mode === 'local' ? 'Files task' : 'Web task'
-    const state = task.state === 'starting' ? (task.mode === 'local' ? 'waiting for a folder' : 'starting') : task.state === 'started' ? 'running in the background' : `did not start · ${task.error ?? 'unknown reason'}`
+    // A record of the handoff; live status belongs to the task itself (View task).
+    const state = task.state === 'starting' ? (task.mode === 'local' ? 'waiting for a folder' : 'waiting for your OK') : task.state === 'started' ? 'started' : `did not start · ${task.error ?? 'unknown reason'}`
     card.append(element('p', 'turn-task-title', `${kind} · ${state}`), element('p', 'turn-task-goal', safeAgentLabel(task.goal)))
     if (task.runId && this.openTask) { const runId = task.runId; card.append(button('View task', () => this.openTask!(runId))) }
     return card

@@ -244,7 +244,10 @@ export class AppShell {
         this.updateTray(); this.actions.settingsChanged(next, previous)
         this.pruneHistory(); this.publish(); return
       }
-      case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) { this.actions.stop(); this.conversations.deleteAll(); await this.agent?.purge(undefined, true) }; return
+      case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) {
+        // Withdraw undecided task handoffs first so none can start after the purge.
+        this.actions.stop(); this.revokeAgentAuthority(); this.conversations.deleteAll(); await this.agent?.purge(undefined, true)
+      }; return
       case 'connection': {
         const command = request.request
         if ((this.preview && command.kind !== 'details') || !this.actions.connectionRequest) return { ok: false, message: 'Connections are disabled in preview.' }

@@ -153,6 +153,11 @@ describe('agent coordinator', () => {
     expect(await h.runtime.handle({ kind: 'list', limit: 10, before: time })).toEqual({ runs: [] })
     await expect(h.runtime.handle({ kind: 'allowMix', runId: first.runId })).rejects.toThrow()
     await expect(h.runtime.handle({ kind: 'events', runId: 'missing', afterSeq: 0, limit: 10 })).rejects.toThrow(/not found/)
+    // A task link resolves one public summary from either partition, never private run state.
+    expect(await h.runtime.handle({ kind: 'run', runId: second.runId })).toEqual({ run: list.runs[0] })
+    expect(await h.runtime.handle({ kind: 'run', runId: first.runId })).toEqual({ run: list.runs[1] })
+    expect(JSON.stringify(await h.runtime.handle({ kind: 'run', runId: first.runId }))).not.toMatch(/requestId|grants|nextSeq/)
+    await expect(h.runtime.handle({ kind: 'run', runId: 'missing' })).rejects.toThrow(/not found/)
   })
 
   it('tools can read their saved artifact but cannot delete it through their capability facade', async () => {

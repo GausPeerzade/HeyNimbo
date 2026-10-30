@@ -105,6 +105,7 @@ export class AgentSupervisor {
     if (this.disposed) return Promise.reject(new Error(STOPPED))
     if (this.stopping && command.kind !== 'cancelAll') return Promise.reject(new Error('Agent host is stopping.'))
     if (command.kind === 'list' && this.state === 'idle' && !existsSync(agentPaths(this.deps.dataDir).db)) return Promise.resolve({ runs: [] })
+    if (command.kind === 'run' && this.state === 'idle' && !existsSync(agentPaths(this.deps.dataDir).db)) return Promise.reject(new Error('Run not found.'))
     if (this.pending.size >= 256) return Promise.reject(new Error('Too many agent requests. Try again.'))
     if ((command.kind === 'start' || command.kind === 'continue') && this.bindings.size >= 256) return Promise.reject(new Error('Too many agent requests. Try again.'))
     return new Promise((resolve, reject) => {

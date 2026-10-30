@@ -61,8 +61,12 @@ export class ConversationController {
     try { this.active.repository.finish(id, state, error) }
     finally { this.active = undefined; this.changed() }
   }
-  /** Task outcomes can arrive after the turn finished, so this does not require the active turn. */
-  setTasks(turnId: string, tasks: TurnTask[]): void { this.repository.setTasks(turnId, tasks); this.changed() }
+  /** Task outcomes can arrive after the turn finished and after history settings changed, so the
+   *  writer binds the repository that owns the turn now. A deleted turn makes it a no-op. */
+  taskRecorder(turnId: string): (tasks: TurnTask[]) => void {
+    const repository = this.active?.id === turnId ? this.active.repository : this.repository
+    return tasks => { repository.setTasks(turnId, tasks); this.changed() }
+  }
   reset(): void { this.current = null; this.changed() }
   search(query: string) { return this.repository.search(query) }
   rename(id: string, title: string): void { this.repository.rename(id, title); this.changed() }

@@ -655,6 +655,8 @@ it('keeps idle list and stop allocation-free and starts exactly one host for the
   const { supervisor, children, pushes } = setup()
   expect(supervisor.state).toBe('idle')
   await expect(supervisor.request({ kind: 'list', limit: 10 })).resolves.toEqual({ runs: [] })
+  // A task link with no agent data cannot name a real task; answering it must not spawn a host.
+  await expect(supervisor.request({ kind: 'run', runId: 'missing' })).rejects.toThrow('Run not found.')
   await supervisor.stopAll()
   expect(children).toHaveLength(0)
   const result = supervisor.request(start)

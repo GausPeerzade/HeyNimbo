@@ -81,6 +81,8 @@ export type AgentRequest =
   | { kind: 'list'; before?: number; limit: number }
   | { kind: 'events'; runId: string; afterSeq: number; limit: number }
   | { kind: 'artifact'; runId: string; artifactId: string }
+  /** One task's public summary, for links to tasks outside the loaded list page. */
+  | { kind: 'run'; runId: string }
   /** Main shows a native folder picker and returns an opaque grant ID. */
   | { kind: 'pickFolder' }
 
@@ -94,6 +96,7 @@ export interface AgentResults {
   /** Only text media types are previewable; `text` is a prefix that fits one host message. */
   artifact: { name: string; mediaType: string; bytes: number; text: string; truncated?: boolean }
   pickFolder: { grant: { id: string; label: string } } | { cancelled: true }
+  run: { run: RunSummary }
   approve: { ok: true }; answer: { ok: true }; allowMix: { ok: true }; cancel: { ok: true }; continue: { ok: true }; delete: { ok: true }; stopAll: { ok: true }
 }
 
@@ -132,6 +135,7 @@ export type HostCommand =
   | { kind: 'list'; before?: number; limit: number }
   | { kind: 'events'; runId: string; afterSeq: number; limit: number }
   | { kind: 'artifact'; runId: string; artifactId: string }
+  | { kind: 'run'; runId: string }
 
 /** Web search backend. Secrets (e.g. a Brave key) are fetched through `credential.request`, never sent here. */
 export type SearchConfig = { provider: 'searxng'; baseURL: string } | { provider: 'brave' }
@@ -223,7 +227,7 @@ export function parseAgentRequest(value: unknown): AgentRequest {
     case 'answer':
       only(input, ['kind', 'runId', 'questionId', 'text'], 'answer')
       return { kind: 'answer', runId: id(input.runId, 'run ID'), questionId: id(input.questionId, 'question ID'), text: text(input.text, LIMITS.answer, 'answer') }
-    case 'allowMix': case 'cancel': case 'continue': case 'delete':
+    case 'allowMix': case 'cancel': case 'continue': case 'delete': case 'run':
       only(input, ['kind', 'runId'], k)
       return { kind: k, runId: id(input.runId, 'run ID') }
     case 'stopAll': case 'pickFolder':

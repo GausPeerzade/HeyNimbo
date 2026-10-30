@@ -15,17 +15,18 @@ import { pageURL } from './page-security'
 import { TalkSession } from './voice/talk'
 import { DEFAULT_BUDGET, type HostCommand, type MainToHost } from '../shared/agent-protocol'
 
-const electron = vi.hoisted(() => ({ dir: '', fork: vi.fn(), handlers: new Map<string, (event: IpcMainInvokeEvent, value: unknown) => unknown>() }))
+const electron = vi.hoisted(() => ({ dir: '', fork: vi.fn(), decide: vi.fn(async () => ({ response: 1 })), handlers: new Map<string, (event: IpcMainInvokeEvent, value: unknown) => unknown>() }))
 vi.mock('./audio-window', () => ({ ensureMicrophoneAccess: vi.fn(), microphoneAccessStatus: () => 'granted' }))
 vi.mock('electron', () => ({
-  app: { getPath: () => electron.dir, getVersion: () => 'test', isPackaged: false, on() {} },
+  app: { getPath: () => electron.dir, getVersion: () => 'test', isPackaged: false, on() {}, focus() {} },
   utilityProcess: { fork: electron.fork },
   ipcMain: { handle: (channel: string, handler: (event: IpcMainInvokeEvent, value: unknown) => unknown) => electron.handlers.set(channel, handler), removeHandler: (channel: string) => electron.handlers.delete(channel) },
   globalShortcut: { register: () => true, unregister() {} },
   Menu: { buildFromTemplate: () => ({}), setApplicationMenu() {} },
   nativeImage: { createFromPath: () => ({ setTemplateImage() {} }) },
   Tray: class { setToolTip() {} setContextMenu() {} destroy() {} },
-  nativeTheme: { shouldUseDarkColors: false }, dialog: {}, shell: {},
+  // The owner's Start web task decision is native UI; these gates script an approval.
+  nativeTheme: { shouldUseDarkColors: false }, dialog: { showMessageBox: electron.decide }, shell: {},
 }))
 
 const directories: string[] = []
@@ -266,7 +267,7 @@ it('wires endpoint-bound credentials through the real AppShell supervisor and re
     agentConnection: () => ({ provider: 'compatible', model: 'fixture', baseURL, vision: false, credential: () => ++loads === 1 ? new Promise(resolve => { release = resolve }) : Promise.resolve('NEW_ENDPOINT_KEY') }),
   })
   const frame = { url: pageURL('home') }, contents = { send() {}, mainFrame: frame, getURL: () => frame.url }
-  shell.home = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
+  shell.home = { webContents: contents, isDestroyed: () => false, isVisible: () => true } as unknown as BrowserWindow
   const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const request = (value: unknown) => electron.handlers.get('heynimbo:agent-request')!(event, value)
   const start = async (requestId: string) => {
@@ -307,7 +308,7 @@ it('constructs a production AppShell and accepts Explain without spawning a host
     permissions: () => ({ microphone: '', screen: '', input: '' }),
   })
   const frame = { url: pageURL('home') }, contents = { send() {}, mainFrame: frame, getURL: () => frame.url }
-  shell.home = { webContents: contents, isDestroyed: () => false } as unknown as BrowserWindow
+  shell.home = { webContents: contents, isDestroyed: () => false, isVisible: () => true } as unknown as BrowserWindow
   talk = new TalkSession({
     conversations: shell.conversations,
     answer: () => ({ provider: 'compatible', model: 'fixture', baseURL: 'https://provider.invalid/v1', vision: false, credential: async () => 'synthetic' }),

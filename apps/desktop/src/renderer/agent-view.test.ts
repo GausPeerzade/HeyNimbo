@@ -166,13 +166,58 @@ it('has one composer: every submission is an ask, even from the Tasks view, and 
   expect(nodes.get('transcript')!.hidden).toBe(false); expect(nodes.get('agent-panel')!.hidden).toBe(true)
   expect(requests.some(value => value.kind === 'start' || value.kind === 'pickFolder')).toBe(false)
 })
+it('keeps each conversation draft with its conversation while Tasks is open and sends exactly the visible question', async () => {
+  const { nodes, explainRequests, publish } = await home(api)
+  const q = nodes.get('question')!, other = (id: string) => ({ ...fixtureSnapshot(), currentId: id })
+  publish(other('a')); q.value = 'A draft'; q.oninput!()
+  nodes.get('tasks')!.onclick!(); await settle()
+  publish(other('b')); expect(q.value).toBe('')
+  q.value = 'B draft'; q.oninput!()
+  nodes.get('tasks')!.onclick!(); await settle()
+  expect(q.value).toBe('B draft')
+  publish(other('a')); expect(q.value).toBe('A draft')
+  publish(other('b')); expect(q.value).toBe('B draft')
+  nodes.get('tasks')!.onclick!(); await settle()
+  q.value = 'Visible question'; q.oninput!(); nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
+  expect(explainRequests.filter(value => (value as { kind: string }).kind === 'ask')).toEqual([{ kind: 'ask', question: 'Visible question' }])
+})
+it('clears only the sent question when the conversation changes before its ask is accepted', async () => {
+  const { nodes, publish } = await home(api)
+  const q = nodes.get('question')!, other = (id: string) => ({ ...fixtureSnapshot(), currentId: id })
+  let accept!: (value: unknown) => void
+  ;(window as unknown as { heynimboApp: { request: (value: unknown) => Promise<unknown> } }).heynimboApp.request = async () => new Promise(resolve => { accept = resolve })
+  publish(other('b')); q.value = 'B draft'; q.oninput!()
+  publish(other('a')); q.value = 'Sent from A'; q.oninput!()
+  nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
+  publish(other('b')); expect(q.value).toBe('B draft')
+  accept({ accepted: true }); await settle()
+  expect(q.value).toBe('B draft')
+  publish(other('a')); expect(q.value).toBe('')
+})
+it('opens a retained task outside the loaded page by ID and never answers the link with an unrelated task', async () => {
+  const newest = Array.from({ length: 50 }, (_, i) => ({ ...run(`new_${i}`, 100 - i), status: 'succeeded' as const }))
+  const target = { ...run('older_target', 1), status: 'succeeded' as const }
+  respond = async value => value.kind === 'list' ? { runs: newest, more: true } : value.kind === 'run' ? (value.runId === target.id ? { run: target } : Promise.reject(new Error('Run not found.'))) : { events: [] }
+  const view = setup(); view.open(target.id); await settle(); await settle()
+  const current = () => panel.querySelectorAll('button').filter(node => node.attributes['aria-current'] === 'true').map(node => node.dataset.runId)
+  expect(current()).toEqual(['older_target'])
+  expect(requests).toContainEqual({ kind: 'run', runId: 'older_target' })
+  expect(requests).toContainEqual({ kind: 'events', runId: 'older_target', afterSeq: 0, limit: 200 })
+  expect(requests.some(value => value.kind === 'events' && value.runId !== 'older_target')).toBe(false)
+  view.open('deleted_run'); await settle(); await settle()
+  expect(panel.querySelectorAll('p').find(node => node.className === 'agent-status')?.textContent).toBe('This task is no longer available.')
+  expect(current()).toEqual(['older_target'])
+  view.dispose()
+})
 it('opens the exact task from a turn card and from a main navigation, and hides Tasks when the agent preload is absent', async () => {
-  respond = async value => value.kind === 'list' ? { runs: [run('first', 200), run('run_7', 100)] } : value.kind === 'events' ? { events: [] } : { ok: true }
+  const runs = [run('first', 200), run('run_7', 100)]
+  respond = async value => value.kind === 'list' ? { runs } : value.kind === 'run' ? { run: runs.find(item => item.id === value.runId) } : value.kind === 'events' ? { events: [] } : { ok: true }
   const { nodes, publish, navigate } = await home(api)
   const turn = { id: 't', conversationId: 'c', created: 1, mode: 'text' as const, question: 'Research', answer: 'Started.', state: 'complete' as const, error: null, screenContextUsed: false, scene: { version: 1 as const, beats: [], tasks: [{ goal: 'Find prices', mode: 'web' as const, state: 'started' as const, runId: 'run_7' }] } }
   publish(fixtureSnapshot([turn])); await settle()
   const card = nodes.get('transcript')!.querySelectorAll('aside')[0]!
-  expect(card.querySelectorAll('p').map(node => node.textContent)).toEqual(['Web task · running in the background', 'Find prices'])
+  // The card records the handoff; live status belongs to the task list, so it never claims the task is still running.
+  expect(card.querySelectorAll('p').map(node => node.textContent)).toEqual(['Web task · started', 'Find prices'])
   card.querySelectorAll('button').find(node => node.textContent === 'View task')!.onclick!(); await settle()
   expect(nodes.get('transcript')!.hidden).toBe(true)
   expect(nodes.get('agent-panel')!.querySelectorAll('button').find(node => node.dataset.runId === 'run_7')!.attributes['aria-current']).toBe('true')

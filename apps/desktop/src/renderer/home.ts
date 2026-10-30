@@ -16,6 +16,8 @@ const renameForm = document.getElementById('rename-form') as HTMLFormElement
 const rename = document.getElementById('rename') as HTMLInputElement
 let snapshot: AppSnapshot | undefined
 let emptyKey = '', renderedId: string | null = null, renameId = ''
+/** The conversation the composer's text belongs to; kept in step on every snapshot, whatever view is showing. */
+let composerId: string | null = null
 const drafts = new Map<string, string>(), scrollPositions = new Map<string, number>()
 const time = (date: number): string => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
 const agentApi = (window as unknown as { heynimboApp: { agent?: AgentApi } }).heynimboApp.agent
@@ -65,8 +67,7 @@ function renderTranscript(s: AppSnapshot): void {
   const oldScroll = transcript.scrollTop
   const changedConversation = renderedId !== s.currentId
   if (changedConversation) {
-    if (renderedId) { drafts.set(renderedId, question.value); scrollPositions.set(renderedId, oldScroll) }
-    question.value = drafts.get(s.currentId ?? '') ?? ''
+    if (renderedId) scrollPositions.set(renderedId, oldScroll)
     renderedId = s.currentId
     turnTranscript.clear(); transcript.replaceChildren(); emptyKey = ''
   }
@@ -90,8 +91,15 @@ function renderTranscript(s: AppSnapshot): void {
   }
   requestAnimationFrame(() => { transcript.scrollTop = changedConversation ? scrollPositions.get(s.currentId ?? '') ?? 0 : nearBottom ? transcript.scrollHeight : oldScroll })
 }
+function syncComposer(s: AppSnapshot): void {
+  if (composerId === s.currentId) return
+  if (composerId) drafts.set(composerId, question.value)
+  question.value = drafts.get(s.currentId ?? '') ?? ''
+  composerId = s.currentId
+}
 function render(s: AppSnapshot): void {
   snapshot = s
+  syncComposer(s)
   title.textContent = s.conversations.find(c => c.id === s.currentId)?.title ?? 'New conversation'
   renderSidebar(); if (!agentView?.active) renderTranscript(s)
   document.getElementById('stop')!.hidden = !s.busy
@@ -117,14 +125,15 @@ const conversationSearch = new ConversationSearch(
 )
 function clearSearch(): void { search.value = ''; conversationSearch.changed() }
 search.oninput = () => conversationSearch.changed()
-question.oninput = () => { drafts.set(snapshot?.currentId ?? '', question.value) }
+question.oninput = () => { drafts.set(composerId ?? '', question.value) }
 async function ask(): Promise<void> {
-  if (snapshot?.busy || !question.value.trim()) return
+  // Send exactly what is visible, for the conversation it belongs to.
+  const value = question.value, conversation = composerId
+  if (snapshot?.busy || !value.trim()) return
   // An answer appears in the conversation, so asking from the Tasks view returns to it.
   if (agentView?.active) showTasks(false)
-  const value = question.value
   const result = await request({ kind: 'ask', question: value })
-  if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { question.value = ''; drafts.delete(snapshot?.currentId ?? '') }
+  if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { if (question.value === value) question.value = ''; drafts.delete(conversation ?? '') }
 }
 document.getElementById('composer')!.onsubmit = event => { event.preventDefault(); void ask() }
 question.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void ask() } }

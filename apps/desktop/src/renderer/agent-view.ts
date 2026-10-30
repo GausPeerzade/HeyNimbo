@@ -43,6 +43,9 @@ export class AgentView {
   private selectedRun?: RunSummary
   private generation = 0
   private pendingSelect = ''
+  /** A linked task being resolved; the list must not auto-select another task meanwhile. */
+  private target = ''
+  private links = 0
   private readonly runs = new Map<string, RunSummary>()
   private readonly rows = new Map<string, { node: HTMLButtonElement; goal: HTMLElement; status: HTMLElement }>()
   private readonly list = element('div', 'agent-tasks')
@@ -80,12 +83,23 @@ export class AgentView {
     this.setActive(false)
   }
   get active(): boolean { return this.enabled }
-  /** Shows the task list, optionally selecting a task an answer started. */
+  /** Shows the task list, optionally selecting a task an answer started. A link may point
+   *  outside the loaded page, so it is resolved by ID and never answered with another task. */
   open(runId?: string): void {
+    if (runId && validId(runId)) this.target = runId
     this.setActive(true)
     if (!runId || !validId(runId)) return
-    if (this.runs.has(runId)) this.select(runId)
-    else this.pendingSelect = runId
+    if (this.runs.has(runId)) { this.target = ''; this.select(runId); return }
+    const link = ++this.links
+    void this.api.request({ kind: 'run', runId }).then(value => {
+      if (this.disposed || link !== this.links) return
+      const [run] = runsResult({ runs: [record(value).run] })
+      if (run?.id !== runId) throw new Error('Invalid task')
+      this.target = ''; this.upsert([run]); this.select(runId); this.schedule()
+    }).catch(() => {
+      if (this.disposed || link !== this.links) return
+      this.target = ''; this.status.textContent = 'This task is no longer available.'
+    })
   }
   setActive(active: boolean): void {
     this.enabled = active; this.elements.panel.hidden = this.elements.stopAll.hidden = !active
@@ -129,7 +143,7 @@ export class AgentView {
       if (this.disposed) return
       this.upsert(runs, this.before !== undefined); this.before = runs.length ? Math.min(...runs.map(run => run.updated)) : this.before
       const first = runs.find(run => this.runs.has(run.id))
-      if (!this.selected && first) this.select(first.id)
+      if (!this.selected && !this.target && first) this.select(first.id)
       this.older.hidden = !runs.length || !morePages(page, runs.length, 50); this.schedule()
     } catch { this.status.textContent = 'Could not load tasks. Try again.' }
     finally { this.listing = false; this.older.disabled = false }

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HistoryRepository } from './history'
 
@@ -52,6 +55,22 @@ describe('HistoryRepository', () => {
     expect(r.search('oldest')).toEqual([])
     expect(r.db.prepare('SELECT count(*) AS n FROM turns').get()).toMatchObject({ n: 0 })
   })
+})
+it('marks task handoffs left undecided by a previous session as not started, without touching settled tasks', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-history-tasks-')), path = join(dir, 'history.sqlite')
+  try {
+    const r = new HistoryRepository(path), c = r.create()
+    const pending = r.begin(c, 'Research', 'text'), settled = r.begin(c, 'Read', 'text')
+    r.update(pending, 'Started.', { version: 1, beats: [], tasks: [{ goal: 'Research', mode: 'web', state: 'starting' }] }, false)
+    r.update(settled, 'Started.', { version: 1, beats: [], tasks: [{ goal: 'Read', mode: 'local', state: 'started', runId: 'run_1' }] }, false)
+    r.close()
+    const reopened = new HistoryRepository(path)
+    expect(reopened.turns(c).map(turn => turn.scene.tasks)).toEqual([
+      [{ goal: 'Research', mode: 'web', state: 'failed', error: 'HeyNimbo closed before this task started.' }],
+      [{ goal: 'Read', mode: 'local', state: 'started', runId: 'run_1' }],
+    ])
+    reopened.close()
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 it('reopens a private WAL file without rebuilding its schema or losing content', async () => {
   const { mkdtempSync, rmSync, statSync } = await import('node:fs')

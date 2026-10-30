@@ -29,7 +29,7 @@ export interface TalkDeps {
   /** The display to draw on when no screenshot exists (Screen Recording off or capture failed). */
   canvas?: () => CaptureSpace | undefined
   /** Starts a model-proposed background task in trusted code; absent when tasks are unavailable. */
-  startTask?: (task: TaskProposal & { conversationId?: string }) => Promise<{ runId: string } | { cancelled: true }>
+  startTask?: (task: TaskProposal & { conversationId?: string; signal: AbortSignal }) => Promise<{ runId: string } | { cancelled: true }>
   /** Whether the current connection can run tasks (default: yes when `startTask` exists). */
   tasksAvailable?: () => boolean
   drawing: {
@@ -69,6 +69,8 @@ interface Turn {
 export class TalkSession {
   private turn: Turn | undefined
   private nextId = 0
+  /** Proposals still waiting for the owner's decision; they outlive their answer but not Stop or the next question. */
+  private readonly proposals = new Set<AbortController>()
   private errorTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: TalkDeps) {}
@@ -291,6 +293,8 @@ export class TalkSession {
 
   /** Persistence must never prevent microphone, network or speech cleanup. */
   private interrupt(state: 'interrupted' | 'error' = 'interrupted', error: string | null = null): void {
+    for (const proposal of this.proposals) proposal.abort()
+    this.proposals.clear()
     const turn = this.turn
     if (!turn) return
     this.turn = undefined
@@ -339,13 +343,17 @@ export class TalkSession {
     const task: TurnTask = { goal: proposal.goal, mode: proposal.mode, state: 'starting' }
     turn.scene.tasks = [task]
     turn.dirty = true
+    // Bound now, while this turn owns its repository: the outcome may arrive after history settings change.
+    const record = turn.recordId ? this.deps.conversations.taskRecorder(turn.recordId) : undefined
+    const withdraw = new AbortController()
+    this.proposals.add(withdraw)
     const settle = (outcome: Partial<TurnTask>): void => {
+      this.proposals.delete(withdraw)
       Object.assign(task, outcome)
-      if (!turn.recordId) return
-      try { this.deps.conversations.setTasks(turn.recordId, [task]) } catch { console.warn('[talk] Could not save the task outcome.') }
+      try { record?.([task]) } catch { console.warn('[talk] Could not save the task outcome.') }
     }
-    this.deps.startTask({ ...proposal, ...(turn.conversationId ? { conversationId: turn.conversationId } : {}) }).then(
-      result => settle('runId' in result ? { state: 'started', runId: result.runId } : { state: 'failed', error: 'No folder was chosen.' }),
+    this.deps.startTask({ ...proposal, ...(turn.conversationId ? { conversationId: turn.conversationId } : {}), signal: withdraw.signal }).then(
+      result => settle('runId' in result ? { state: 'started', runId: result.runId } : { state: 'failed', error: proposal.mode === 'local' ? 'No folder was chosen.' : 'You cancelled this task.' }),
       (error: unknown) => settle({ state: 'failed', error: error instanceof Error ? error.message.slice(0, 200) : 'The task could not start.' }),
     )
   }

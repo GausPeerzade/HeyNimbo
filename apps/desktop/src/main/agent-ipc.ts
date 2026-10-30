@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { dialog, globalShortcut, ipcMain, type BrowserWindow } from 'electron'
+import { app, dialog, globalShortcut, ipcMain, type BrowserWindow } from 'electron'
 import type { AppSettings } from '../shared/app'
 import { AgentChannels, DEFAULT_BUDGET, isTerminal, parseAgentRequest, persistenceFor, type AgentPush, type AgentRequest, type FolderGrant, type RunMode, type RunSummary, type AgentEvent } from '../shared/agent-protocol'
 import type { AgentSupervisor } from './agent-supervisor'
@@ -34,13 +34,16 @@ interface AgentIpcDeps {
   connections: Pick<Connections, 'answer'>
   supervisor: Pick<AgentSupervisor, 'request' | 'stopAll'>
 }
-/** A task the Explain answer proposed. Only main turns it into authority. */
-export interface TaskStart { goal: string; mode: RunMode; conversationId?: string }
+/** A task an answer proposed. Only main turns it into authority, after the owner decides. */
+export interface TaskStart {
+  goal: string; mode: RunMode; conversationId?: string
+  /** Aborted when the proposal is withdrawn (Stop, a new question, deletion) before it starts. */
+  signal?: AbortSignal
+}
 /** Main-owned emergency stop avoids every Control-based Explain gesture. */
 export const AGENT_STOP_SHORTCUT = 'Command+Option+Shift+.'
 export function registerAgentIpc(deps: AgentIpcDeps) {
   let disposed = false
-  let picking = false
   let authority = 0
   const approvals = new Map<string, Extract<AgentEvent['payload'], { type: 'approval.requested' }>>()
   const runs = new Map<string, RunSummary>()
@@ -76,34 +79,53 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
     const { provider, model, effort, baseURL } = deps.connections.answer()
     return { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }
   }
-  /** The owner grants files by choosing a folder in a native picker that names the task. */
-  const pickFolder = async (goal: string): Promise<FolderGrant | undefined> => {
-    if (picking) throw new Error('Finish choosing the folder for the other task first.')
-    picking = true
+  /** Proposals usually come from a spoken question with Home hidden or closed. A sheet on a hidden
+   *  window would be invisible, so the decision is then app-modal and brought forward. */
+  const owner = (): BrowserWindow | undefined => {
+    const home = deps.home()
+    if (home && !home.isDestroyed() && home.isVisible()) return home
+    app.focus({ steal: true })
+    return undefined
+  }
+  /** The owner's decision before any host, model or network work: Start/Cancel for web (its goal can
+   *  carry screen or conversation details out), the task-naming folder picker for files. One native
+   *  decision at a time, shared with approvals; withdrawal and Stop-all close it. */
+  const decide = async (task: TaskStart): Promise<FolderGrant | boolean> => {
+    if (confirmation) throw new Error('Finish the open confirmation first.')
+    const controller = new AbortController(), withdraw = (): void => controller.abort()
+    task.signal?.addEventListener('abort', withdraw, { once: true })
+    confirmation = { runId: '', controller }
     try {
-      const home = deps.home()
-      const options: Electron.OpenDialogOptions = { title: 'Choose a folder for this task', message: `HeyNimbo can read files in this folder for: ${safe(goal)}`, buttonLabel: 'Allow access', properties: ['openDirectory'] }
-      const result = home && !home.isDestroyed() ? await dialog.showOpenDialog(home, options) : await dialog.showOpenDialog(options)
-      if (result.canceled || !result.filePaths[0]) return undefined
-      let grant: FolderGrant
+      const parent = owner()
+      if (task.mode === 'web') {
+        const options: Electron.MessageBoxOptions = { type: 'question', message: 'Start a web task?', detail: `Task: ${safe(task.goal)}\n\nHeyNimbo will search and read websites for this task. The task text, including details from your screen or conversation, can be sent to search providers and websites.`, buttons: ['Cancel', 'Start web task'], defaultId: 0, cancelId: 0, signal: controller.signal }
+        let result: Electron.MessageBoxReturnValue
+        try { result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options) }
+        catch { throw new Error(controller.signal.aborted ? 'Task expired.' : 'Could not confirm this task.') }
+        return result.response === 1
+      }
+      const options: Electron.OpenDialogOptions = { title: 'Choose a folder for this task', message: `HeyNimbo can read files in this folder for: ${safe(task.goal)}`, buttonLabel: 'Allow access', properties: ['openDirectory'] }
+      const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+      if (result.canceled || !result.filePaths[0]) return false
       try {
         const root = await realpath(result.filePaths[0])
         const identity = await stat(root, { bigint: true })
         if (!identity.isDirectory()) throw new Error('Not a directory.')
-        grant = { id: randomUUID(), root, label: basename(root) || root, identity: `${identity.dev}:${identity.ino}` }
+        return { id: randomUUID(), root, label: basename(root) || root, identity: `${identity.dev}:${identity.ino}` }
       } catch { throw new Error('Could not grant folder access.') }
-      return grant
-    } finally { picking = false }
+    } finally { confirmation = undefined; task.signal?.removeEventListener('abort', withdraw) }
   }
   const start = async (task: TaskStart): Promise<{ runId: string } | { cancelled: true }> => {
     if (disposed) throw new Error('Not allowed.')
     const generation = authority
     // Same validation as every host start: bounded goal, known mode, opaque IDs.
     parseAgentRequest({ kind: 'start', requestId: 'validation', goal: task.goal, mode: task.mode, ...(task.conversationId ? { conversationId: task.conversationId } : {}) })
-    const grant = task.mode === 'local' ? await pickFolder(task.goal) : undefined
-    // Stop-all, a settings change or quit while the picker was open withdraws the task.
-    if (disposed || authority !== generation) throw new Error('Task expired.')
-    if (task.mode === 'local' && !grant) return { cancelled: true }
+    if (task.signal?.aborted) throw new Error('Task expired.')
+    const decision = await decide(task)
+    // Withdrawal, Stop-all, a settings change or quit during the decision cancels the task.
+    if (disposed || authority !== generation || task.signal?.aborted) throw new Error('Task expired.')
+    if (!decision) return { cancelled: true }
+    const grant = typeof decision === 'object' ? decision : undefined
     const settings = deps.settings()
     const result = await deps.supervisor.request({ kind: 'start', requestId: randomUUID(), goal: task.goal, mode: task.mode, ...(task.conversationId ? { conversationId: task.conversationId } : {}), grants: grant ? [grant] : [], persistence: persistenceFor(settings), budget: { ...DEFAULT_BUDGET }, model: modelSelection(), ...(settings.agent?.search ? { search: settings.agent.search } : {}) })
     const runId = (result as { runId?: unknown } | undefined)?.runId
