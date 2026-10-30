@@ -25,6 +25,7 @@ vi.mock('electron', async () => {
     setVisibleOnAllWorkspaces = vi.fn()
     setBounds = vi.fn()
     isDestroyed = () => false
+    destroy = vi.fn()
     loadFile = () => state.load
     loadURL = () => state.load
     constructor(readonly options: Record<string, unknown>) {
@@ -43,7 +44,7 @@ vi.mock('electron', async () => {
   }
 })
 
-import { createNotchWindow, OverlayManager } from './windows'
+import { createNotchWindow, OverlayManager, positionNotch, setNotchVisibility } from './windows'
 
 beforeEach(() => {
   state.windows.length = 0
@@ -64,6 +65,39 @@ function overlay(): typeof state.windows[number] {
   new OverlayManager().sync()
   return state.windows[0]!
 }
+
+describe('display changes during and after quit', () => {
+  // A display can change (sleep, lid, monitor unplug) after before-quit has
+  // destroyed the windows; Electron then throws "Object has been destroyed".
+  it('ignores notch positioning and visibility for an already destroyed notch', () => {
+    const notch = createNotchWindow() as unknown as { isDestroyed: () => boolean; setBounds: ReturnType<typeof vi.fn>; hide: ReturnType<typeof vi.fn>; showInactive: ReturnType<typeof vi.fn> }
+    notch.setBounds.mockClear() // creation positions it once while alive
+    notch.isDestroyed = () => true
+    notch.setBounds.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    notch.hide.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    expect(() => positionNotch(notch as never)).not.toThrow()
+    expect(() => setNotchVisibility(notch as never, false)).not.toThrow()
+    expect(notch.setBounds).not.toHaveBeenCalled()
+    setNotchVisibility(notch as never, true) // restore module-level visibility for later tests
+  })
+  it('ignores page-load events that arrive after quit destroyed the overlay or notch', () => {
+    const manager = new OverlayManager(); manager.sync()
+    const overlay = state.windows[0]! as unknown as { isDestroyed: () => boolean; setIgnoreMouseEvents: ReturnType<typeof vi.fn>; webContents: { emit(e: string): void } }
+    createNotchWindow()
+    const notch = state.windows[1]! as unknown as { isDestroyed: () => boolean; webContents: { emit(e: string): void; send: ReturnType<typeof vi.fn> } }
+    for (const window of [overlay, notch]) window.isDestroyed = () => true
+    overlay.setIgnoreMouseEvents.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    notch.webContents.send.mockImplementation(() => { throw new TypeError('Object has been destroyed') })
+    expect(() => overlay.webContents.emit('did-finish-load')).not.toThrow()
+    expect(() => notch.webContents.emit('did-finish-load')).not.toThrow()
+  })
+  it('does not recreate overlay windows when displays change after close', () => {
+    const manager = new OverlayManager(); manager.sync()
+    expect(state.windows).toHaveLength(1)
+    manager.close(); manager.sync()
+    expect(state.windows).toHaveLength(1)
+  })
+})
 
 describe('3D lines ahead of their beat', () => {
   it('sends streamed model lines to the display that will draw them, converted to its space', () => {

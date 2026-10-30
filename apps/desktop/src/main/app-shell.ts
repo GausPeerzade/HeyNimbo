@@ -130,7 +130,7 @@ export class AppShell {
       window.on('close', () => { if (!window.isFullScreen()) this.settings.set({ ...this.settings.get(), homeBounds: window.getNormalBounds() }) })
       window.on('closed', () => { this.home = undefined })
       window.once('ready-to-show', () => { if (!this.preview) present(window) })
-      window.webContents.once('did-finish-load', () => { this.publish(); if (turnId) window.webContents.send(AppChannels.navigate, { turnId }) })
+      window.webContents.once('did-finish-load', () => { if (window.isDestroyed()) return; this.publish(); if (turnId) window.webContents.send(AppChannels.navigate, { turnId }) })
       void loadPage(window, 'home')
     } else {
       if (this.home.isMinimized()) this.home.restore()
@@ -145,7 +145,7 @@ export class AppShell {
       this.preferences = window
       window.on('closed', () => { this.preferences = undefined })
       window.once('ready-to-show', () => { if (!this.preview) present(window) })
-      window.webContents.once('did-finish-load', () => { this.publish(); if (category) window.webContents.send(AppChannels.navigate, { category }) })
+      window.webContents.once('did-finish-load', () => { if (window.isDestroyed()) return; this.publish(); if (category) window.webContents.send(AppChannels.navigate, { category }) })
       window.on('focus', () => this.publish())
       void loadPage(window, 'settings')
     } else {
@@ -166,7 +166,7 @@ export class AppShell {
       ] },
       { label: 'File', submenu: [{ label: 'New conversation', accelerator: 'CmdOrCtrl+N', click: () => this.newConversation() }, { label: 'Find conversations', accelerator: 'CmdOrCtrl+F', click: () => {
         const window = this.openHome()
-        const find = (): void => window.webContents.send(AppChannels.navigate, { focusSearch: true })
+        const find = (): void => { if (!window.isDestroyed()) window.webContents.send(AppChannels.navigate, { focusSearch: true }) }
         if (window.webContents.isLoading()) window.webContents.once('did-finish-load', find); else find()
       } }, { role: 'close' }] },
       { role: 'editMenu' }, { role: 'windowMenu' },

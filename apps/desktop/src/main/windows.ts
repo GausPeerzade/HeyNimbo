@@ -83,6 +83,8 @@ function floatAboveEverything(window: BrowserWindow): void {
 
 /** Centers the notch at the top of the primary display; call on display changes. */
 export function positionNotch(window: BrowserWindow): void {
+  // Display events can arrive after quit has destroyed the notch.
+  if (window.isDestroyed()) return
   const { bounds } = screen.getPrimaryDisplay()
   window.setBounds({
     ...NOTCH_SIZE,
@@ -112,13 +114,14 @@ export function createNotchWindow(): BrowserWindow {
   window.setIgnoreMouseEvents(true, { forward: true })
   positionNotch(window)
   floatAboveEverything(window)
-  window.webContents.on('did-finish-load', () => window.webContents.send(Channels.notchStatus, notchStatus))
+  window.webContents.on('did-finish-load', () => { if (!window.isDestroyed()) window.webContents.send(Channels.notchStatus, notchStatus) })
   showPassivePage(window, 'notch')
   return window
 }
 
 export function setNotchVisibility(window: BrowserWindow, visible: boolean): void {
   notchVisible = visible
+  if (window.isDestroyed()) return
   if (!visible) window.hide()
   else if (!window.webContents.isLoading()) window.showInactive()
 }
@@ -157,6 +160,8 @@ export class OverlayManager {
   private readonly windows = new Map<number, BrowserWindow>()
   /** The ring being shown, replayed if its display's page (re)loads. */
   private shown: { displayId: number; command: OverlayCommand } | undefined
+  /** Set at quit; display events after that must not recreate windows. */
+  private closed = false
   private fadeTimer: NodeJS.Timeout | undefined
   private buddyDisplayId: number | undefined
   /** True from a beat until its overlay reports the buddy back at the cursor;
@@ -199,6 +204,7 @@ export class OverlayManager {
 
   /** Reconciles windows with the current displays; call on any display change. */
   sync(): void {
+    if (this.closed) return
     const displays = screen.getAllDisplays()
     const live = new Set(displays.map((display) => display.id))
     for (const [id, window] of this.windows) {
@@ -216,6 +222,8 @@ export class OverlayManager {
       }
       const window = createOverlayWindow(display)
       window.webContents.on('did-finish-load', () => {
+        // A load can complete after quit or display removal destroyed the window.
+        if (window.isDestroyed() || this.closed) return
         this.interactiveRegions.delete(display.id)
         window.setIgnoreMouseEvents(true, { forward: true })
         if (devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) this.send(display.id, { kind: 'debug', frameTrace: true })
@@ -326,6 +334,7 @@ export class OverlayManager {
   }
 
   close(): void {
+    this.closed = true
     this.stopFollowing(); clearTimeout(this.fadeTimer)
     for (const window of this.windows.values()) window.destroy()
     this.windows.clear()

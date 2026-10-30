@@ -167,7 +167,9 @@ if (ownsInstance) app.whenReady().then(async () => {
   if (!app.getLoginItemSettings().wasOpenedAtLogin) shell.openHome()
   setNotchVisibility(notch, shell.settings.get().showNotch)
   audio.send({ kind: 'mute', muted: shell.settings.get().muted })
-  app.on('before-quit', () => { monitor?.stop(); talk?.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
+  app.on('before-quit', () => {
+    screen.removeListener('display-added', resync); screen.removeListener('display-removed', resync); screen.removeListener('display-metrics-changed', resync)
+    monitor?.stop(); talk?.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
   overlays.onStrokeStarted = (durationMs) => audio.send({ kind: 'scribble', durationMs })
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {
