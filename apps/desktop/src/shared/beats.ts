@@ -111,12 +111,14 @@ export const CARD_MIN_OVERLAY_WIDTH = 320
 const NUMBER = '-?\\d+(?:\\.\\d+)?'
 
 function parseCardMark(line: string, image: ImageSize): Mark | undefined {
-  const textOK = (text: string): boolean => text.trim().length > 0 && Array.from(text).length <= 60
-  const card = new RegExp(`^@(card|model) (${CARD_ID_PATTERN}) (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"(?: (grid|dots|plain|turntable|turntable=true|turntable=false))?$`).exec(line)
+  const textOK = (text: string, max = 60): boolean => text.trim().length > 0 && Array.from(text).length <= max
+  // Trailing options are optional words: an unknown one ("lines") is ignored rather than losing the card.
+  const card = new RegExp(`^@(card|model) (${CARD_ID_PATTERN}) (${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER}) "([^"\\n]*)"((?: \\S+)*)$`).exec(line)
   if (card) {
-    const [, kind, id, ax, ay, aw, ah, title, option] = card
-    // An option meant for the other kind is ignored rather than losing the card.
-    const board = option?.startsWith('turntable') ? undefined : option
+    const [, kind, id, ax, ay, aw, ah, title, rest] = card
+    const words = rest!.trim().split(' ')
+    const option = words.find(word => /^turntable(=true)?$/.test(word))
+    const board = words.find(word => ['grid', 'dots', 'plain'].includes(word))
     const [x, y, w, h] = [ax, ay, aw, ah].map(Number) as [number, number, number, number]
     if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0 || !textOK(title!)) return undefined
     const width = clamp(w, Math.min(240, image.width), image.width)
@@ -125,10 +127,14 @@ function parseCardMark(line: string, image: ImageSize): Mark | undefined {
     return kind === 'model' ? { ...box, kind: 'model', turntable: option === 'turntable' || option === 'turntable=true' }
       : { ...box, kind: 'card', board: (board ?? 'grid') as 'grid' | 'dots' | 'plain' }
   }
-  const flow = new RegExp(`^@(heading|note|step) (${CARD_ID_PATTERN}) "([^"\\n]*)"(?: (up|down|left|right))?(?: (blue|red|orange|green|purple|grey))?$`).exec(line)
+  const flow = new RegExp(`^@(heading|note|step) (${CARD_ID_PATTERN}) "([^"\\n]*)"((?: \\S+)*)$`).exec(line)
   if (flow) {
-    const [, kind, id, text, direction, color] = flow
-    if (!textOK(text!) || (kind !== 'step' && (direction || color))) return undefined
+    const [, kind, id, text, rest] = flow
+    const words = rest!.trim().split(' ')
+    const direction = words.find(word => ['up', 'down', 'left', 'right'].includes(word))
+    const color = words.find(word => ['blue', 'red', 'orange', 'green', 'purple', 'grey'].includes(word))
+    // A note wraps to three lines in its card, so it may be longer than a title, heading or step.
+    if (!textOK(text!, kind === 'note' ? 140 : 60)) return undefined
     return kind === 'step'
       ? { kind, id: id!, text: text!.trim(), direction: (direction ?? 'down') as StepDirection, color: (color ?? 'blue') as SemanticColor }
       : { kind: kind as 'heading' | 'note', id: id!, text: text!.trim() }
