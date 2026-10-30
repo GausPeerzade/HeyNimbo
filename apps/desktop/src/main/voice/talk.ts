@@ -220,7 +220,7 @@ export class TalkSession {
     let lineNumber = 0
     let answer = ''
     const save = (): void => {
-      turn.answer = answer.replace(/^@[^\n]*(?:\n|$)/gm, '').trim()
+      turn.answer = answer.replace(/^@[^\n]*(?:\n|$)/gm, '').replace(/\n{2,}/g, '\n').trim()
       turn.dirty = true
       turn.saveTimer ??= setTimeout(() => {
         try { this.flush(turn) } catch (error) { this.fail(turn, error) }
