@@ -99,7 +99,7 @@ export class AppShell {
     for (const window of [this.home, this.preferences]) if (window && !window.isDestroyed()) window.webContents.send(AppChannels.snapshot, snapshot)
     this.onChanged?.(snapshot)
   }
-  setStatus(label: string | undefined): void { this.status = label ?? ''; this.busy = Boolean(label && !label.includes('wrong') && !label.includes('unavailable')); this.publish(!this.busy) }
+  setStatus(label: string | undefined): void { this.status = label ?? ''; this.busy = Boolean(label && !/wrong|unavailable|rejected/.test(label)); this.publish(!this.busy) }
   openHome(id?: string, turnId?: string): BrowserWindow {
     if (id && id !== this.conversations.currentId && this.conversations.get(id)) { this.actions.stop(); this.conversations.open(id) }
     if (!this.home) {

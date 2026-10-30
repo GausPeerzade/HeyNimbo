@@ -9,6 +9,7 @@ import type { NimboAgent } from '../agent/engine'
 import type { AnswerConnection } from '../answer-provider'
 import type { Ears } from './ears'
 import { OPENAI_KEY_REJECTED } from '../openai/realtime'
+import { KEY_REJECTED } from '../model-catalog'
 import type { Mouth } from './mouth'
 
 const MIC_STOP_TIMEOUT_MS = 1_500
@@ -335,12 +336,13 @@ export class TalkSession {
     console.warn(`[talk] ${message}`)
     if (message === OPENAI_KEY_REJECTED) this.deps.onVoiceKeyRejected?.()
     this.interrupt('error', message)
-    // A turn that failed before its question was saved (listening) has nothing to show in Home.
-    this.deps.onStatus(turn.recordId ? 'Something went wrong; see Home' : message)
+    // Say it in the notch when Home has nothing to show (failed while listening) or the owner must fix a key.
+    const direct = !turn.recordId || message === KEY_REJECTED || message === OPENAI_KEY_REJECTED
+    this.deps.onStatus(direct ? message : 'Something went wrong; see Home')
     clearTimeout(this.errorTimer)
     this.errorTimer = setTimeout(() => {
       if (!this.turn) this.deps.onStatus(undefined)
-    }, turn.recordId ? 2_500 : 6_000)
+    }, direct ? 6_000 : 2_500)
   }
 
   private draw(turn: Turn, marks: Mark[], durationMs: number): void {
