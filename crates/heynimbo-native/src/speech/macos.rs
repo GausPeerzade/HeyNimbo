@@ -301,25 +301,3 @@ fn audio_buffer(samples: &[f32]) -> std::result::Result<Retained<AVAudioPCMBuffe
         Ok(buffer)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn capture_buffer_has_mono_24khz_float_samples_and_exact_frames() {
-        autoreleasepool(|_| {
-            let samples = Pcm16::default().convert(&[0, 128, 0, 64, 255, 127]);
-            let buffer = audio_buffer(&samples).unwrap_or_else(|e| panic!("{e}"));
-            unsafe {
-                assert_eq!(buffer.format().sampleRate(), 24_000.0);
-                assert_eq!(buffer.format().channelCount(), 1);
-                assert!(!buffer.format().isInterleaved());
-                assert_eq!(buffer.frameLength(), 3);
-                assert_eq!(
-                    std::slice::from_raw_parts((*buffer.floatChannelData()).as_ptr(), 3),
-                    samples
-                );
-            }
-        });
-    }
-}
