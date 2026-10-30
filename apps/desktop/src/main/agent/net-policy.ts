@@ -1,9 +1,9 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
-import { request as httpRequest } from 'node:http'
+import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { createGunzip, createInflate, createBrotliDecompress } from 'node:zlib'
 import { request as httpsRequest } from 'node:https'
-import type { Resolver, ResolvedAddress } from './contracts'
+interface ResolvedAddress { address: string; family: 4 | 6 }
 
 export function isPublicAddress(ip: string): boolean {
   const family = isIP(ip)
@@ -42,7 +42,6 @@ export function isPublicAddress(ip: string): boolean {
 }
 
 interface FetchOptions {
-  resolver?: Resolver
   signal: AbortSignal
   maxBytes: number
   timeoutMs: number
@@ -50,16 +49,12 @@ interface FetchOptions {
   headers?: Record<string, string>
   method?: 'GET' | 'POST' | 'HEAD'
   body?: string | Uint8Array
-  allowLoopbackForTests?: boolean
-  /** Exact configured local SearXNG request, not a general loopback grant. */
-  localSearchURL?: string
   /** Run-generation and redirect-egress fence at the actual request boundary. */
   beforeRequest?: (url: URL) => void
 }
-interface FetchResult { finalUrl: string; status: number; contentType: string; body: Uint8Array; truncated: boolean }
+export interface FetchResult { finalUrl: string; status: number; contentType: string; headers: IncomingHttpHeaders; body: Uint8Array; truncated: boolean }
 const denied = (): Error => new Error('Network request denied.')
-const defaultResolver: Resolver = async hostname => (await lookup(hostname, { all: true })).map(answer => ({ address: answer.address, family: answer.family as 4 | 6 }))
-function loopback(ip: string): boolean { return (isIP(ip) === 4 && ip.startsWith('127.')) || ip === '::1' }
+const defaultResolver = async (hostname: string): Promise<ResolvedAddress[]> => (await lookup(hostname, { all: true })).map(answer => ({ address: answer.address, family: answer.family as 4 | 6 }))
 function parseURL(value: string): URL {
   let url: URL
   try { url = new URL(value) } catch { throw denied() }
@@ -117,17 +112,15 @@ async function fetchOnce(value: string, options: FetchOptions): Promise<FetchRes
   options.signal.throwIfAborted()
   const url = parseURL(value)
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
-  const local = options.localSearchURL === url.href && ['localhost', '127.0.0.1'].includes(url.hostname)
-  const allowLoopback = options.allowLoopbackForTests || local
-  const answers: ResolvedAddress[] = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) as 4 | 6 }] : await (options.resolver ?? defaultResolver)(hostname)
-  if (!answers.length || answers.some(answer => isIP(answer.address) !== answer.family || (!isPublicAddress(answer.address) && !(allowLoopback && loopback(answer.address))))) throw denied()
+  const answers: ResolvedAddress[] = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) as 4 | 6 }] : await defaultResolver(hostname)
+  if (!answers.length || answers.some(answer => isIP(answer.address) !== answer.family || !isPublicAddress(answer.address))) throw denied()
   const pinned = answers[0]!
-  if (url.port && !['80', '443'].includes(url.port) && !(allowLoopback && loopback(pinned.address))) throw denied()
+  if (url.port && !['80', '443'].includes(url.port)) throw denied()
   const headers: Record<string, string> = Object.create(null) as Record<string, string>
   for (const [name, value] of Object.entries(options.headers ?? {})) {
     if (!['cookie', 'cookie2', 'host', 'connection', 'proxy-authorization', 'transfer-encoding', 'content-length', 'user-agent', 'accept-encoding'].includes(name.toLowerCase())) headers[name.toLowerCase()] = value
   }
-  headers['user-agent'] = 'HeyNimbo/0.1 (+agent research)'
+  headers['user-agent'] = 'HeyNimbo/0.1'
   headers['accept-encoding'] = 'gzip, deflate, br'
   return new Promise((resolve, reject) => {
     options.signal.throwIfAborted()
@@ -166,13 +159,13 @@ async function fetchOnce(value: string, options: FetchOptions): Promise<FetchRes
         chunks.push(chunk.subarray(0, remaining))
         size += Math.min(chunk.length, remaining)
         if (chunk.length > remaining) {
-          resolve({ finalUrl: url.href, status: response.statusCode ?? 0, contentType: response.headers['content-type'] ?? '', body: Buffer.concat(chunks), truncated: true })
+          resolve({ finalUrl: url.href, status: response.statusCode ?? 0, contentType: response.headers['content-type'] ?? '', headers: response.headers, body: Buffer.concat(chunks), truncated: true })
           decoder?.destroy()
           response.destroy()
           request.destroy()
         }
       })
-      stream.on('end', () => resolve({ finalUrl: url.href, status: response.statusCode ?? 0, contentType: response.headers['content-type'] ?? '', body: Buffer.concat(chunks), truncated: false }))
+      stream.on('end', () => resolve({ finalUrl: url.href, status: response.statusCode ?? 0, contentType: response.headers['content-type'] ?? '', headers: response.headers, body: Buffer.concat(chunks), truncated: false }))
       const fail = (): void => {
         reject(new Error('Network request failed.'))
         decoder?.destroy()

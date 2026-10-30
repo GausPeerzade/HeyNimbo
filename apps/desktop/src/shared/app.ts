@@ -1,6 +1,5 @@
 import type { Mark } from './beats'
 import type { ConnectionSettings, ConnectionSnapshot, ConnectionRequest } from './providers'
-import type { SearchConfig } from './agent-protocol'
 
 export type Retention = 0 | 7 | 30 | 90 | 'forever'
 export type SpeakingVoice = 'marin' | 'cedar' | 'alloy' | 'coral'
@@ -14,8 +13,6 @@ export interface AppSettings {
   retention: Retention
   connection?: ConnectionSettings
   homeBounds?: { x: number; y: number; width: number; height: number }
-  /** Agent (Do) settings. Absent = no web search backend configured. */
-  agent?: { search?: SearchConfig }
 }
 export interface DrawingScene {
   version: 1
@@ -24,10 +21,10 @@ export interface DrawingScene {
     marks: Mark[]
     space: { frame: { x: number; y: number; width: number; height: number }; pixelWidth: number; pixelHeight: number }
   }>
-  /** Background tasks this answer handed to the agent. */
-  tasks?: TurnTask[]
+  /** What the agent did while answering: searches, reads, edits and commands. */
+  steps?: TurnStep[]
 }
-export interface TurnTask { goal: string; mode: 'web' | 'local'; state: 'starting' | 'started' | 'failed'; runId?: string; error?: string }
+export interface TurnStep { label: string; state: 'running' | 'done' | 'failed' | 'stopped' }
 export interface Conversation {
   id: string; title: string; created: number; updated: number; pinned: boolean; archived: boolean; preview: string
 }

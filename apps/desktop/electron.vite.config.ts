@@ -7,7 +7,6 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'agent-host': resolve(__dirname, 'src/agent/host/entry.ts'),
         },
       },
     },

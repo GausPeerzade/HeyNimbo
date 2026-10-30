@@ -1,6 +1,6 @@
 # Agentic HeyNimbo: phased implementation roadmap
 
-**Status:** planning only. **Baseline:** October 29, 2026, commit `4eb07b65b65013c64945f9727627969ef8960797`.
+**Status:** superseded by [agent.md](agent.md): the separate Explain/Do system below was replaced by one agent on Pi's SDK. Kept for its research notes. **Baseline:** October 29, 2026, commit `4eb07b65b65013c64945f9727627969ef8960797`.
 **Architecture:** `../TECHNICAL_DESIGN.md`. **Evidence:** `../research/01-clicky-product.md` through `05-verification.md`.
 
 ## How to use this plan

@@ -1,12 +1,14 @@
 import type { ScreenCaptures } from '@heynimbo/native'
-import { BeatParser, type Beat, type Mark, type TaskProposal } from '../../shared/beats'
+import { BeatParser, type Beat, type Mark } from '../../shared/beats'
 import type { VoiceCommand, VoiceEvent } from '../../shared/ipc'
 import type { CaptureSpace } from '../overlay-geometry'
-import type { DrawingScene, TurnTask } from '../../shared/app'
+import type { DrawingScene } from '../../shared/app'
 import type { ConversationController } from '../conversations'
-import { streamAnswer, type Exchange, type Screenshot } from './brain'
+import { AGENT_INSTRUCTIONS, INSTRUCTIONS, turnNote, type Exchange, type Screenshot } from './brain'
+import type { NimboAgent } from '../agent/engine'
 import type { AnswerConnection } from '../answer-provider'
 import type { Ears } from './ears'
+import { OPENAI_KEY_REJECTED } from '../openai/realtime'
 import type { Mouth } from './mouth'
 
 const MIC_STOP_TIMEOUT_MS = 1_500
@@ -16,7 +18,7 @@ const SAVE_INTERVAL_MS = 250
 const WORDS_PER_SECOND = 2.6
 
 export interface TalkDeps {
-  key?: string
+  agent: Pick<NimboAgent, 'answer'>
   answer?: () => AnswerConnection
   conversations: ConversationController
   ears?: Pick<Ears, 'begin' | 'append' | 'finish' | 'cancel' | 'close'>
@@ -24,14 +26,12 @@ export interface TalkDeps {
   voiceUnavailableReason?: string
   audio: { send(command: VoiceCommand): void }
   capture: () => Promise<ScreenCaptures | undefined>
+  /** OpenAI rejected the voice key; the next turn should use the Mac's own speech. */
+  onVoiceKeyRejected?: () => void
   /** A label while busy, or undefined to return the notch to rest. */
   onStatus: (label: string | undefined) => void
   /** The display to draw on when no screenshot exists (Screen Recording off or capture failed). */
   canvas?: () => CaptureSpace | undefined
-  /** Starts a model-proposed background task in trusted code; absent when tasks are unavailable. */
-  startTask?: (task: TaskProposal & { conversationId?: string; signal: AbortSignal }) => Promise<{ runId: string } | { cancelled: true }>
-  /** Whether the current connection can run tasks (default: yes when `startTask` exists). */
-  tasksAvailable?: () => boolean
   drawing: {
     /** Draws marks given in the capture's screenshot pixels. */
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
@@ -69,8 +69,6 @@ interface Turn {
 export class TalkSession {
   private turn: Turn | undefined
   private nextId = 0
-  /** Proposals still waiting for the owner's decision; they outlive their answer but not Stop or the next question. */
-  private readonly proposals = new Set<AbortController>()
   private errorTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: TalkDeps) {}
@@ -210,14 +208,13 @@ export class TalkSession {
     else if (turn.connection?.vision !== false) turn.space = this.deps.canvas?.()
     turn.screenUsed = Boolean(display)
     const canvas = !display && turn.space ? { width: turn.space.pixelWidth, height: turn.space.pixelHeight } : undefined
-    const tasks = Boolean(this.deps.startTask) && (this.deps.tasksAvailable?.() ?? true)
     // 3D lines go to the overlay as they arrive, so their geometry is ready when speech reaches them.
     const beats = new BeatParser({ width: turn.space?.pixelWidth ?? 0, height: turn.space?.pixelHeight ?? 0 }, (mark) => {
       if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) {
         if (mark.kind === 'part') this.mark(turn, 'first 3D preparation')
         this.deps.drawing.prepare?.([mark], turn.space)
       }
-    }, undefined, tasks ? task => this.proposeTask(turn, task) : undefined)
+    })
     let speech: Promise<void> = Promise.resolve()
     let lineNumber = 0
     let answer = ''
@@ -251,15 +248,24 @@ export class TalkSession {
       // A failed sentence stops the whole turn now, not after the answer streams.
       speech.catch((error: unknown) => this.fail(turn, error))
     }
-    for await (const delta of streamAnswer({
-      key: this.deps.key,
+    if (!turn.connection) throw new Error('Add a key for the selected answer provider in Settings → Connection.')
+    const vision = turn.connection.vision !== false
+    for await (const delta of this.deps.agent.answer({
+      conversationId: turn.conversationId ?? `turn-${turn.id}`,
       connection: turn.connection,
+      instructions: INSTRUCTIONS + AGENT_INSTRUCTIONS,
       question,
+      note: turnNote(screenshot, canvas, vision),
       screenshot,
       history,
       signal: turn.abort.signal,
-      ...(canvas ? { canvas } : {}),
-      ...(tasks ? { tasks } : {}),
+      onStep: steps => {
+        if (turn.abort.signal.aborted) return
+        turn.scene.steps = steps
+        save()
+        const running = steps.findLast(step => step.state === 'running')
+        this.deps.onStatus(running ? `${running.label.slice(0, 60)}…` : 'Thinking…')
+      },
     })) {
       if (turn.abort.signal.aborted) break
       if (!answer) this.mark(turn, 'first token')
@@ -285,6 +291,7 @@ export class TalkSession {
   }
 
   private saveOutcome(turn: Turn, state: 'complete' | 'interrupted' | 'error', error: string | null = null): void {
+    for (const step of turn.scene.steps ?? []) if (step.state === 'running') { step.state = 'stopped'; turn.dirty = true }
     try { this.flush(turn) }
     catch { console.warn('[talk] Could not save the latest answer.') }
     try { if (turn.recordId) this.deps.conversations.finish(turn.recordId, state, error) }
@@ -293,8 +300,6 @@ export class TalkSession {
 
   /** Persistence must never prevent microphone, network or speech cleanup. */
   private interrupt(state: 'interrupted' | 'error' = 'interrupted', error: string | null = null): void {
-    for (const proposal of this.proposals) proposal.abort()
-    this.proposals.clear()
     const turn = this.turn
     if (!turn) return
     this.turn = undefined
@@ -326,36 +331,16 @@ export class TalkSession {
 
   private fail(turn: Turn, error: unknown): void {
     if (turn.abort.signal.aborted || this.turn !== turn) return
-    console.warn(`[talk] ${error instanceof Error ? error.message : String(error)}`)
-    this.interrupt('error', error instanceof Error ? error.message : String(error))
-    this.deps.onStatus('Something went wrong; see Home')
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[talk] ${message}`)
+    if (message === OPENAI_KEY_REJECTED) this.deps.onVoiceKeyRejected?.()
+    this.interrupt('error', message)
+    // A turn that failed before its question was saved (listening) has nothing to show in Home.
+    this.deps.onStatus(turn.recordId ? 'Something went wrong; see Home' : message)
     clearTimeout(this.errorTimer)
     this.errorTimer = setTimeout(() => {
       if (!this.turn) this.deps.onStatus(undefined)
-    }, 2_500)
-  }
-
-  /** The model only proposes; main decides (and asks for a folder) before anything runs.
-   *  The outcome can arrive after the turn ends, so it is written by turn ID. */
-  private proposeTask(turn: Turn, proposal: TaskProposal): void {
-    // Parsing (and so proposals) stops at abort and at finish, so only wiring is checked here.
-    if (!this.deps.startTask) return
-    const task: TurnTask = { goal: proposal.goal, mode: proposal.mode, state: 'starting' }
-    turn.scene.tasks = [task]
-    turn.dirty = true
-    // Bound now, while this turn owns its repository: the outcome may arrive after history settings change.
-    const record = turn.recordId ? this.deps.conversations.taskRecorder(turn.recordId) : undefined
-    const withdraw = new AbortController()
-    this.proposals.add(withdraw)
-    const settle = (outcome: Partial<TurnTask>): void => {
-      this.proposals.delete(withdraw)
-      Object.assign(task, outcome)
-      try { record?.([task]) } catch { console.warn('[talk] Could not save the task outcome.') }
-    }
-    this.deps.startTask({ ...proposal, ...(turn.conversationId ? { conversationId: turn.conversationId } : {}), signal: withdraw.signal }).then(
-      result => settle('runId' in result ? { state: 'started', runId: result.runId } : { state: 'failed', error: proposal.mode === 'local' ? 'No folder was chosen.' : 'You cancelled this task.' }),
-      (error: unknown) => settle({ state: 'failed', error: error instanceof Error ? error.message.slice(0, 200) : 'The task could not start.' }),
-    )
+    }, turn.recordId ? 2_500 : 6_000)
   }
 
   private draw(turn: Turn, marks: Mark[], durationMs: number): void {

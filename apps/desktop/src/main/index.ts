@@ -1,4 +1,4 @@
-import { app, screen, type BrowserWindow } from 'electron'
+import { app, dialog, screen, type BrowserWindow } from 'electron'
 import { hasInputMonitoringAccess, hasScreenCaptureAccess, type GestureMonitor } from '@heynimbo/native'
 import { AppShell } from './app-shell'
 import { NotchPeek } from './notch-peek'
@@ -19,6 +19,8 @@ import { Mouth } from './voice/mouth'
 import { BuiltInEars } from './voice/builtin-ears'
 import { BuiltInMouth } from './voice/builtin-mouth'
 import { TalkSession } from './voice/talk'
+import { NimboAgent, type ApprovalAnswer } from './agent/engine'
+import type { Approval } from './agent/policy'
 import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus, setNotchVisibility } from './windows'
 import type { CaptureSpace } from './overlay-geometry'
 
@@ -79,22 +81,32 @@ function cursorCanvas(): CaptureSpace {
   return { frame: bounds, pixelWidth: bounds.width, pixelHeight: bounds.height }
 }
 
-function startTalking(key: string | undefined, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell, connections: Connections): TalkSession {
+/** The owner decides each risky action in a sheet on Home whose text main builds, not the model.
+ *  A sheet needs a parent: a parentless dialog runs app-modal and freezes the main process. */
+async function approve(approval: Approval, signal: AbortSignal, home: () => BrowserWindow): Promise<ApprovalAnswer> {
+  if (signal.aborted) return 'deny'
+  const { response } = await dialog.showMessageBox(home(), {
+    type: 'question', message: approval.title, detail: approval.detail, signal,
+    buttons: ['Deny', 'Allow once', approval.tool === 'bash' ? 'Allow commands in this conversation' : 'Allow in this conversation'], defaultId: 1, cancelId: 0,
+  })
+  return signal.aborted ? 'deny' : (['deny', 'once', 'conversation'] as const)[response] ?? 'deny'
+}
+
+function startTalking(key: string | undefined, agent: NimboAgent, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell, connections: Connections, reconnect: () => void): TalkSession {
   const voice = connections.voiceEngine
   const ears = voice.engine === 'openai' && key ? new Ears(key) : voice.engine === 'builtin' ? new BuiltInEars() : undefined
   const mouth = voice.engine === 'openai' && key ? new Mouth(key, shell.settings.get().voice) : voice.engine === 'builtin' ? new BuiltInMouth(audio) : undefined
   const session = new TalkSession({
-    key, answer: () => connections.answer(),
+    agent, answer: () => connections.answer(),
     conversations: shell.conversations,
     ears,
     mouth,
     voiceUnavailableReason: voice.engine === 'unavailable' ? voice.reason : undefined,
+    // Deferred: reconnecting closes the session that is reporting the failure.
+    onVoiceKeyRejected: () => setTimeout(() => { connections.rejectVoiceKey(); reconnect() }),
     audio,
     capture: captureCursorDisplay,
     canvas: cursorCanvas,
-    startTask: shell.startTask,
-    // ChatGPT plan access answers questions; tasks need an API key or a local model.
-    tasksAvailable: () => connections.answer().provider !== 'chatgpt',
     onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
@@ -143,6 +155,10 @@ if (ownsInstance) app.whenReady().then(async () => {
 
   let talk: TalkSession | undefined
   let connections: Connections
+  const agent = new NimboAgent({
+    dataDir: app.getPath('userData'),
+    approve: (approval, signal) => { shell.setStatus('Waiting for your OK in HeyNimbo…'); return approve(approval, signal, () => shell.openHome()) },
+  })
   const shell = new AppShell({
     ask: (question) => {
       if (!talk) throw new Error('The voice connection is not ready. Try again.')
@@ -153,7 +169,7 @@ if (ownsInstance) app.whenReady().then(async () => {
     replaceKey: () => openSetupWindow(request => connections.request(request, { selectSavedProvider: true })),
     connectionRequest: request => connections.request(request),
     connectionSnapshot: () => connections.snapshot(),
-    agentConnection: () => connections.answer(),
+    forget: id => agent.drop(id),
     validateSettings: async settings => ({ ...settings, connection: await connections.validateSettings(settings.connection) }),
     settingsChanged: (settings, previous) => {
       setNotchVisibility(notch, settings.showNotch)
@@ -169,7 +185,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   const audio = new AudioWindow((event) => talk?.onAudioEvent(event))
   const reconnect = (): void => {
     try { talk?.close() } finally { overlays.listen(false) }
-    talk = startTalking(connections.voiceKey, notch, overlays, audio, shell, connections)
+    talk = startTalking(connections.voiceKey, agent, notch, overlays, audio, shell, connections, reconnect)
     shell.keyPresent = connections.answerReady; shell.publish()
   }
   connections = new Connections(shell.settings, reconnect, () => { shell.openSettings('Connection') })
@@ -180,7 +196,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   audio.send({ kind: 'mute', muted: shell.settings.get().muted })
   app.on('before-quit', () => {
     screen.removeListener('display-added', resync); screen.removeListener('display-removed', resync); screen.removeListener('display-metrics-changed', resync)
-    monitor?.stop(); talk?.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
+    monitor?.stop(); talk?.close(); agent.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
   overlays.onStrokeStarted = (durationMs) => audio.send({ kind: 'scribble', durationMs })
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {

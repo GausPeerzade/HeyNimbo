@@ -144,17 +144,6 @@ function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value))
 }
 
-/** A background task the answer hands to the agent: `web` research or `local` (files the owner picks). */
-export interface TaskProposal { mode: 'web' | 'local'; goal: string }
-const TASK_GOAL_MAX = 500
-/** `@task web|files "goal"`; anything else is not a task. Authority is decided by trusted code, never here. */
-export function parseTask(line: string): TaskProposal | undefined {
-  const match = /^@task\s+(web|files)\s+"([^"]*)"\s*$/.exec(line.trim())
-  const goal = match?.[2]?.trim()
-  if (!match || !goal || goal.length > TASK_GOAL_MAX) return undefined
-  return { mode: match[1] === 'files' ? 'local' : 'web', goal }
-}
-
 /** Turns a streamed answer into beats. Sentences stream as soon as they end;
  *  a command line waits for its newline and attaches to the next sentence. */
 export class BeatParser {
@@ -168,11 +157,9 @@ export class BeatParser {
   private atLineStart = true
   private markLine: string | undefined
 
-  private taskProposed = false
-
   /** `onCommand` sees each accepted command as its line ends, before its sentence does;
-   *  `onDrop` sees each command line that was not accepted; `onTask` sees at most one task per answer. */
-  constructor(private readonly image: ImageSize, private readonly onCommand?: (mark: Mark) => void, private readonly onDrop?: (line: string) => void, private readonly onTask?: (task: TaskProposal) => void) {}
+   *  `onDrop` sees each command line that was not accepted. */
+  constructor(private readonly image: ImageSize, private readonly onCommand?: (mark: Mark) => void, private readonly onDrop?: (line: string) => void) {}
 
   push(delta: string): Beat[] {
     const beats: Beat[] = []
@@ -213,12 +200,6 @@ export class BeatParser {
   }
 
   private endMarkLine(): void {
-    if (/^@task\b/.test((this.markLine ?? '').trim())) {
-      const task = this.onTask && !this.taskProposed ? parseTask(this.markLine ?? '') : undefined
-      if (task) { this.taskProposed = true; this.onTask!(task) } else this.onDrop?.(this.markLine ?? '')
-      this.markLine = undefined
-      return
-    }
     const mark = parseMark(this.markLine ?? '', this.image)
     const modelCommand = mark && ['model', 'part', 'move', 'cut', 'tag'].includes(mark.kind)
     let accepted = false

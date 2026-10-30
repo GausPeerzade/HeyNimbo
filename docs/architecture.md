@@ -15,7 +15,7 @@
 | Rust native crate (`heynimbo-native`) | Global gestures, screen capture, accessibility context and text insertion, input actuation, secrets, native-messaging registration. One crate, per-OS modules. |
 | Electron main | Windows (notch panel, per-display overlays, buddy), brain orchestration, agent host, MCP client, capability broker, storage. |
 | Renderers (sandboxed) | Notch/Home UI and the overlay renderer: SVG strokes and three.js for 3D. They receive only allowlisted IPC. |
-| Agent engines | Adapter interface (`start`, `turn`, `steer`, `interrupt`, `events`, `approvals`). The first engine is a pinned Codex app-server, pending contract tests; the Claude Agent SDK and an own loop come later. |
+| Agent | One agent for every request, on Pi's SDK in Electron main, with web, file and shell tools behind code-enforced approvals. See [agent.md](agent.md). |
 
 ## Voice turn (cascade, default)
 

@@ -2,8 +2,6 @@ import { button, element, icon, isSnapshot, request } from './app-dom'
 import type { AppSnapshot, Conversation, SearchHit } from '../shared/app'
 import { TurnTranscript } from './turn-transcript'
 import { ConversationSearch } from './conversation-search'
-import { AgentView } from './agent-view'
-import type { AgentApi } from '../shared/agent-protocol'
 import logo from '../../build/brand/logo.png?url'
 import darkLogo from '../../build/brand/logo-dark.png?url'
 
@@ -20,22 +18,7 @@ let emptyKey = '', renderedId: string | null = null, renameId = ''
 let composerId: string | null = null
 const drafts = new Map<string, string>(), scrollPositions = new Map<string, number>()
 const time = (date: number): string => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
-const agentApi = (window as unknown as { heynimboApp: { agent?: AgentApi } }).heynimboApp.agent
-const agentPanel = document.getElementById('agent-panel'), stopAll = document.getElementById('stop-all') as HTMLButtonElement | null
-const agentView = agentApi && agentPanel && stopAll ? new AgentView(agentApi, { panel: agentPanel, stopAll }) : undefined
-// One composer: the model decides whether to explain, draw or start a task. The
-// Tasks view only shows background work the answers started; it never takes input.
-const tasksButton = document.getElementById('tasks')
-if (tasksButton) tasksButton.hidden = !agentView
-function showTasks(open: boolean, runId?: string): void {
-  if (!agentView) return
-  if (open) agentView.open(runId); else agentView.setActive(false)
-  transcript.hidden = open
-  tasksButton?.setAttribute('aria-pressed', String(open))
-  if (!open && snapshot) render(snapshot)
-}
-if (tasksButton) tasksButton.onclick = () => showTasks(!agentView?.active)
-const turnTranscript = new TurnTranscript(transcript, agentView ? runId => showTasks(true, runId) : undefined)
+const turnTranscript = new TurnTranscript(transcript)
 
 function row(c: Conversation, hit?: SearchHit): HTMLButtonElement {
   const node = button('', () => { void request({ kind: 'open', id: c.id, turnId: hit?.turnId }) }, 'conversation')
@@ -101,7 +84,7 @@ function render(s: AppSnapshot): void {
   snapshot = s
   syncComposer(s)
   title.textContent = s.conversations.find(c => c.id === s.currentId)?.title ?? 'New conversation'
-  renderSidebar(); if (!agentView?.active) renderTranscript(s)
+  renderSidebar(); renderTranscript(s)
   document.getElementById('stop')!.hidden = !s.busy
   document.getElementById('send')!.hidden = s.busy || !s.keyPresent
   const screenContext = document.getElementById('screen-context')
@@ -130,8 +113,6 @@ async function ask(): Promise<void> {
   // Send exactly what is visible, for the conversation it belongs to.
   const value = question.value, conversation = composerId
   if (snapshot?.busy || !value.trim()) return
-  // An answer appears in the conversation, so asking from the Tasks view returns to it.
-  if (agentView?.active) showTasks(false)
   const result = await request({ kind: 'ask', question: value })
   // Clear only the composer that still shows the sent question in the conversation it was sent from.
   if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { if (composerId === conversation && question.value === value) question.value = ''; drafts.delete(conversation ?? '') }
@@ -149,8 +130,7 @@ renameForm.onsubmit = event => { event.preventDefault(); void request({ kind: 'r
 document.onkeydown = event => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'f') { event.preventDefault(); document.body.classList.remove('sidebar-hidden'); document.body.classList.add('sidebar-open'); search.focus() }
   if (event.key === 'Escape') {
-    if (agentView?.active) { showTasks(false); question.focus() }
-    else if (snapshot?.busy) void request({ kind: 'stop' })
+    if (snapshot?.busy) void request({ kind: 'stop' })
     else if (!renameForm.hidden) { renameForm.hidden = true; title.hidden = false; question.focus() }
     else if (search.value) { clearSearch(); question.focus() }
     else question.focus()
@@ -159,8 +139,7 @@ document.onkeydown = event => {
 window.heynimboApp.onSnapshot(render)
 window.heynimboApp.onNavigate(navigation => {
   if (navigation.focusSearch) { document.body.classList.remove('sidebar-hidden'); document.body.classList.add('sidebar-open'); search.focus() }
-  if (navigation.turnId) { if (agentView?.active) showTasks(false); requestAnimationFrame(() => document.getElementById(`turn-${navigation.turnId}`)?.scrollIntoView()) }
-  if (navigation.runId) showTasks(true, navigation.runId)
+  if (navigation.turnId) { requestAnimationFrame(() => document.getElementById(`turn-${navigation.turnId}`)?.scrollIntoView()) }
   if (navigation.renameId) { renameId = navigation.renameId; rename.value = title.textContent ?? ''; title.hidden = true; renameForm.hidden = false; rename.focus(); rename.select() }
 })
 void request({ kind: 'snapshot' }).then(value => { if (isSnapshot(value)) render(value) })

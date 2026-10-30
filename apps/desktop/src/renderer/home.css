@@ -36,6 +36,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .turn-meta { margin: 0 0 var(--space-6); font-size: var(--text-meta); color: var(--secondary); font-variant-numeric: tabular-nums; }
 .answer { font-size: var(--text-body); line-height: var(--leading-body); white-space: pre-wrap; margin: 0; user-select: text; }
 .turn-state { color: var(--warning); font-size: var(--text-meta); margin: var(--space-3) 0; } .turn-state.error { color: var(--error); }
+.turn-steps { list-style: none; margin: 0 0 var(--space-6); padding: 0 0 0 var(--space-3); border-left: 2px solid var(--separator, currentColor); font-size: var(--text-meta); color: var(--secondary); overflow-wrap: anywhere; } .turn-steps li.running::after { content: '…'; } .turn-steps li.failed { color: var(--error); } .turn-steps li.stopped { color: var(--warning); }
 .drawing { max-width: var(--artifact-width); margin: var(--space-6) 0 0; border-left: var(--focus-width) solid var(--accent); padding-left: var(--space-3); }
 .drawing svg { display: block; width: 100%; height: var(--artifact-height); background: var(--drawing-paper); border-radius: var(--radius-artifact); color: var(--drawing-ink); }
 .drawing svg text { font-family: Caveat, -apple-system, sans-serif; font-weight: var(--weight-medium); }

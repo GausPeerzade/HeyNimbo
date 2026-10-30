@@ -1,4 +1,4 @@
-import type { AppSettings, DrawingScene, HistoryTurn, TurnTask } from '../shared/app'
+import type { AppSettings, DrawingScene, HistoryTurn } from '../shared/app'
 import type { Exchange } from './voice/brain'
 import { HistoryRepository } from './history'
 
@@ -60,12 +60,6 @@ export class ConversationController {
     if (this.active?.id !== id) return
     try { this.active.repository.finish(id, state, error) }
     finally { this.active = undefined; this.changed() }
-  }
-  /** Task outcomes can arrive after the turn finished and after history settings changed, so the
-   *  writer binds the repository that owns the turn now. A deleted turn makes it a no-op. */
-  taskRecorder(turnId: string): (tasks: TurnTask[]) => void {
-    const repository = this.active?.id === turnId ? this.active.repository : this.repository
-    return tasks => { repository.setTasks(turnId, tasks); this.changed() }
   }
   reset(): void { this.current = null; this.changed() }
   search(query: string) { return this.repository.search(query) }

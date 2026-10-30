@@ -1,10 +1,6 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, utilityProcess } from 'electron'
-import { AgentSupervisor } from './agent-supervisor'
-import { credentialForAgent, registerAgentIpc, type TaskStart } from './agent-ipc'
-import type { AnswerConnection } from './answer-provider'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from '../shared/app'
-import type { AgentPush } from '../shared/agent-protocol'
 import { PROVIDER_NAMES, type ConnectionRequest, type ConnectionResult, type ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
@@ -24,7 +20,8 @@ export interface ShellActions {
   settingsChanged(settings: AppSettings, previous: AppSettings): void
   connectionRequest?(request: ConnectionRequest): Promise<ConnectionResult>
   connectionSnapshot?(): ConnectionSnapshot
-  agentConnection?(): AnswerConnection
+  /** Forgets the agent's working memory of a deleted conversation, or of all when no ID is given. */
+  forget?(conversationId?: string): void
   validateSettings?(settings: AppSettings): Promise<AppSettings>
   permissions(): AppSnapshot['permissions']
 }
@@ -55,30 +52,14 @@ export class AppShell {
   private tray: Tray | undefined
   private publishTimer: NodeJS.Timeout | undefined
   private pruneTimer: NodeJS.Timeout | undefined
-  private agent?: AgentSupervisor
-  private agentIpc?: ReturnType<typeof registerAgentIpc>
   private status = ''
   private busy = false
   private hasKey = false
-  /** Live runs already announced as waiting, so Home opens once per wait. */
-  private readonly attention = new Set<string>()
   get keyPresent(): boolean { return this.hasKey }
-  // Reconnect (including legacy setup/account refresh) reports readiness here,
-  // even when the boolean is unchanged. Old run authority must not survive it.
-  set keyPresent(value: boolean) { this.revokeAgentAuthority(); this.hasKey = value }
+  set keyPresent(value: boolean) { this.hasKey = value }
   onChanged?: (snapshot: AppSnapshot) => void
 
   constructor(private readonly actions: ShellActions, private readonly preview = false) {
-    if (actions.agentConnection && !preview) {
-      const connections = { answer: actions.agentConnection }
-      this.agent = new AgentSupervisor({
-        spawn: () => utilityProcess.fork(join(__dirname, 'agent-host.js'), [], { serviceName: 'HeyNimbo Agent', stdio: 'ignore' }),
-        credentials: (name, allowed, binding) => credentialForAgent(name, allowed, connections, () => this.settings.get(), binding),
-        onPush: push => { this.agentIpc?.push(push); this.notice(push) },
-        dataDir: app.getPath('userData'),
-      })
-      this.agentIpc = registerAgentIpc({ home: () => this.home, settings: () => this.settings.get(), connections, supervisor: this.agent, present: () => this.presentHome() })
-    }
     ipcMain.handle(AppChannels.request, (event, request: unknown) => {
       if (!isPageSender(event, this.home, 'home') && !isPageSender(event, this.preferences, 'settings')) throw new Error('Not allowed.')
       const parsed = parseAppRequest(request)
@@ -95,31 +76,9 @@ export class AppShell {
     }
   }
 
-  private revokeAgentAuthority(): void { this.agent?.revokeAuthority(); this.agentIpc?.revokeAuthority() }
-  /** Starts a task an answer proposed. Undefined when this app has no agent host. */
-  get startTask(): ((task: TaskStart) => Promise<{ runId: string } | { cancelled: true }>) | undefined {
-    const ipc = this.agentIpc
-    return ipc ? task => ipc.start(task) : undefined
-  }
-  /** A background task waiting for the owner brings Home forward on that task. */
-  private notice(push: AgentPush): void {
-    if (push.kind !== 'events' || this.preview) return
-    for (const run of push.runs) {
-      const waits = run.status === 'waiting_approval' || run.status === 'waiting_user'
-      if (waits && !this.attention.has(run.id)) {
-        this.attention.add(run.id)
-        const home = this.openHome(), runId = run.id
-        const navigate = (): void => { if (!home.isDestroyed()) home.webContents.send(AppChannels.navigate, { runId }) }
-        if (home.webContents.isLoading()) home.webContents.once('did-finish-load', navigate); else navigate()
-      } else if (!waits) this.attention.delete(run.id)
-    }
-    while (this.attention.size > 256) this.attention.delete(this.attention.values().next().value!)
-  }
   private pruneHistory(): void {
     const retention = this.settings.get().retention
     this.conversations.history.prune(retention)
-    // Retention never starts a host or adds an await to the Explain path.
-    if (typeof retention === 'number' && retention > 0) void this.agent?.purge(Math.max(0, Date.now() - retention * 86_400_000)).catch(() => {})
   }
   snapshot(): AppSnapshot {
     return {
@@ -160,19 +119,6 @@ export class AppShell {
       if (turnId) this.home.webContents.send(AppChannels.navigate, { turnId })
     }
     return this.home
-  }
-  /** Brings Home forward for a decision sheet and resolves once it is visible (undefined if it never shows). */
-  async presentHome(): Promise<BrowserWindow | undefined> {
-    if (this.preview) return undefined
-    const window = this.openHome()
-    if (window.isVisible()) return window
-    // A new window shows on ready-to-show; this listener runs after the one that presents it.
-    await new Promise<void>(resolve => {
-      const done = (): void => { clearTimeout(timer); window.removeListener('ready-to-show', done); window.removeListener('closed', done); resolve() }
-      const timer = setTimeout(done, 10_000)
-      window.once('ready-to-show', done); window.once('closed', done)
-    })
-    return !window.isDestroyed() && window.isVisible() ? window : undefined
   }
   openSettings(category?: string): BrowserWindow {
     if (!this.preferences) {
@@ -238,7 +184,7 @@ export class AppShell {
         Menu.buildFromTemplate([
           { label: 'Rename', click: () => { this.openHome(c.id).webContents.send(AppChannels.navigate, { renameId: c.id }) } },
           { label: c.pinned ? 'Unpin' : 'Pin', click: () => this.conversations.pin(c.id, !c.pinned) },
-          { label: 'Delete…', click: async () => { if (await this.confirm('Delete this conversation?', 'Its transcript and generated drawings will be removed from local history.')) { this.actions.stop(); this.conversations.delete(c.id) } } },
+          { label: 'Delete…', click: async () => { if (await this.confirm('Delete this conversation?', 'Its transcript and generated drawings will be removed from local history.')) { this.actions.stop(); this.conversations.delete(c.id); this.actions.forget?.(c.id) } } },
         ]).popup({ window: this.home }); return
       }
       case 'updateSettings': {
@@ -247,10 +193,8 @@ export class AppShell {
         if (typeof next.retention === 'number' && next.retention > 0 && (previous.retention === 'forever' || previous.retention === 0 || next.retention < previous.retention)) {
           if (!await this.confirm('Apply shorter history retention?', 'Older conversations, including pinned ones, will be deleted.', 'Apply retention')) { this.publish(); return }
         }
-        this.revokeAgentAuthority()
-        try { next = await this.actions.validateSettings?.(next) ?? next; this.settings.set(next) }
-        finally { this.revokeAgentAuthority() }
-        if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset() }
+        next = await this.actions.validateSettings?.(next) ?? next; this.settings.set(next)
+        if (next.saveHistory !== previous.saveHistory || next.retention === 0 || previous.retention === 0) { this.actions.stop(); this.conversations.reset(); this.actions.forget?.() }
         // Only a packaged app can own a login item, and only an actual change
         // should touch it, so a choice made in System Settings is left alone.
         if (!this.preview && app.isPackaged && next.openAtLogin !== previous.openAtLogin) app.setLoginItemSettings({ openAtLogin: next.openAtLogin })
@@ -258,8 +202,7 @@ export class AppShell {
         this.pruneHistory(); this.publish(); return
       }
       case 'deleteAll': if (await this.confirm('Delete all history?', 'All saved conversations and generated drawings will be removed from this Mac. This cannot be undone.')) {
-        // Withdraw undecided task handoffs first so none can start after the purge.
-        this.actions.stop(); this.revokeAgentAuthority(); this.conversations.deleteAll(); await this.agent?.purge(undefined, true)
+        this.actions.stop(); this.conversations.deleteAll(); this.actions.forget?.()
       }; return
       case 'connection': {
         const command = request.request
@@ -269,11 +212,10 @@ export class AppShell {
           if (!await this.confirm(command.kind === 'signOut' ? 'Sign out of ChatGPT?' : `Remove ${name} key?`, 'This disconnects it on this Mac and stops the current answer. You can connect again later.', command.kind === 'signOut' ? 'Sign out' : 'Remove')) return { ok: false, message: 'Nothing removed.' }
         }
         if (['snapshot', 'details', 'usage', 'models', 'test'].includes(command.kind)) return this.actions.connectionRequest(command)
-        this.revokeAgentAuthority(); this.actions.stop()
-        try { return await this.actions.connectionRequest(command) }
-        finally { this.revokeAgentAuthority() }
+        this.actions.stop()
+        return this.actions.connectionRequest(command)
       }
-      case 'replaceKey': if (!this.preview) { this.revokeAgentAuthority(); this.actions.replaceKey() }; return
+      case 'replaceKey': if (!this.preview) this.actions.replaceKey(); return
       case 'permission': {
         if (!this.preview && request.permission === 'microphone') {
           const status = microphoneAccessStatus()
@@ -292,5 +234,5 @@ export class AppShell {
     const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
     return result.response === 1
   }
-  close(): void { this.agentIpc?.dispose(); this.agent?.dispose(); clearTimeout(this.publishTimer); clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
+  close(): void { clearTimeout(this.publishTimer); clearInterval(this.pruneTimer); this.tray?.destroy(); this.conversations.close(); ipcMain.removeHandler(AppChannels.request) }
 }
