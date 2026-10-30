@@ -239,61 +239,91 @@ it('hides native confirmation failures instead of exposing platform diagnostics 
   await expect(handler(event, { kind: 'approve', runId: 'run', approvalId: 'approval', decision: 'approved' })).rejects.toThrow('Could not confirm this action.')
   expect(commands).toEqual([])
 })
-it('rejects picker completion after disposal and does not leak filesystem failures', async () => {
-  const { ipc, handler, event } = setup()
-  let finish!: (value: { canceled: boolean; filePaths: string[] }) => void
-  electron.showOpenDialog.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-  const pending = handler(event, { kind: 'pickFolder' })
-  ipc.dispose()
-  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
-  finish({ canceled: false, filePaths: [dir] })
-  await expect(pending).rejects.toThrow('Could not grant folder access.')
-})
-it('bounds remembered folder grants even when Home keeps picking new folders', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
-  const { handler, event } = setup()
-  electron.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [dir] })
-  for (let n = 0; n < 128; n++) await handler(event, { kind: 'pickFolder' })
-  await expect(handler(event, { kind: 'pickFolder' })).rejects.toThrow('Too many folders. Restart the app to choose more.')
-})
-it.each([{ saveHistory: false }, { retention: 0 as const }, { saveHistory: true, retention: 30 as const }])('derives persistence and host authority from settings rather than renderer fields: %j', async settings => {
-  const { handler, event, commands } = setup({ ...settings, agent: { search: { provider: 'brave' } } })
-  await expect(handler(event, { kind: 'start', requestId: 'req', goal: 'Research', mode: 'web' })).resolves.toEqual({ runId: 'run' })
-  expect(commands).toEqual([{ kind: 'start', requestId: 'req', goal: 'Research', mode: 'web', grants: [], persistence: settings.saveHistory === false || settings.retention === 0 ? 'temporary' : 'retained', budget: DEFAULT_BUDGET, model: { provider: 'openai', model: 'test-model', effort: 'low', baseURL: 'https://model.invalid' }, search: { provider: 'brave' } }])
-  expect(JSON.stringify(commands)).not.toContain('not-for-renderer')
-  await expect(handler(event, { kind: 'start', requestId: 'req2', goal: 'Read', mode: 'local', grantIds: ['unknown'] })).rejects.toThrow('Folder access expired. Choose the folder again.')
-  await expect(handler(event, { kind: 'start', requestId: 'req3', goal: 'Read', mode: 'web', grantIds: ['unknown'] })).rejects.toThrow('Invalid agent request.')
-  await expect(handler(event, { kind: 'start', requestId: 'req4', goal: 'Read', mode: 'local', persistence: 'retained' })).rejects.toThrow('Invalid agent request.')
-  expect(commands).toHaveLength(1)
-})
-it('disambiguates duplicate folder basenames into unique per-run tool labels', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-labels-')); dirs.push(dir)
+it('refuses renderer-initiated starts and folder pickers: only an answer proposal in main can start a task', async () => {
   const { handler, event, commands } = setup()
-  const ids: string[] = []
-  for (const path of ['a/src', 'b/src', 'c/src (2)']) {
-    const root = join(dir, path); await mkdir(root, { recursive: true })
-    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [root] })
-    ids.push((await handler(event, { kind: 'pickFolder' }) as { grant: { id: string } }).grant.id)
-  }
-  await handler(event, { kind: 'start', requestId: 'req', goal: 'Read', mode: 'local', grantIds: ids })
-  expect(commands[0]).toMatchObject({ grants: [{ label: 'src' }, { label: 'src (2)' }, { label: 'src (2) (2)' }] })
-  await handler(event, { kind: 'start', requestId: 'req2', goal: 'Read', mode: 'local', grantIds: [ids[1]] })
-  expect(commands[1]).toMatchObject({ grants: [{ label: 'src' }] })
+  await expect(handler(event, { kind: 'start', requestId: 'req', goal: 'Research', mode: 'web' })).rejects.toThrow('Not allowed.')
+  await expect(handler(event, { kind: 'pickFolder' })).rejects.toThrow('Not allowed.')
+  expect(electron.showOpenDialog).not.toHaveBeenCalled(); expect(commands).toEqual([])
 })
-it('returns only an opaque folder grant and resolves its canonical root only for a local host start', async () => {
+it.each([{ saveHistory: false }, { retention: 0 as const }, { saveHistory: true, retention: 30 as const }])('derives persistence, model and search for a proposed web task from main state, never the proposal: %j', async settings => {
+  const { ipc, commands } = setup({ ...settings, agent: { search: { provider: 'brave' } } })
+  await expect(ipc.start({ goal: 'Research', mode: 'web', conversationId: 'conversation-1' })).resolves.toEqual({ runId: 'run' })
+  expect(commands).toEqual([{ kind: 'start', requestId: expect.stringMatching(/^[0-9a-f-]{36}$/), goal: 'Research', mode: 'web', conversationId: 'conversation-1', grants: [], persistence: settings.saveHistory === false || settings.retention === 0 ? 'temporary' : 'retained', budget: DEFAULT_BUDGET, model: { provider: 'openai', model: 'test-model', effort: 'low', baseURL: 'https://model.invalid' }, search: { provider: 'brave' } }])
+  expect(JSON.stringify(commands)).not.toContain('not-for-renderer')
+  expect(electron.showOpenDialog).not.toHaveBeenCalled()
+})
+it.each(['', '   ', 'x'.repeat(16001)])('rejects an invalid proposed goal before any picker or host command: %#', async goal => {
+  const { ipc, commands } = setup()
+  await expect(ipc.start({ goal, mode: 'local' })).rejects.toThrow()
+  expect(electron.showOpenDialog).not.toHaveBeenCalled(); expect(commands).toEqual([])
+})
+it('grants exactly the canonical folder the owner picks in a native sheet that names the task, and never returns its path', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
   const root = join(dir, 'chosen'); await mkdir(root)
   const link = join(dir, 'alias'); await symlink(root, link)
-  electron.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [link] })
-  const { handler, event, commands } = setup()
-  const picked = await handler(event, { kind: 'pickFolder' }) as { grant: { id: string; label: string } }
-  expect(Object.keys(picked.grant).sort()).toEqual(['id', 'label'])
-  expect(picked.grant.label).toBe(basename(root))
-  expect(JSON.stringify(picked)).not.toContain(dir)
-  expect(electron.showOpenDialog.mock.calls[0]![0]).toEqual({ properties: ['openDirectory'] })
-  await handler(event, { kind: 'start', requestId: 'req', goal: 'Read', mode: 'local', grantIds: [picked.grant.id] })
-  const pickedStat = await stat(await realpath(root), { bigint: true })
-  expect(commands[0]).toMatchObject({ grants: [{ id: picked.grant.id, root: await realpath(root), label: basename(root), identity: `${pickedStat.dev}:${pickedStat.ino}` }] })
+  electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [link] })
+  const { ipc, commands } = setup()
+  const result = await ipc.start({ goal: 'List TODOs \u202E in my project', mode: 'local' })
+  expect(result).toEqual({ runId: 'run' })
+  const [parent, options] = electron.showOpenDialog.mock.calls[0]! as unknown as [unknown, Electron.OpenDialogOptions]
+  expect(parent).toBeDefined()
+  expect(options).toMatchObject({ properties: ['openDirectory'], buttonLabel: 'Allow access' })
+  expect(options.message).toContain('List TODOs \\u{202e} in my project')
+  const canonical = await realpath(root), identity = await stat(canonical, { bigint: true })
+  expect(commands).toEqual([expect.objectContaining({ kind: 'start', mode: 'local', grants: [{ id: expect.any(String), root: canonical, label: basename(canonical), identity: `${identity.dev}:${identity.ino}` }] })])
+  expect(JSON.stringify(result)).not.toContain(dir)
+})
+it('treats a cancelled picker as no task and a file or missing selection as a hidden failure', async () => {
+  const { ipc, commands } = setup()
+  for (const selection of [{ canceled: true, filePaths: [] }, { canceled: false, filePaths: [] }]) {
+    electron.showOpenDialog.mockResolvedValueOnce(selection)
+    await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true })
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
+  const file = join(dir, 'file'); writeFileSync(file, 'fixture')
+  for (const path of [file, join(dir, 'missing')]) {
+    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] })
+    await expect(ipc.start({ goal: 'Read', mode: 'local' })).rejects.toThrow('Could not grant folder access.')
+  }
+  expect(commands).toEqual([])
+})
+it.each(['stopAll', 'revoke', 'shortcut', 'dispose'] as const)('withdraws a task whose folder picker was open during %s', async action => {
+  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
+  const { ipc, handler, event, commands } = setup()
+  let finish!: (value: { canceled: boolean; filePaths: string[] }) => void
+  electron.showOpenDialog.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const pending = ipc.start({ goal: 'Read', mode: 'local' })
+  await expect(ipc.start({ goal: 'Another', mode: 'local' })).rejects.toThrow('Finish choosing the folder for the other task first.')
+  if (action === 'stopAll') await handler(event, { kind: 'stopAll' })
+  if (action === 'revoke') ipc.revokeAuthority()
+  if (action === 'shortcut') (electron.register.mock.calls[0] as unknown as [string, () => void])[1]()
+  if (action === 'dispose') ipc.dispose()
+  finish({ canceled: false, filePaths: [dir] })
+  await expect(pending).rejects.toThrow('Task expired.')
+  expect(commands.filter(command => command.kind === 'start')).toEqual([])
+  if (action !== 'dispose') { electron.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] }); await expect(ipc.start({ goal: 'Read', mode: 'local' })).resolves.toEqual({ cancelled: true }) }
+})
+it('rejects a host reply without a run ID and omits absent model and search options', async () => {
+  const { ipc, commands, supervisor } = setup({}, true)
+  await ipc.start({ goal: 'Research', mode: 'web' })
+  expect(commands[0]).toMatchObject({ model: { provider: 'openai', model: 'test-model' } })
+  expect(commands[0]).not.toHaveProperty('search'); expect(commands[0]).not.toHaveProperty('conversationId')
+  supervisor.request = async () => ({ ok: true }) as never
+  await expect(ipc.start({ goal: 'Research', mode: 'web' })).rejects.toThrow('The task could not start.')
+})
+it('refuses pushes to a navigated or disposed Home and refuses starts after disposal', async () => {
+  electron.register.mockReturnValueOnce(false)
+  const { ipc, handler, event, contents, frame } = setup()
+  frame.url = 'https://navigated.invalid'
+  ipc.push({ kind: 'host', state: 'ready' })
+  expect(contents.send).not.toHaveBeenCalled()
+  ipc.dispose()
+  expect(electron.unregister).not.toHaveBeenCalled()
+  frame.url = pageURL('home')
+  ipc.push({ kind: 'host', state: 'ready' })
+  expect(contents.send).not.toHaveBeenCalled()
+  await expect(handler(event, { kind: 'list', limit: 10 })).rejects.toThrow('Not allowed.')
+  await expect(ipc.start({ goal: 'Research', mode: 'web' })).rejects.toThrow('Not allowed.')
 })
 it('forwards the current search configuration on Continue without credentials', async () => {
   const { handler, event, commands, settings } = setup({ agent: { search: { provider: 'brave' } } })
@@ -325,39 +355,6 @@ it('forwards narrow task requests and delivers Stop-all from the global shortcut
   ipc.dispose()
   expect(electron.unregister).toHaveBeenCalledWith(accelerator)
   expect(electron.removeHandler).toHaveBeenCalledWith(AgentChannels.request)
-})
-it('handles cancelled and invalid native selections without granting files or exposing their paths', async () => {
-  const { handler, event, frame } = setup()
-  for (const selection of [{ canceled: true, filePaths: [] }, { canceled: false, filePaths: [] }]) {
-    electron.showOpenDialog.mockResolvedValueOnce(selection)
-    await expect(handler(event, { kind: 'pickFolder' })).resolves.toEqual({ cancelled: true })
-  }
-  const dir = mkdtempSync(join(tmpdir(), 'heynimbo-agent-ipc-')); dirs.push(dir)
-  const file = join(dir, 'file'); writeFileSync(file, 'fixture')
-  for (const path of [file, join(dir, 'missing')]) {
-    electron.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path] })
-    await expect(handler(event, { kind: 'pickFolder' })).rejects.toThrow('Could not grant folder access.')
-  }
-  electron.showOpenDialog.mockImplementationOnce(async () => { frame.url = 'https://navigated.invalid'; return { canceled: false, filePaths: [dir] } })
-  await expect(handler(event, { kind: 'pickFolder' })).rejects.toThrow('Could not grant folder access.')
-})
-it('omits absent model and search options and refuses pushes to a navigated or disposed Home', async () => {
-  electron.register.mockReturnValueOnce(false)
-  const { ipc, handler, event, commands, contents, frame } = setup({}, true)
-  await handler(event, { kind: 'start', requestId: 'req', goal: 'Research', mode: 'web' })
-  await handler(event, { kind: 'continue', runId: 'run' })
-  expect(commands[0]).toMatchObject({ model: { provider: 'openai', model: 'test-model' } })
-  expect(commands[0]).not.toHaveProperty('search')
-  expect(commands[1]).toEqual({ kind: 'continue', runId: 'run', model: { provider: 'openai', model: 'test-model' } })
-  frame.url = 'https://navigated.invalid'
-  ipc.push({ kind: 'host', state: 'ready' })
-  expect(contents.send).not.toHaveBeenCalled()
-  ipc.dispose()
-  expect(electron.unregister).not.toHaveBeenCalled()
-  frame.url = pageURL('home')
-  ipc.push({ kind: 'host', state: 'ready' })
-  expect(contents.send).not.toHaveBeenCalled()
-  await expect(handler(event, { kind: 'list', limit: 10 })).rejects.toThrow('Not allowed.')
 })
 it('returns only the selected model credential and hides missing Brave-key errors', async () => {
   const connections = { answer: () => ({ provider: 'openai' as const, model: 'm', vision: false, credential: async () => 'model-secret' }) }

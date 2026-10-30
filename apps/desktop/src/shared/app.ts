@@ -24,7 +24,10 @@ export interface DrawingScene {
     marks: Mark[]
     space: { frame: { x: number; y: number; width: number; height: number }; pixelWidth: number; pixelHeight: number }
   }>
+  /** Background tasks this answer handed to the agent. */
+  tasks?: TurnTask[]
 }
+export interface TurnTask { goal: string; mode: 'web' | 'local'; state: 'starting' | 'started' | 'failed'; runId?: string; error?: string }
 export interface Conversation {
   id: string; title: string; created: number; updated: number; pinned: boolean; archived: boolean; preview: string
 }

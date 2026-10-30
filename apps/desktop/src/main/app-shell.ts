@@ -1,9 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, utilityProcess } from 'electron'
 import { AgentSupervisor } from './agent-supervisor'
-import { credentialForAgent, registerAgentIpc } from './agent-ipc'
+import { credentialForAgent, registerAgentIpc, type TaskStart } from './agent-ipc'
 import type { AnswerConnection } from './answer-provider'
 import { AppChannels, type AppRequest, type AppSettings, type AppSnapshot } from '../shared/app'
+import type { AgentPush } from '../shared/agent-protocol'
 import { PROVIDER_NAMES, type ConnectionRequest, type ConnectionResult, type ConnectionSnapshot } from '../shared/providers'
 import { ConversationController } from './conversations'
 import { HistoryRepository } from './history'
@@ -59,6 +60,8 @@ export class AppShell {
   private status = ''
   private busy = false
   private hasKey = false
+  /** Live runs already announced as waiting, so Home opens once per wait. */
+  private readonly attention = new Set<string>()
   get keyPresent(): boolean { return this.hasKey }
   // Reconnect (including legacy setup/account refresh) reports readiness here,
   // even when the boolean is unchanged. Old run authority must not survive it.
@@ -71,7 +74,7 @@ export class AppShell {
       this.agent = new AgentSupervisor({
         spawn: () => utilityProcess.fork(join(__dirname, 'agent-host.js'), [], { serviceName: 'HeyNimbo Agent', stdio: 'ignore' }),
         credentials: (name, allowed, binding) => credentialForAgent(name, allowed, connections, () => this.settings.get(), binding),
-        onPush: push => this.agentIpc?.push(push),
+        onPush: push => { this.agentIpc?.push(push); this.notice(push) },
         dataDir: app.getPath('userData'),
       })
       this.agentIpc = registerAgentIpc({ home: () => this.home, settings: () => this.settings.get(), connections, supervisor: this.agent })
@@ -93,6 +96,25 @@ export class AppShell {
   }
 
   private revokeAgentAuthority(): void { this.agent?.revokeAuthority(); this.agentIpc?.revokeAuthority() }
+  /** Starts a task an answer proposed. Undefined when this app has no agent host. */
+  get startTask(): ((task: TaskStart) => Promise<{ runId: string } | { cancelled: true }>) | undefined {
+    const ipc = this.agentIpc
+    return ipc ? task => ipc.start(task) : undefined
+  }
+  /** A background task waiting for the owner brings Home forward on that task. */
+  private notice(push: AgentPush): void {
+    if (push.kind !== 'events' || this.preview) return
+    for (const run of push.runs) {
+      const waits = run.status === 'waiting_approval' || run.status === 'waiting_user'
+      if (waits && !this.attention.has(run.id)) {
+        this.attention.add(run.id)
+        const home = this.openHome(), runId = run.id
+        const navigate = (): void => { if (!home.isDestroyed()) home.webContents.send(AppChannels.navigate, { runId }) }
+        if (home.webContents.isLoading()) home.webContents.once('did-finish-load', navigate); else navigate()
+      } else if (!waits) this.attention.delete(run.id)
+    }
+    while (this.attention.size > 256) this.attention.delete(this.attention.values().next().value!)
+  }
   private pruneHistory(): void {
     const retention = this.settings.get().retention
     this.conversations.history.prune(retention)

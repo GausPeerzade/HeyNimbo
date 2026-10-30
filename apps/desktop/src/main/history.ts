@@ -2,7 +2,7 @@ import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import type { Conversation, DrawingScene, HistoryTurn, Retention, SearchHit } from '../shared/app'
+import type { Conversation, DrawingScene, HistoryTurn, Retention, SearchHit, TurnTask } from '../shared/app'
 
 const EMPTY_SCENE: DrawingScene = { version: 1, beats: [] }
 
@@ -80,6 +80,10 @@ export class HistoryRepository {
   }
   update(id: string, answer: string, scene: DrawingScene, screenUsed: boolean): void {
     this.db.prepare('UPDATE turns SET answer=?,scene=?,screen_context_used=? WHERE id=?').run(answer, JSON.stringify(scene), Number(screenUsed), id)
+  }
+  /** Records task outcomes that settle after the turn itself; never rewrites beats or the answer. */
+  setTasks(id: string, tasks: TurnTask[]): void {
+    this.db.prepare(`UPDATE turns SET scene=json_set(scene,'$.tasks',json(?)) WHERE id=?`).run(JSON.stringify(tasks), id)
   }
   finish(id: string, state: HistoryTurn['state'], error: string | null = null): void {
     this.db.prepare('UPDATE turns SET state=?,error=? WHERE id=?').run(state, error, id)

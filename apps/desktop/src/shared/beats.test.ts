@@ -66,6 +66,24 @@ describe('BeatParser', () => {
   })
 })
 
+describe('task handoff', () => {
+  it('hands one well-formed @task line to the task callback and never draws or speaks it', () => {
+    const tasks: unknown[] = [], dropped: string[] = []
+    const parser = new BeatParser(IMAGE, undefined, line => dropped.push(line), task => tasks.push(task))
+    const text = 'I will look that up.\n@task web "Compare the three newest M5 laptops and cite sources"\n@task files "List TODO comments"\n@circle 10 10 5\nDone.'
+    const beats = [...parser.push(text), ...parser.flush()]
+    expect(tasks).toEqual([{ mode: 'web', goal: 'Compare the three newest M5 laptops and cite sources' }])
+    expect(dropped).toEqual(['@task files "List TODO comments"'])
+    expect(beats.map(beat => beat.sentence).join(' ')).not.toContain('@task')
+    expect(beats.flatMap(beat => beat.marks).map(mark => mark.kind)).toEqual(['circle'])
+  })
+  it('maps files to a local task and drops malformed, empty or oversized goals', () => {
+    const accept = (line: string) => { const tasks: unknown[] = []; new BeatParser(IMAGE, undefined, undefined, task => tasks.push(task)).push(`${line}\n`); return tasks }
+    expect(accept('@task files "Find every TODO in my project"')).toEqual([{ mode: 'local', goal: 'Find every TODO in my project' }])
+    for (const bad of ['@task web ""', '@task web "   "', '@task shell "rm -rf"', '@task web goal', `@task web "${'x'.repeat(501)}"`, '@task web "a" extra']) expect(accept(bad), bad).toEqual([])
+  })
+})
+
 describe('card protocol', () => {
   it('validates every new command, defaults and outer bounds', () => {
     expect(parseMark('@card water -20 790 10 20 "Water cycle" dots', IMAGE)).toEqual({ kind: 'card', id: 'water', x: 0, y: 620, w: 240, h: 180, title: 'Water cycle', board: 'dots' })

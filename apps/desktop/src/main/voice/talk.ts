@@ -1,8 +1,8 @@
 import type { ScreenCaptures } from '@heynimbo/native'
-import { BeatParser, type Beat, type Mark } from '../../shared/beats'
+import { BeatParser, type Beat, type Mark, type TaskProposal } from '../../shared/beats'
 import type { VoiceCommand, VoiceEvent } from '../../shared/ipc'
 import type { CaptureSpace } from '../overlay-geometry'
-import type { DrawingScene } from '../../shared/app'
+import type { DrawingScene, TurnTask } from '../../shared/app'
 import type { ConversationController } from '../conversations'
 import { streamAnswer, type Exchange, type Screenshot } from './brain'
 import type { AnswerConnection } from '../answer-provider'
@@ -26,6 +26,12 @@ export interface TalkDeps {
   capture: () => Promise<ScreenCaptures | undefined>
   /** A label while busy, or undefined to return the notch to rest. */
   onStatus: (label: string | undefined) => void
+  /** The display to draw on when no screenshot exists (Screen Recording off or capture failed). */
+  canvas?: () => CaptureSpace | undefined
+  /** Starts a model-proposed background task in trusted code; absent when tasks are unavailable. */
+  startTask?: (task: TaskProposal & { conversationId?: string }) => Promise<{ runId: string } | { cancelled: true }>
+  /** Whether the current connection can run tasks (default: yes when `startTask` exists). */
+  tasksAvailable?: () => boolean
   drawing: {
     /** Draws marks given in the capture's screenshot pixels. */
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
@@ -53,6 +59,9 @@ interface Turn {
   /** Marks waiting for their sentence's audio to start, by line number. */
   readonly lines: Map<number, { marks: Mark[]; durationMs: number }>
   space?: CaptureSpace
+  /** True only when a real screenshot went to the model. */
+  screenUsed?: boolean
+  conversationId?: string
 }
 
 /** One push-to-talk conversation: listen while held, then transcribe, think and
@@ -184,6 +193,7 @@ export class TalkSession {
   private begin(turn: Turn, question: string, mode: 'voice' | 'text'): Exchange[] {
     const history = this.deps.conversations.context()
     turn.recordId = this.deps.conversations.begin(question, mode, turn.connection ? { provider: turn.connection.provider, model: turn.connection.model } : undefined)
+    turn.conversationId = this.deps.conversations.currentId ?? undefined
     this.deps.onStatus('Thinking…')
     return history
   }
@@ -192,14 +202,20 @@ export class TalkSession {
     const display = (await turn.capture)?.displays[0]
     if (turn.abort.signal.aborted) return
     const screenshot = toScreenshot(display)
+    // Without a screenshot a vision model can still draw cards, sketches and 3D on the
+    // cursor's display; it just cannot see or point at what is there.
     if (display) turn.space = { frame: display.frame, pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight }
+    else if (turn.connection?.vision !== false) turn.space = this.deps.canvas?.()
+    turn.screenUsed = Boolean(display)
+    const canvas = !display && turn.space ? { width: turn.space.pixelWidth, height: turn.space.pixelHeight } : undefined
+    const tasks = Boolean(this.deps.startTask) && (this.deps.tasksAvailable?.() ?? true)
     // 3D lines go to the overlay as they arrive, so their geometry is ready when speech reaches them.
-    const beats = new BeatParser({ width: display?.pixelWidth ?? 0, height: display?.pixelHeight ?? 0 }, (mark) => {
+    const beats = new BeatParser({ width: turn.space?.pixelWidth ?? 0, height: turn.space?.pixelHeight ?? 0 }, (mark) => {
       if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) {
         if (mark.kind === 'part') this.mark(turn, 'first 3D preparation')
         this.deps.drawing.prepare?.([mark], turn.space)
       }
-    })
+    }, undefined, tasks ? task => this.proposeTask(turn, task) : undefined)
     let speech: Promise<void> = Promise.resolve()
     let lineNumber = 0
     let answer = ''
@@ -240,6 +256,8 @@ export class TalkSession {
       screenshot,
       history,
       signal: turn.abort.signal,
+      ...(canvas ? { canvas } : {}),
+      ...(tasks ? { tasks } : {}),
     })) {
       if (turn.abort.signal.aborted) break
       if (!answer) this.mark(turn, 'first token')
@@ -260,7 +278,7 @@ export class TalkSession {
   private flush(turn: Turn): void {
     clearTimeout(turn.saveTimer); turn.saveTimer = undefined
     if (!turn.dirty || !turn.recordId) return
-    this.deps.conversations.update(turn.recordId, turn.answer, turn.scene, Boolean(turn.space))
+    this.deps.conversations.update(turn.recordId, turn.answer, turn.scene, Boolean(turn.screenUsed))
     turn.dirty = false
   }
 
@@ -311,6 +329,25 @@ export class TalkSession {
     this.errorTimer = setTimeout(() => {
       if (!this.turn) this.deps.onStatus(undefined)
     }, 2_500)
+  }
+
+  /** The model only proposes; main decides (and asks for a folder) before anything runs.
+   *  The outcome can arrive after the turn ends, so it is written by turn ID. */
+  private proposeTask(turn: Turn, proposal: TaskProposal): void {
+    // Parsing (and so proposals) stops at abort and at finish, so only wiring is checked here.
+    if (!this.deps.startTask) return
+    const task: TurnTask = { goal: proposal.goal, mode: proposal.mode, state: 'starting' }
+    turn.scene.tasks = [task]
+    turn.dirty = true
+    const settle = (outcome: Partial<TurnTask>): void => {
+      Object.assign(task, outcome)
+      if (!turn.recordId) return
+      try { this.deps.conversations.setTasks(turn.recordId, [task]) } catch { console.warn('[talk] Could not save the task outcome.') }
+    }
+    this.deps.startTask({ ...proposal, ...(turn.conversationId ? { conversationId: turn.conversationId } : {}) }).then(
+      result => settle('runId' in result ? { state: 'started', runId: result.runId } : { state: 'failed', error: 'No folder was chosen.' }),
+      (error: unknown) => settle({ state: 'failed', error: error instanceof Error ? error.message.slice(0, 200) : 'The task could not start.' }),
+    )
   }
 
   private draw(turn: Turn, marks: Mark[], durationMs: number): void {

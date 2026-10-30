@@ -10,13 +10,10 @@
   <button id="settings" class="sidebar-footer">Settings <kbd>⌘,</kbd></button>
 </aside>
 <main>
-  <header class="toolbar"><button id="toggle" class="icon" aria-label="Toggle sidebar" title="Toggle sidebar"></button><h1 id="title">New conversation</h1><form id="rename-form" hidden><input id="rename" name="title" aria-label="Conversation title" maxlength="100" autocomplete="off"/></form><button id="new-top" class="icon" aria-label="New conversation" title="New conversation (⌘N)"></button></header>
+  <header class="toolbar"><button id="toggle" class="icon" aria-label="Toggle sidebar" title="Toggle sidebar"></button><h1 id="title">New conversation</h1><form id="rename-form" hidden><input id="rename" name="title" aria-label="Conversation title" maxlength="100" autocomplete="off"/></form><button id="tasks" type="button" aria-pressed="false" hidden>Tasks</button><button id="stop-all" type="button" class="danger" hidden>Stop all tasks</button><button id="new-top" class="icon" aria-label="New conversation" title="New conversation (⌘N)"></button></header>
   <div id="transcript" tabindex="0" aria-label="Conversation transcript"></div>
   <div id="agent-panel" aria-label="Agent tasks" hidden></div>
   <div class="composer-area">
-    <div class="agent-composer-heading"><div id="mode-switch" role="group" aria-label="Assistant mode" hidden><button id="explain-mode" type="button" aria-pressed="true">Explain</button><button id="do-mode" type="button" aria-pressed="false">Do</button></div><button id="stop-all" type="button" class="danger" hidden>Stop all tasks</button></div>
-    <div id="agent-folders" role="group" aria-label="Task access" hidden></div>
-    <p id="agent-context" hidden>Tasks do not capture your screen. Web research uses the web; Local files uses only folders you add. Mixing needs your permission.</p>
     <p id="feedback" role="status" aria-live="polite"></p>
     <form id="composer"><label class="sr-only" for="question">Ask HeyNimbo</label><textarea id="question" name="question" rows="1" maxlength="16000" placeholder="Ask about your screen…" aria-describedby="screen-context" autocomplete="off" autofocus></textarea><div class="composer-controls"><button id="stop" type="button" hidden>Stop</button><button id="send" type="submit" class="primary" aria-label="Ask question" title="Ask (Enter)"></button></div></form>
     <p id="screen-context">Includes a screen capture when you ask</p>

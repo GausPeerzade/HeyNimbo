@@ -221,6 +221,62 @@ it.each([false, true])('streams speech and 2D before later 3D on one high-thinki
   }
   expect(mocks.stream).toHaveBeenCalledOnce(); talk.close()
 })
+it('still draws cards and 3D on the cursor display when screen capture fails, without claiming screen context', async () => {
+  const { c, deps } = fixture(Promise.resolve(undefined))
+  const space = { frame: { x: 0, y: 0, width: 1440, height: 900 }, pixelWidth: 1440, pixelHeight: 900 }
+  const talk = new TalkSession({ ...deps, mouth: undefined, canvas: () => space, answer: () => ({ provider: 'openai', model: 'gpt-6.1-terra', vision: true, credential: async () => 'synthetic' }) })
+  mocks.stream.mockImplementation(async function* () { yield '@model bottle 40 40 600 560 "Water bottle"\n@part bottle body cylinder r=0.4 h=1.6\nPressure grows with depth.' })
+  talk.askText('Draw a 3D water bottle')
+  await vi.waitFor(() => expect(c.turns()[0]?.state).toBe('complete'))
+  expect(mocks.stream).toHaveBeenLastCalledWith(expect.objectContaining({ screenshot: undefined, canvas: { width: 1440, height: 900 } }))
+  expect(deps.drawing.prepare).toHaveBeenCalledWith([expect.objectContaining({ kind: 'model' })], space)
+  expect(vi.mocked(deps.drawing.draw).mock.calls.flatMap(([marks]) => marks.map(mark => mark.kind))).toEqual(['model', 'part'])
+  expect(c.turns()[0]).toMatchObject({ screenContextUsed: false, scene: { beats: [{ space }] } })
+  talk.close()
+})
+it('starts one model-proposed task in the turn conversation and records its outcome on the turn, even after the turn ends', async () => {
+  const { c, deps } = fixture()
+  let resolve!: (value: { runId: string }) => void
+  const startTask = vi.fn(() => new Promise<{ runId: string } | { cancelled: true }>(done => { resolve = done }))
+  const talk = new TalkSession({ ...deps, mouth: undefined, startTask })
+  mocks.stream.mockImplementation(async function* () { yield 'I started a research task.\n@task web "Find current M5 laptop prices"\n' })
+  talk.askText('Research M5 laptop prices')
+  await vi.waitFor(() => expect(c.turns()[0]?.state).toBe('complete'))
+  expect(startTask).toHaveBeenCalledWith({ goal: 'Find current M5 laptop prices', mode: 'web', conversationId: c.currentId })
+  expect(c.turns()[0]?.scene.tasks).toEqual([{ goal: 'Find current M5 laptop prices', mode: 'web', state: 'starting' }])
+  expect(c.turns()[0]?.answer).toBe('I started a research task.')
+  resolve({ runId: 'run_1' })
+  await vi.waitFor(() => expect(c.turns()[0]?.scene.tasks).toEqual([{ goal: 'Find current M5 laptop prices', mode: 'web', state: 'started', runId: 'run_1' }]))
+  talk.close()
+})
+it.each([
+  ['cancelled picker', async () => ({ cancelled: true as const }), { state: 'failed', error: 'No folder was chosen.' }],
+  ['host failure', async () => { throw new Error('Agent host unavailable. Try again.') }, { state: 'failed', error: 'Agent host unavailable. Try again.' }],
+])('records a %s on the task without failing the spoken answer', async (_name, start, outcome) => {
+  const { c, deps } = fixture()
+  const talk = new TalkSession({ ...deps, mouth: undefined, startTask: vi.fn(start) })
+  mocks.stream.mockImplementation(async function* () { yield '@task files "List TODO comments"\nI asked for a folder.' })
+  talk.askText('Find TODOs in my project')
+  await vi.waitFor(() => expect(c.turns()[0]?.scene.tasks?.[0]).toMatchObject(outcome))
+  expect(c.turns()[0]).toMatchObject({ state: 'complete', answer: 'I asked for a folder.' })
+  talk.close()
+})
+it('does not start a task after the turn is interrupted or when no task runner is wired', async () => {
+  const { c, deps } = fixture()
+  const startTask = vi.fn(async () => ({ runId: 'never' }))
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const talk = new TalkSession({ ...deps, mouth: undefined, startTask })
+  mocks.stream.mockImplementation(async function* () { yield 'Starting.'; await gate; yield '\n@task web "Too late"\n' })
+  talk.askText('Research something'); await vi.waitFor(() => expect(c.turns()[0]?.answer).toBe('Starting.'))
+  talk.holdCancelled(); release(); await new Promise(resolve => setImmediate(resolve))
+  expect(startTask).not.toHaveBeenCalled()
+  const plain = new TalkSession({ ...deps, mouth: undefined })
+  mocks.stream.mockImplementation(async function* () { yield '@task web "Unwired"\nAnswer.' })
+  plain.askText('Research'); await vi.waitFor(() => expect(c.turns().at(-1)?.state).toBe('complete'))
+  expect(c.turns().at(-1)?.scene.tasks).toBeUndefined()
+  talk.close(); plain.close()
+})
 it('an empty local transcript says it did not catch speech and never asks the answer provider', async () => {
   const { deps, talk, c } = fixture()
   mocks.stream.mockClear()

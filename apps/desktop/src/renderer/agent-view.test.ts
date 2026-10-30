@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_BUDGET, parseAgentRequest, type AgentApi, type AgentEvent, type AgentPush, type AgentRequest, type RunSummary } from '../shared/agent-protocol'
 import { AgentView } from './agent-view'
@@ -25,16 +27,16 @@ const cast = (node: TestNode) => node as unknown as HTMLElement
 const tick = () => new Promise(resolve => setImmediate(resolve))
 function run(id = 'run', updated = 100): RunSummary { return { id, goal: `Goal ${id}`, mode: 'web', mixed: false, status: 'running', persistence: 'retained', created: 1, updated, usage: { inputTokens: 0, outputTokens: 0 } } }
 function event(seq: number, runId = 'run'): AgentEvent { return { id: `e${seq}`, seq, at: seq, runId, payload: { type: 'text', step: seq, text: `Text ${seq}` } } }
-let panel: TestNode, folders: TestNode, stopAll: TestNode, frames: (() => void)[], requests: AgentRequest[], push: (value: AgentPush) => void
+let panel: TestNode, stopAll: TestNode, frames: (() => void)[], requests: AgentRequest[], push: (value: AgentPush) => void
 let respond: (value: AgentRequest) => Promise<unknown>
 let unsubscribe = vi.fn<() => void>()
 let api: AgentApi
 function flush() { while (frames.length) frames.shift()!() }
 async function settle() { await tick(); flush(); await tick(); flush() }
 function button(text: string, inNode = panel) { return inNode.querySelectorAll('button').find(node => node.textContent === text)! }
-function setup() { return new AgentView(api, { panel: cast(panel), folders: cast(folders), stopAll: stopAll as unknown as HTMLButtonElement }, { schedule: callback => { frames.push(callback) } }) }
+function setup() { return new AgentView(api, { panel: cast(panel), stopAll: stopAll as unknown as HTMLButtonElement }, { schedule: callback => { frames.push(callback) } }) }
 beforeEach(() => {
-  panel = new TestNode('div'); folders = new TestNode('div'); stopAll = new TestNode('button'); frames = []; requests = []; unsubscribe = vi.fn()
+  panel = new TestNode('div'); stopAll = new TestNode('button'); frames = []; requests = []; unsubscribe = vi.fn()
   respond = async value => value.kind === 'list' ? { runs: [] } : value.kind === 'events' ? { events: [] } : { ok: true }
   api = { request: async value => { parseAgentRequest(value); requests.push(value); return respond(value) }, onPush: listener => { push = listener; return unsubscribe } }
   vi.stubGlobal('document', { createElement: (tag: string) => new TestNode(tag) })
@@ -91,27 +93,6 @@ it('ignores other-run partials and stale history responses after task selection 
   expect(panel.querySelectorAll('pre').at(-1)?.textContent).toBe('Current partial')
   expect(panel.querySelectorAll('p').filter(node => node.attributes['aria-live'] === 'polite').map(node => node.textContent).join('')).not.toContain('Current partial')
 })
-it('starts a validator-approved local task with opaque folder IDs and never sends grants in web mode', async () => {
-  respond = async value => value.kind === 'pickFolder' ? { grant: { id: 'grant', label: '<img src=x onerror=alert(1)>' } } : value.kind === 'start' ? { runId: 'new_run' } : value.kind === 'list' ? { runs: [] } : { events: [] }
-  const view = setup(); view.setActive(true); await settle()
-  expect(button('Add folder', folders).disabled).toBe(true)
-  button('Local files', folders).onclick!(); button('Add folder', folders).onclick!(); await settle()
-  expect(folders.querySelectorAll('span').some(node => node.textContent === '<img src=x onerror=alert(1)>')).toBe(true)
-  expect(folders.querySelectorAll('img')).toHaveLength(0)
-  expect(await view.submit('Read the files')).toBe(true)
-  const local = requests.find(value => value.kind === 'start')!
-  expect(parseAgentRequest(local)).toMatchObject({ kind: 'start', goal: 'Read the files', mode: 'local', grantIds: ['grant'] })
-  expect(local.kind === 'start' && /^[A-Za-z0-9_-]+$/.test(local.requestId)).toBe(true)
-  button('Web research', folders).onclick!()
-  expect(button('Add folder', folders).disabled).toBe(true)
-  expect(folders.querySelectorAll('button').find(node => node.attributes['aria-label']?.startsWith('Remove folder'))?.disabled).toBe(true)
-  expect(await view.submit('Find public sources')).toBe(true)
-  const web = requests.filter(value => value.kind === 'start').at(-1)!
-  expect(parseAgentRequest(web)).toMatchObject({ kind: 'start', mode: 'web' }); expect(web).not.toHaveProperty('grantIds')
-  button('Local files', folders).onclick!()
-  folders.querySelectorAll('button').find(node => node.attributes['aria-label']?.startsWith('Remove folder'))!.onclick!()
-  expect(folders.querySelectorAll('span')).toHaveLength(0)
-})
 it('stops only the selected active task, continues interrupted tasks, confirms deletion and keeps Stop all available', async () => {
   respond = async value => value.kind === 'list' ? { runs: [run()] } : value.kind === 'events' ? { events: [] } : { ok: true }
   vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
@@ -145,11 +126,6 @@ it('renders selected-run partials from a combined events push without a second H
   push({ kind: 'events', runs: [], events: [event(1)], partials: [{ runId: 'foreign', step: 2, text: 'Wrong' }, { runId: 'run', step: 2, text: 'Combined live text' }] }); flush()
   expect(panel.querySelectorAll('pre').map(node => node.textContent)).toEqual(['Text 1', 'Combined live text'])
 })
-it('escapes bidi and controls in folder names instead of letting labels reorder the picker UI', async () => {
-  respond = async value => value.kind === 'pickFolder' ? { grant: { id: 'grant', label: 'file\u202E\u2066\u200F\u2029\u0000\u0085' } } : { runs: [] }
-  const view = setup(); view.setActive(true); await settle(); button('Local files', folders).onclick!(); button('Add folder', folders).onclick!(); await settle()
-  expect(folders.querySelectorAll('span')[0]?.textContent).toBe('file\\u{202e}\\u{2066}\\u{200f}\\u{2029}\\u{0}\\u{85}')
-})
 it('shows fixed starting and crash banners without exposing host error details', async () => {
   const view = setup(); view.setActive(true); await settle()
   push({ kind: 'host', state: 'starting' }); flush()
@@ -163,35 +139,48 @@ it('shows fixed starting and crash banners without exposing host error details',
 async function home(agent: AgentApi | undefined) {
   vi.resetModules()
   const nodes = new Map<string, TestNode>()
-  for (const id of ['search', 'question', 'transcript', 'conversations', 'title', 'rename-form', 'rename', 'stop', 'send', 'feedback', 'screen-context', 'agent-context', 'saving', 'composer', 'new', 'new-top', 'toggle', 'settings', 'mode-switch', 'explain-mode', 'do-mode', 'agent-panel', 'agent-folders', 'stop-all', 'composer-note']) { const node = new TestNode('div'); node.id = id; nodes.set(id, node) }
+  for (const id of ['search', 'question', 'transcript', 'conversations', 'title', 'rename-form', 'rename', 'stop', 'send', 'feedback', 'screen-context', 'saving', 'composer', 'new', 'new-top', 'toggle', 'settings', 'tasks', 'agent-panel', 'stop-all', 'composer-note']) { const node = new TestNode('div'); node.id = id; nodes.set(id, node) }
   nodes.get('rename-form')!.hidden = true
   const explainRequests: unknown[] = []
   let publish!: (snapshot: AppSnapshot) => void
+  let navigate!: (navigation: { runId?: string; turnId?: string }) => void
   vi.stubGlobal('document', { getElementById: (id: string) => nodes.get(id), createElement: (tag: string) => new TestNode(tag), createElementNS: (_ns: string, tag: string) => new TestNode(tag), body: new TestNode('body'), activeElement: null })
-  vi.stubGlobal('window', { heynimboApp: { agent, request: async (value: { kind: string }) => { explainRequests.push(value); return value.kind === 'ask' ? { accepted: true } : undefined }, onSnapshot(callback: typeof publish) { publish = callback }, onNavigate() {} } })
+  vi.stubGlobal('window', { heynimboApp: { agent, request: async (value: { kind: string }) => { explainRequests.push(value); return value.kind === 'ask' ? { accepted: true } : undefined }, onSnapshot(callback: typeof publish) { publish = callback }, onNavigate(callback: typeof navigate) { navigate = callback } } })
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => { frames.push(callback); return 1 })
   await import('./home')
-  return { nodes, explainRequests, publish: (value: AppSnapshot) => publish(value) }
+  return { nodes, explainRequests, publish: (value: AppSnapshot) => publish(value), navigate: (value: Parameters<typeof navigate>[0]) => navigate(value) }
 }
-it('keeps Explain submit as ask and switches the actual composer to a validator-approved web start without screen capture', async () => {
-  respond = async value => value.kind === 'start' ? { runId: 'new_run' } : { runs: [] }
-  const { nodes, explainRequests } = await home(api)
-  nodes.get('question')!.value = 'Explain this'; nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
-  expect(explainRequests).toContainEqual({ kind: 'ask', question: 'Explain this' }); expect(requests).toEqual([])
-  nodes.get('do-mode')!.onclick!(); await settle()
-  nodes.get('question')!.value = 'Research it'; nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
-  const start = requests.find(value => value.kind === 'start')!
-  expect(parseAgentRequest(start)).toMatchObject({ kind: 'start', goal: 'Research it', mode: 'web' }); expect(start).not.toHaveProperty('grantIds')
-  expect(nodes.get('question')!.value).toBe(''); expect(nodes.get('transcript')!.hidden).toBe(true)
-  expect(nodes.get('stop-all')!.hidden).toBe(false)
-  expect(nodes.get('question')!.attributes['aria-describedby']).toBe('agent-context')
-  expect(nodes.get('agent-context')!.hidden).toBe(false)
-  nodes.get('explain-mode')!.onclick!(); expect(nodes.get('transcript')!.hidden).toBe(false)
-  expect(nodes.get('question')!.attributes['aria-describedby']).toBe('screen-context')
+const fixtureSnapshot = (turns: AppSnapshot['turns'] = [], busy = false): AppSnapshot => ({ currentId: 'c', conversations: [{ id: 'c', title: 'c', created: 1, updated: 1, pinned: false, archived: false, preview: '' }], turns, activeTurnId: null, busy, status: '', settings: DEFAULT_SETTINGS, saved: true, keyPresent: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' } })
+it('has one composer: every submission is an ask, even from the Tasks view, and the agent host is never asked to start work', async () => {
+  const { nodes, explainRequests, publish } = await home(api)
+  publish(fixtureSnapshot())
+  const page = readFileSync(join(__dirname, 'home.html'), 'utf8')
+  for (const id of ['mode-switch', 'explain-mode', 'do-mode', 'agent-folders', 'agent-context']) expect(page).not.toContain(`id="${id}"`)
+  expect(page).toContain('id="tasks"')
+  nodes.get('question')!.value = 'Research M5 laptop prices'; nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
+  nodes.get('tasks')!.onclick!(); await settle()
+  expect(nodes.get('transcript')!.hidden).toBe(true); expect(nodes.get('agent-panel')!.hidden).toBe(false); expect(nodes.get('stop-all')!.hidden).toBe(false)
+  nodes.get('question')!.value = 'Explain this chart'; nodes.get('composer')!.onsubmit!({ preventDefault() {} }); await settle()
+  expect(explainRequests.filter(value => (value as { kind: string }).kind === 'ask')).toEqual([{ kind: 'ask', question: 'Research M5 laptop prices' }, { kind: 'ask', question: 'Explain this chart' }])
+  // Asking from Tasks returns to the conversation where the answer appears.
+  expect(nodes.get('transcript')!.hidden).toBe(false); expect(nodes.get('agent-panel')!.hidden).toBe(true)
+  expect(requests.some(value => value.kind === 'start' || value.kind === 'pickFolder')).toBe(false)
 })
-it('hides the Do switch when the agent preload is absent', async () => {
-  const { nodes } = await home(undefined)
-  expect(nodes.get('mode-switch')!.hidden).toBe(true)
+it('opens the exact task from a turn card and from a main navigation, and hides Tasks when the agent preload is absent', async () => {
+  respond = async value => value.kind === 'list' ? { runs: [run('first', 200), run('run_7', 100)] } : value.kind === 'events' ? { events: [] } : { ok: true }
+  const { nodes, publish, navigate } = await home(api)
+  const turn = { id: 't', conversationId: 'c', created: 1, mode: 'text' as const, question: 'Research', answer: 'Started.', state: 'complete' as const, error: null, screenContextUsed: false, scene: { version: 1 as const, beats: [], tasks: [{ goal: 'Find prices', mode: 'web' as const, state: 'started' as const, runId: 'run_7' }] } }
+  publish(fixtureSnapshot([turn])); await settle()
+  const card = nodes.get('transcript')!.querySelectorAll('aside')[0]!
+  expect(card.querySelectorAll('p').map(node => node.textContent)).toEqual(['Web task · running in the background', 'Find prices'])
+  card.querySelectorAll('button').find(node => node.textContent === 'View task')!.onclick!(); await settle()
+  expect(nodes.get('transcript')!.hidden).toBe(true)
+  expect(nodes.get('agent-panel')!.querySelectorAll('button').find(node => node.dataset.runId === 'run_7')!.attributes['aria-current']).toBe('true')
+  navigate({ turnId: 't' }); expect(nodes.get('transcript')!.hidden).toBe(false)
+  navigate({ runId: 'first' }); await settle()
+  expect(nodes.get('agent-panel')!.querySelectorAll('button').find(node => node.dataset.runId === 'first')!.attributes['aria-current']).toBe('true')
+  const bare = await home(undefined)
+  expect(bare.nodes.get('tasks')!.hidden).toBe(true)
 })
 it('pages Show earlier from the oldest retained sequence without keeping more than 2000 events', async () => {
   respond = async value => {
@@ -237,20 +226,6 @@ it('keeps Load older available when a byte-limited task page is short but the ho
   expect(button('Load older').hidden).toBe(true)
   view.dispose()
 })
-it('retains the request ID across an uncertain start retry and blocks duplicate submissions while it is in flight', async () => {
-  let finish!: (value: unknown) => void
-  respond = async value => value.kind === 'start' ? new Promise(resolve => { finish = resolve }) : { runs: [] }
-  const view = setup(); expect(await view.submit('Hidden mode')).toBe(false)
-  view.setActive(true); await settle()
-  expect(await view.submit(' ')).toBe(false); expect(await view.submit('x'.repeat(16001))).toBe(false)
-  const pending = view.submit('A task'); expect(await view.submit('A task')).toBe(false)
-  finish({ runId: 'bad.id' }); expect(await pending).toBe(false)
-  const retry = view.submit('A task'); finish({ runId: 'run' }); expect(await retry).toBe(true)
-  const starts = requests.filter(value => value.kind === 'start')
-  expect(starts).toHaveLength(2); expect(starts[0]).toEqual(starts[1])
-  push({ kind: 'events', events: [], runs: [run()] }); await settle()
-  expect(button('Stop task').hidden).toBe(false)
-})
 it('preserves actionable error feedback after a rejected control instead of replacing it with Running', async () => {
   respond = async value => {
     if (value.kind === 'list') return { runs: [run()] }
@@ -270,18 +245,6 @@ it('does not resurrect a deleted task from a late push that was queued before de
   const view = setup(); view.setActive(true); await settle(); button('Delete task').onclick!(); await settle()
   push({ kind: 'events', events: [event(1)], runs: [run('run', 101)] }); flush()
   expect(panel.querySelectorAll('button').filter(node => node.dataset.runId)).toHaveLength(0)
-})
-it('keeps Do drafts out of Explain conversations while busy Explain snapshots arrive', async () => {
-  const { nodes, publish } = await home(api)
-  const snapshot = (id: string): AppSnapshot => ({ currentId: id, conversations: [{ id, title: id, created: 1, updated: 1, pinned: false, archived: false, preview: '' }], turns: [], activeTurnId: null, busy: false, status: '', settings: DEFAULT_SETTINGS, saved: true, keyPresent: true, version: 'fixture', permissions: { microphone: '', screen: '', input: '' } })
-  publish(snapshot('c')); nodes.get('question')!.value = 'Explain draft'; nodes.get('question')!.oninput!()
-  nodes.get('do-mode')!.onclick!(); await settle(); nodes.get('question')!.value = 'Do draft'
-  publish({ ...snapshot('other'), busy: true })
-  nodes.get('question')!.oninput!()
-  expect(nodes.get('question')!.value).toBe('Do draft'); expect(nodes.get('send')!.hidden).toBe(false); expect(nodes.get('stop')!.hidden).toBe(true)
-  nodes.get('explain-mode')!.onclick!(); expect(nodes.get('question')!.value).toBe('')
-  publish(snapshot('c')); expect(nodes.get('question')!.value).toBe('Explain draft')
-  nodes.get('do-mode')!.onclick!(); expect(nodes.get('question')!.value).toBe('Do draft')
 })
 it.each([undefined, { runs: [null] }, { runs: [{ ...run(), id: '../path' }] }, { runs: [{ ...run(), status: 'Finished nicely' }] }])('rejects malformed task lists and leaves a retry action rather than rendering unsafe rows', async result => {
   respond = async () => result
@@ -311,17 +274,6 @@ it('offers retry after earlier-event failure and refuses a non-advancing history
   earlier = true; button('Show earlier').onclick!(); await settle()
   expect(panel.querySelectorAll('p').find(node => node.className === 'agent-status')?.textContent).toBe('Could not load earlier events. Try again.')
   expect(button('Show earlier').disabled).toBe(false)
-})
-it('caps picked grants at eight and treats cancelled or malformed picker results as no authority', async () => {
-  const view = setup(); view.setActive(true); await settle(); button('Local files', folders).onclick!()
-  respond = async () => ({ cancelled: true }); button('Add folder', folders).onclick!(); await settle()
-  expect(folders.querySelectorAll('span')).toHaveLength(0)
-  respond = async () => ({ grant: { id: '../root', label: 'Bad' } }); button('Add folder', folders).onclick!(); await settle()
-  expect(folders.querySelectorAll('span')).toHaveLength(0)
-  expect(panel.querySelectorAll('p').find(node => node.className === 'agent-status')?.textContent).toBe('Could not add the folder. Try again.')
-  for (let i = 0; i < 8; i++) { respond = async () => ({ grant: { id: `g${i}`, label: `Folder ${i}` } }); button('Add folder', folders).onclick!(); await settle() }
-  expect(folders.querySelectorAll('span')).toHaveLength(8); expect(button('Add folder', folders).disabled).toBe(true)
-  const before = requests.length; button('Add folder', folders).onclick!(); expect(requests).toHaveLength(before)
 })
 it('does not let malformed pushes corrupt the task list and ignores all pushes after disposal', async () => {
   respond = async value => value.kind === 'list' ? { runs: [run()] } : { events: [] }

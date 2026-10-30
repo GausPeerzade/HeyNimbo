@@ -20,6 +20,7 @@ import { BuiltInEars } from './voice/builtin-ears'
 import { BuiltInMouth } from './voice/builtin-mouth'
 import { TalkSession } from './voice/talk'
 import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus, setNotchVisibility } from './windows'
+import type { CaptureSpace } from './overlay-geometry'
 
 const LABELS: Partial<Record<GestureMessage['action'], string>> = {
   dictate: 'Dictating…',
@@ -72,6 +73,12 @@ function createGesturePresenter(
 }
 
 /** Voice follows saved credentials and local permission, independently of answers. */
+/** The cursor's display in overlay coordinates: where an answer draws when no screenshot exists. */
+function cursorCanvas(): CaptureSpace {
+  const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  return { frame: bounds, pixelWidth: bounds.width, pixelHeight: bounds.height }
+}
+
 function startTalking(key: string | undefined, notch: BrowserWindow, overlays: OverlayManager, audio: AudioWindow, shell: AppShell, connections: Connections): TalkSession {
   const voice = connections.voiceEngine
   const ears = voice.engine === 'openai' && key ? new Ears(key) : voice.engine === 'builtin' ? new BuiltInEars() : undefined
@@ -84,6 +91,10 @@ function startTalking(key: string | undefined, notch: BrowserWindow, overlays: O
     voiceUnavailableReason: voice.engine === 'unavailable' ? voice.reason : undefined,
     audio,
     capture: captureCursorDisplay,
+    canvas: cursorCanvas,
+    startTask: shell.startTask,
+    // ChatGPT plan access answers questions; tasks need an API key or a local model.
+    tasksAvailable: () => connections.answer().provider !== 'chatgpt',
     onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),

@@ -16,36 +16,24 @@ const renameForm = document.getElementById('rename-form') as HTMLFormElement
 const rename = document.getElementById('rename') as HTMLInputElement
 let snapshot: AppSnapshot | undefined
 let emptyKey = '', renderedId: string | null = null, renameId = ''
-const turnTranscript = new TurnTranscript(transcript)
 const drafts = new Map<string, string>(), scrollPositions = new Map<string, number>()
 const time = (date: number): string => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
 const agentApi = (window as unknown as { heynimboApp: { agent?: AgentApi } }).heynimboApp.agent
-const agentPanel = document.getElementById('agent-panel'), agentFolders = document.getElementById('agent-folders'), stopAll = document.getElementById('stop-all') as HTMLButtonElement | null
-const agentView = agentApi && agentPanel && agentFolders && stopAll ? new AgentView(agentApi, { panel: agentPanel, folders: agentFolders, stopAll }) : undefined
-const modeSwitch = document.getElementById('mode-switch')
-if (modeSwitch) modeSwitch.hidden = !agentView
-let explainDraft = '', doDraft = ''
-function setMode(doMode: boolean): void {
-  if (!agentView || agentView.active === doMode) return
-  if (doMode) { explainDraft = question.value; question.value = doDraft }
-  else { doDraft = question.value; question.value = explainDraft }
-  agentView.setActive(doMode); transcript.hidden = doMode
-  document.getElementById('explain-mode')?.setAttribute('aria-pressed', String(!doMode))
-  document.getElementById('do-mode')?.setAttribute('aria-pressed', String(doMode))
-  for (const id of ['feedback', 'screen-context', 'composer-note']) { const node = document.getElementById(id); if (node) node.hidden = doMode }
-  const agentContext = document.getElementById('agent-context'); if (agentContext) agentContext.hidden = !doMode
-  question.setAttribute('aria-describedby', doMode ? 'agent-context' : 'screen-context')
-  question.placeholder = doMode ? 'Describe a task…' : 'Ask about your screen…'
-  document.getElementById('send')!.setAttribute('aria-label', doMode ? 'Start task' : 'Ask question')
-  document.getElementById('send')!.setAttribute('title', doMode ? 'Start task (Enter)' : 'Ask (Enter)')
-  document.getElementById('stop')!.hidden = doMode || !snapshot?.busy
-  document.getElementById('send')!.hidden = !doMode && Boolean(snapshot?.busy || (snapshot && !snapshot.keyPresent))
-  if (!doMode && snapshot) render(snapshot)
-  question.focus()
+const agentPanel = document.getElementById('agent-panel'), stopAll = document.getElementById('stop-all') as HTMLButtonElement | null
+const agentView = agentApi && agentPanel && stopAll ? new AgentView(agentApi, { panel: agentPanel, stopAll }) : undefined
+// One composer: the model decides whether to explain, draw or start a task. The
+// Tasks view only shows background work the answers started; it never takes input.
+const tasksButton = document.getElementById('tasks')
+if (tasksButton) tasksButton.hidden = !agentView
+function showTasks(open: boolean, runId?: string): void {
+  if (!agentView) return
+  if (open) agentView.open(runId); else agentView.setActive(false)
+  transcript.hidden = open
+  tasksButton?.setAttribute('aria-pressed', String(open))
+  if (!open && snapshot) render(snapshot)
 }
-const explainMode = document.getElementById('explain-mode'), doMode = document.getElementById('do-mode')
-if (explainMode) explainMode.onclick = () => setMode(false)
-if (doMode) doMode.onclick = () => setMode(true)
+if (tasksButton) tasksButton.onclick = () => showTasks(!agentView?.active)
+const turnTranscript = new TurnTranscript(transcript, agentView ? runId => showTasks(true, runId) : undefined)
 
 function row(c: Conversation, hit?: SearchHit): HTMLButtonElement {
   const node = button('', () => { void request({ kind: 'open', id: c.id, turnId: hit?.turnId }) }, 'conversation')
@@ -106,10 +94,8 @@ function render(s: AppSnapshot): void {
   snapshot = s
   title.textContent = s.conversations.find(c => c.id === s.currentId)?.title ?? 'New conversation'
   renderSidebar(); if (!agentView?.active) renderTranscript(s)
-  if (!agentView?.active) {
-    document.getElementById('stop')!.hidden = !s.busy
-    ;document.getElementById('send')!.hidden = s.busy || !s.keyPresent
-  }
+  document.getElementById('stop')!.hidden = !s.busy
+  document.getElementById('send')!.hidden = s.busy || !s.keyPresent
   const screenContext = document.getElementById('screen-context')
   if (screenContext) screenContext.textContent = s.connection?.answerVision === false ? 'Text only · does not see or draw on your screen' : 'Includes a screen capture when you ask'
   document.getElementById('feedback')!.textContent = s.status
@@ -131,14 +117,11 @@ const conversationSearch = new ConversationSearch(
 )
 function clearSearch(): void { search.value = ''; conversationSearch.changed() }
 search.oninput = () => conversationSearch.changed()
-question.oninput = () => { if (agentView?.active) doDraft = question.value; else drafts.set(snapshot?.currentId ?? '', question.value) }
+question.oninput = () => { drafts.set(snapshot?.currentId ?? '', question.value) }
 async function ask(): Promise<void> {
-  if (agentView?.active) {
-    const value = question.value
-    if (await agentView.submit(value)) { doDraft = ''; if (agentView.active && question.value === value) question.value = '' }
-    return
-  }
   if (snapshot?.busy || !question.value.trim()) return
+  // An answer appears in the conversation, so asking from the Tasks view returns to it.
+  if (agentView?.active) showTasks(false)
   const value = question.value
   const result = await request({ kind: 'ask', question: value })
   if (result && typeof result === 'object' && 'accepted' in result && result.accepted) { question.value = ''; drafts.delete(snapshot?.currentId ?? '') }
@@ -156,7 +139,7 @@ renameForm.onsubmit = event => { event.preventDefault(); void request({ kind: 'r
 document.onkeydown = event => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'f') { event.preventDefault(); document.body.classList.remove('sidebar-hidden'); document.body.classList.add('sidebar-open'); search.focus() }
   if (event.key === 'Escape') {
-    if (agentView?.active) question.focus()
+    if (agentView?.active) { showTasks(false); question.focus() }
     else if (snapshot?.busy) void request({ kind: 'stop' })
     else if (!renameForm.hidden) { renameForm.hidden = true; title.hidden = false; question.focus() }
     else if (search.value) { clearSearch(); question.focus() }
@@ -166,7 +149,8 @@ document.onkeydown = event => {
 window.heynimboApp.onSnapshot(render)
 window.heynimboApp.onNavigate(navigation => {
   if (navigation.focusSearch) { document.body.classList.remove('sidebar-hidden'); document.body.classList.add('sidebar-open'); search.focus() }
-  if (navigation.turnId) requestAnimationFrame(() => document.getElementById(`turn-${navigation.turnId}`)?.scrollIntoView())
+  if (navigation.turnId) { if (agentView?.active) showTasks(false); requestAnimationFrame(() => document.getElementById(`turn-${navigation.turnId}`)?.scrollIntoView()) }
+  if (navigation.runId) showTasks(true, navigation.runId)
   if (navigation.renameId) { renameId = navigation.renameId; rename.value = title.textContent ?? ''; title.hidden = true; renameForm.hidden = false; rename.focus(); rename.select() }
 })
 void request({ kind: 'snapshot' }).then(value => { if (isSnapshot(value)) render(value) })

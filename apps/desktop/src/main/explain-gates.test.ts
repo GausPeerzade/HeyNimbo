@@ -270,13 +270,15 @@ it('wires endpoint-bound credentials through the real AppShell supervisor and re
   const event = { sender: contents, senderFrame: frame } as unknown as IpcMainInvokeEvent
   const request = (value: unknown) => electron.handlers.get('heynimbo:agent-request')!(event, value)
   const start = async (requestId: string) => {
-    const result = request({ kind: 'start', requestId, goal: 'Research', mode: 'web' })
-    await Promise.resolve()
-    const message = child.sent.findLast(message => message.kind === 'command')!
+    const result = shell.startTask!({ goal: 'Research', mode: 'web' })
+    await vi.waitFor(() => expect(child.sent.findLast(message => message.kind === 'command' && message.command.kind === 'start' && !answered.has(message.id))).toBeDefined())
+    const message = child.sent.findLast(message => message.kind === 'command' && message.command.kind === 'start' && !answered.has(message.id))!
     if (message.kind !== 'command') throw new Error('No command.')
+    answered.add(message.id)
     child.emit('message', { v: 1, kind: 'reply', id: message.id, ok: true, result: { runId: requestId } })
     return result
   }
+  const answered = new Set<number>()
   try {
     await start('old')
     child.emit('message', { v: 1, kind: 'credential.request', id: 10, name: 'compatible', baseURL })
@@ -320,9 +322,12 @@ it('constructs a production AppShell and accepts Explain without spawning a host
     await completed
     expect(shell.conversations.turns()[0]).toMatchObject({ state: 'complete', answer })
     expect(electron.fork).not.toHaveBeenCalled()
-    // Positive control: the same installed agent handler really owns spawn.
+    // Home cannot start work; only an answer's proposal through main can.
+    await expect(electron.handlers.get('heynimbo:agent-request')!(event, { kind: 'start', requestId: 'first-do', goal: 'Research', mode: 'web' })).rejects.toThrow('Not allowed.')
+    expect(electron.fork).not.toHaveBeenCalled()
+    // Positive control: the main-owned start really owns spawn.
     electron.fork.mockImplementationOnce(() => { throw new Error('Synthetic spawn boundary failure') })
-    await expect(electron.handlers.get('heynimbo:agent-request')!(event, { kind: 'start', requestId: 'first-do', goal: 'Research', mode: 'web' })).rejects.toThrow('Agent host unavailable. Try again.')
+    await expect(shell.startTask!({ goal: 'Research', mode: 'web' })).rejects.toThrow('Agent host unavailable. Try again.')
     expect(electron.fork).toHaveBeenCalledOnce()
   } finally { talk.close(); shell.home = undefined; shell.close() }
 })

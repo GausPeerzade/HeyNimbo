@@ -73,6 +73,21 @@ function agentBridge(shell: AppShell) {
   Object.assign(shell, { agent: supervisor })
   return { supervisor, host, spawns: () => spawns }
 }
+it('brings Home forward once per wait when a background task needs the owner, and again only after it stops waiting', () => {
+  const { shell } = fixture()
+  Object.assign(shell, { preview: false })
+  const open = vi.spyOn(shell, 'openHome').mockImplementation(() => shell.home!)
+  const contents = shell.home!.webContents as unknown as { send: ReturnType<typeof vi.fn>; isLoading: () => boolean }
+  contents.isLoading = () => false
+  const run = (status: string) => ({ id: 'run_1', goal: 'g', mode: 'web', mixed: false, status, persistence: 'retained', created: 1, updated: 2, usage: { inputTokens: 0, outputTokens: 0 } })
+  const notice = (status: string) => (shell as unknown as { notice(push: unknown): void }).notice({ kind: 'events', events: [], runs: [run(status)] })
+  notice('running'); expect(open).not.toHaveBeenCalled()
+  notice('waiting_approval'); notice('waiting_approval'); notice('waiting_user')
+  expect(open).toHaveBeenCalledOnce()
+  expect(contents.send).toHaveBeenCalledWith('heynimbo:app-navigate', { runId: 'run_1' })
+  notice('running'); notice('waiting_user')
+  expect(open).toHaveBeenCalledTimes(2)
+})
 async function seedAgentHistory() {
   const paths = agentPaths(mocks.dir), store = new SqliteAgentStore(paths.db), artifacts = new FileArtifactStore(paths.artifacts)
   for (const [id, created] of [['old', Date.now() - 8 * 86_400_000], ['recent', Date.now()]] as const) {

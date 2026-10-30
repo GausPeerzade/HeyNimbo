@@ -18,7 +18,7 @@ const api = {
     ipcRenderer.on(AppChannels.snapshot, handler)
     return () => ipcRenderer.removeListener(AppChannels.snapshot, handler)
   },
-  onNavigate: (listener: (navigation: { turnId?: string; renameId?: string; category?: string; focusSearch?: boolean }) => void) => {
+  onNavigate: (listener: (navigation: { turnId?: string; renameId?: string; category?: string; focusSearch?: boolean; runId?: string }) => void) => {
     ipcRenderer.on(AppChannels.navigate, (_event, navigation) => listener(navigation))
   },
 }

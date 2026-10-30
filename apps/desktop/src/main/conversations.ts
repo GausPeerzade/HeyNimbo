@@ -1,4 +1,4 @@
-import type { AppSettings, DrawingScene, HistoryTurn } from '../shared/app'
+import type { AppSettings, DrawingScene, HistoryTurn, TurnTask } from '../shared/app'
 import type { Exchange } from './voice/brain'
 import { HistoryRepository } from './history'
 
@@ -61,6 +61,8 @@ export class ConversationController {
     try { this.active.repository.finish(id, state, error) }
     finally { this.active = undefined; this.changed() }
   }
+  /** Task outcomes can arrive after the turn finished, so this does not require the active turn. */
+  setTasks(turnId: string, tasks: TurnTask[]): void { this.repository.setTasks(turnId, tasks); this.changed() }
   reset(): void { this.current = null; this.changed() }
   search(query: string) { return this.repository.search(query) }
   rename(id: string, title: string): void { this.repository.rename(id, title); this.changed() }

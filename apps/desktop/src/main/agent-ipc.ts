@@ -3,7 +3,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { dialog, globalShortcut, ipcMain, type BrowserWindow } from 'electron'
 import type { AppSettings } from '../shared/app'
-import { AgentChannels, DEFAULT_BUDGET, isTerminal, parseAgentRequest, persistenceFor, type AgentPush, type AgentRequest, type FolderGrant, type RunSummary, type AgentEvent } from '../shared/agent-protocol'
+import { AgentChannels, DEFAULT_BUDGET, isTerminal, parseAgentRequest, persistenceFor, type AgentPush, type AgentRequest, type FolderGrant, type RunMode, type RunSummary, type AgentEvent } from '../shared/agent-protocol'
 import type { AgentSupervisor } from './agent-supervisor'
 import type { Connections } from './connections'
 import { isPageSender, pageURL } from './page-security'
@@ -34,11 +34,13 @@ interface AgentIpcDeps {
   connections: Pick<Connections, 'answer'>
   supervisor: Pick<AgentSupervisor, 'request' | 'stopAll'>
 }
+/** A task the Explain answer proposed. Only main turns it into authority. */
+export interface TaskStart { goal: string; mode: RunMode; conversationId?: string }
 /** Main-owned emergency stop avoids every Control-based Explain gesture. */
 export const AGENT_STOP_SHORTCUT = 'Command+Option+Shift+.'
 export function registerAgentIpc(deps: AgentIpcDeps) {
-  const grants = new Map<string, FolderGrant>()
   let disposed = false
+  let picking = false
   let authority = 0
   const approvals = new Map<string, Extract<AgentEvent['payload'], { type: 'approval.requested' }>>()
   const runs = new Map<string, RunSummary>()
@@ -69,6 +71,44 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
         throw new Error('Nothing approved.')
       }
     } finally { confirmation = undefined }
+  }
+  const modelSelection = () => {
+    const { provider, model, effort, baseURL } = deps.connections.answer()
+    return { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }
+  }
+  /** The owner grants files by choosing a folder in a native picker that names the task. */
+  const pickFolder = async (goal: string): Promise<FolderGrant | undefined> => {
+    if (picking) throw new Error('Finish choosing the folder for the other task first.')
+    picking = true
+    try {
+      const home = deps.home()
+      const options: Electron.OpenDialogOptions = { title: 'Choose a folder for this task', message: `HeyNimbo can read files in this folder for: ${safe(goal)}`, buttonLabel: 'Allow access', properties: ['openDirectory'] }
+      const result = home && !home.isDestroyed() ? await dialog.showOpenDialog(home, options) : await dialog.showOpenDialog(options)
+      if (result.canceled || !result.filePaths[0]) return undefined
+      let grant: FolderGrant
+      try {
+        const root = await realpath(result.filePaths[0])
+        const identity = await stat(root, { bigint: true })
+        if (!identity.isDirectory()) throw new Error('Not a directory.')
+        grant = { id: randomUUID(), root, label: basename(root) || root, identity: `${identity.dev}:${identity.ino}` }
+      } catch { throw new Error('Could not grant folder access.') }
+      return grant
+    } finally { picking = false }
+  }
+  const start = async (task: TaskStart): Promise<{ runId: string } | { cancelled: true }> => {
+    if (disposed) throw new Error('Not allowed.')
+    const generation = authority
+    // Same validation as every host start: bounded goal, known mode, opaque IDs.
+    parseAgentRequest({ kind: 'start', requestId: 'validation', goal: task.goal, mode: task.mode, ...(task.conversationId ? { conversationId: task.conversationId } : {}) })
+    const grant = task.mode === 'local' ? await pickFolder(task.goal) : undefined
+    // Stop-all, a settings change or quit while the picker was open withdraws the task.
+    if (disposed || authority !== generation) throw new Error('Task expired.')
+    if (task.mode === 'local' && !grant) return { cancelled: true }
+    const settings = deps.settings()
+    const result = await deps.supervisor.request({ kind: 'start', requestId: randomUUID(), goal: task.goal, mode: task.mode, ...(task.conversationId ? { conversationId: task.conversationId } : {}), grants: grant ? [grant] : [], persistence: persistenceFor(settings), budget: { ...DEFAULT_BUDGET }, model: modelSelection(), ...(settings.agent?.search ? { search: settings.agent.search } : {}) })
+    const runId = (result as { runId?: unknown } | undefined)?.runId
+    if (typeof runId !== 'string') throw new Error('The task could not start.')
+    return { runId }
   }
   const shortcutRegistered = globalShortcut.register(AGENT_STOP_SHORTCUT, () => { revokeAuthority(); void deps.supervisor.stopAll().catch(() => {}) })
   ipcMain.handle(AgentChannels.request, async (event, value: unknown) => {
@@ -102,39 +142,11 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
       return deps.supervisor.request(request)
     }
     if (request.kind === 'cancel' || request.kind === 'delete' || request.kind === 'continue') { obsolete(request.runId); approvals.delete(request.runId); runs.delete(request.runId) }
-    if (request.kind === 'pickFolder') {
-      if (grants.size >= 128) throw new Error('Too many folders. Restart the app to choose more.')
-      try {
-        const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-        if (result.canceled || !result.filePaths[0]) return { cancelled: true }
-        const root = await realpath(result.filePaths[0])
-        const identity = await stat(root, { bigint: true })
-        if (!identity.isDirectory()) throw new Error('Not a directory.')
-        if (disposed || !isPageSender(event, deps.home(), 'home') || grants.size >= 128) throw new Error('Not allowed.')
-        const grant = { id: randomUUID(), root, label: basename(root) || root, identity: `${identity.dev}:${identity.ino}` }
-        grants.set(grant.id, grant)
-        return { grant: { id: grant.id, label: grant.label } }
-      } catch { throw new Error('Could not grant folder access.') }
-    }
-    if (request.kind === 'start') {
-      const labels = new Set<string>()
-      const resolved = (request.grantIds ?? []).map(id => {
-        const grant = grants.get(id)
-        if (!grant) throw new Error('Folder access expired. Choose the folder again.')
-        let label = grant.label
-        for (let suffix = 2; labels.has(label); suffix++) label = `${grant.label} (${suffix})`
-        labels.add(label)
-        return { ...grant, label }
-      })
-      const { grantIds: _grantIds, ...start } = request
-      const { provider, model, effort, baseURL } = deps.connections.answer()
-      const settings = deps.settings()
-      return deps.supervisor.request({ ...start, grants: resolved, persistence: persistenceFor(settings), budget: { ...DEFAULT_BUDGET }, model: { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }, ...(settings.agent?.search ? { search: settings.agent.search } : {}) })
-    }
+    // Tasks start only from an answer's proposal in main, never from a renderer request.
+    if (request.kind === 'start' || request.kind === 'pickFolder') throw new Error('Not allowed.')
     if (request.kind === 'continue') {
-      const { provider, model, effort, baseURL } = deps.connections.answer()
       const search = deps.settings().agent?.search
-      return deps.supervisor.request({ ...request, model: { provider, model, ...(effort ? { effort } : {}), ...(baseURL ? { baseURL } : {}) }, ...(search ? { search } : {}) })
+      return deps.supervisor.request({ ...request, model: modelSelection(), ...(search ? { search } : {}) })
     }
     if (request.kind === 'stopAll') { revokeAuthority(); return deps.supervisor.stopAll() }
     return deps.supervisor.request(request)
@@ -142,6 +154,7 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
   return {
     shortcutRegistered,
     revokeAuthority,
+    start,
     push(push: AgentPush): void {
       if (disposed) return
       // Only live, supervisor-validated events establish pending authority, never
@@ -167,7 +180,7 @@ export function registerAgentIpc(deps: AgentIpcDeps) {
     },
     dispose(): void {
       if (disposed) return
-      disposed = true; grants.clear(); revokeAuthority()
+      disposed = true; revokeAuthority()
       ipcMain.removeHandler(AgentChannels.request)
       if (shortcutRegistered) globalShortcut.unregister(AGENT_STOP_SHORTCUT)
     },

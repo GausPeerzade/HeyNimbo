@@ -51,7 +51,16 @@ The steel body holds oil.
 @tag jack ram "Ram" right
 @move jack ram slide axis=y amount=0.5 period=3
 Pumping oil underneath pushes the ram up.
-Use drawings to point things out, and also to sketch when they ask you to draw something. Sketch it as a simple line drawing in an empty area or where they point, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twenty non-model commands per answer, and don't draw without a screenshot.`
+Use drawings to point things out, and also to sketch when they ask you to draw something. Sketch it as a simple line drawing in an empty area or where they point, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twenty non-model commands per answer. Without a screenshot, never point at or mark screen contents; only draw cards, sketches and models in open space.`
+
+/** Added only when trusted code can start background tasks for this connection. */
+export const TASK_INSTRUCTIONS = `
+
+Some requests need real work, not just an explanation: finding current or detailed information on the web, or reading the user's own files. For those, first say in one short sentence what you will do, then write one line by itself:
+@task web "a complete, self-contained goal"
+or
+@task files "a complete, self-contained goal"
+The task runs in the background and its result appears in HeyNimbo; you will not see it in this answer, so never invent its results. A files task asks the user to choose a folder. Use at most one task per answer and keep the goal under 500 characters. Never use a task for something you can explain, point at or draw right now.`
 
 export interface Exchange {
   question: string
@@ -74,7 +83,11 @@ export async function* streamAnswer(options: {
   history: readonly Exchange[]
   signal: AbortSignal
   onUsage?: AnswerOptions['onUsage']
+  canvas?: AnswerOptions['canvas']
+  /** Offer `@task` handoff; only when the caller can start tasks. */
+  tasks?: boolean
 }): AsyncGenerator<string> {
-  const connection = options.connection ?? { provider: 'openai' as const, model: BRAIN_MODEL, effort: 'medium' as const, vision: true, credential: async () => options.key ?? '' }
-  yield* streamProviderAnswer({ ...options, connection, instructions: INSTRUCTIONS })
+  const { key, tasks, ...rest } = options
+  const connection = options.connection ?? { provider: 'openai' as const, model: BRAIN_MODEL, effort: 'medium' as const, vision: true, credential: async () => key ?? '' }
+  yield* streamProviderAnswer({ ...rest, connection, instructions: tasks ? INSTRUCTIONS + TASK_INSTRUCTIONS : INSTRUCTIONS })
 }

@@ -1,15 +1,11 @@
-/* Do is a separate, bounded workbench. No model-authored HTML or inline CSS. */
-.agent-composer-heading { max-width: var(--reading-width); margin: 0 auto var(--space-2); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.agent-composer-heading:has(#mode-switch[hidden]) { display: none; }
-#mode-switch, #agent-folders, .agent-run-controls, .agent-folder-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-#mode-switch button[aria-pressed="true"], #agent-folders button[aria-pressed="true"] { border-color: var(--accent); background: var(--selection); font-weight: var(--weight-strong); }
-#agent-context { max-width: var(--reading-width); margin: var(--space-2) auto; font-size: var(--text-meta); color: var(--secondary); }
-#agent-folders { max-width: var(--reading-width); margin: 0 auto var(--space-2); }
-.agent-folder-chips { flex-basis: 100%; }
-.agent-folder-chip { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-2); border: var(--line) solid var(--separator); border-radius: var(--radius-small); max-width: 100%; }
-.agent-folder-chip span { overflow-wrap: anywhere; }
-.agent-folder-chip button { border: 0; background: transparent; }
-.agent-folder-chips[aria-disabled="true"] { opacity: var(--disabled-opacity); }
+/* Background tasks started by answers. No model-authored HTML or inline CSS. */
+.agent-run-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+#tasks[aria-pressed="true"] { border-color: var(--accent); background: var(--selection); font-weight: var(--weight-strong); }
+.turn-task { max-width: var(--artifact-width); margin: var(--space-4) 0 0; padding: var(--space-3); background: var(--raised); border: var(--line) solid var(--separator); border-left: var(--focus-width) solid var(--accent); border-radius: var(--radius-small); }
+.turn-task.failed { border-left-color: var(--error); }
+.turn-task p { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
+.turn-task-title { font-size: var(--text-meta); color: var(--secondary); }
+.turn-task button { margin-top: var(--space-2); }
 #agent-panel { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(140px, 28%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-6); }
 .agent-host, .agent-status { grid-column: 1 / -1; margin: 0; font-size: var(--text-meta); color: var(--secondary); }
 .agent-host { padding: var(--space-3); border: var(--line) solid var(--boundary); border-radius: var(--radius-small); }
@@ -36,4 +32,4 @@
 .agent-error { color: var(--error); }
 .agent-preview { max-height: 40vh; overflow: auto; margin-top: var(--space-3) !important; }
 @media (max-width: 800px) { #agent-panel { padding: var(--space-3); grid-template-columns: minmax(100px, 28%) minmax(0, 1fr); gap: var(--space-2); } }
-@media (prefers-reduced-motion: reduce) { #agent-panel *, #agent-folders *, .agent-composer-heading * { animation: none; transition: none; scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { #agent-panel * { animation: none; transition: none; scroll-behavior: auto; } }

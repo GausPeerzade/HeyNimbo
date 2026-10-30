@@ -63,6 +63,17 @@ it('normalizes OpenAI-compatible chat streaming and keeps text-only prompts free
   expect(body.messages[0].content).toContain('Do not refer to unseen screen contents or emit any @ drawing commands.')
   expect(body.messages.at(-1).content).toContain('No screenshot')
 })
+it('keeps drawing available on a screen-sized canvas when a vision model gets no screenshot, without inviting screen claims', () => {
+  const input = { ...options(), screenshot: undefined, canvas: { width: 1440, height: 900 } }
+  const system = String(answerInstructions(input).content)
+  expect(system).toContain('1440x900')
+  expect(system).not.toContain('emit any @ drawing commands')
+  expect(system).toContain('Do not describe or point at anything on the screen')
+  const last = answerMessages(input).at(-1)!
+  expect(typeof last.content === 'string' && last.content).toContain('No screenshot was available')
+  // Text-only models keep the strict text-only contract even if a canvas is offered.
+  expect(String(answerInstructions({ ...input, connection: { ...input.connection, vision: false } }).content)).toContain('emit any @ drawing commands')
+})
 it.each(['interrupted', 'incomplete', 'failed', 'error'] as const)('refuses %s streams and never leaks SDK request bodies or credentials through errors', async kind => {
   const events = kind === 'interrupted' ? openaiEvents().slice(0, -1) : kind === 'incomplete' ? openaiEvents('response.incomplete') : [{ type: kind === 'failed' ? 'response.failed' : 'error', response: { error: { code: 'synthetic', message: key } }, code: 'synthetic', message: key }]
   const transport = vi.fn<typeof fetch>(async () => response(events))

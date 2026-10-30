@@ -1,8 +1,8 @@
-import { RUN_STATUSES, isTerminal, parseAgentEvent, parseAgentRequest, type AgentApi, type AgentEvent, type AgentPush, type HostState, type RunMode, type RunSummary } from '../shared/agent-protocol'
+import { RUN_STATUSES, isTerminal, parseAgentEvent, type AgentApi, type AgentEvent, type AgentPush, type HostState, type RunSummary } from '../shared/agent-protocol'
 import { button, element } from './app-dom'
-import { AgentTimeline, safeAgentLabel, type Scheduler } from './agent-timeline'
+import { AgentTimeline, type Scheduler } from './agent-timeline'
 
-interface ViewElements { panel: HTMLElement; folders: HTMLElement; stopAll: HTMLButtonElement }
+interface ViewElements { panel: HTMLElement; stopAll: HTMLButtonElement }
 interface ViewOptions { schedule?: Scheduler }
 export const STATUS_LABELS: Record<RunSummary['status'], string> = { queued: 'Queued', running: 'Running', waiting_approval: 'Waiting for approval', waiting_user: 'Waiting for you', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' }
 const canContinue = (run?: RunSummary): boolean => run?.status === 'interrupted' || (run?.status === 'failed' && run.error?.code === 'provider')
@@ -42,16 +42,7 @@ export class AgentView {
   private selected = ''
   private selectedRun?: RunSummary
   private generation = 0
-  private mode: RunMode = 'web'
-  private picking = false
-  private starting = false
   private pendingSelect = ''
-  private attempt?: { key: string; id: string }
-  private readonly grants = new Map<string, string>()
-  private readonly web = button('Web research', () => this.setMode('web'))
-  private readonly local = button('Local files', () => this.setMode('local'))
-  private readonly addFolder = button('Add folder', () => { void this.pickFolder() })
-  private readonly chips = element('div', 'agent-folder-chips')
   private readonly runs = new Map<string, RunSummary>()
   private readonly rows = new Map<string, { node: HTMLButtonElement; goal: HTMLElement; status: HTMLElement }>()
   private readonly list = element('div', 'agent-tasks')
@@ -84,32 +75,20 @@ export class AgentView {
     this.host.setAttribute('role', 'status'); this.host.setAttribute('aria-live', 'polite'); this.host.hidden = true
     elements.panel.append(this.host, this.status, tasks, detail)
     this.timeline = new AgentTimeline(this.history, { request: value => api.request(value), schedule: options.schedule, announce: text => { this.status.textContent = text } })
-    elements.folders.append(this.web, this.local, this.addFolder, this.chips); this.renderFolders()
     elements.stopAll.onclick = () => { void api.request({ kind: 'stopAll' }).catch(() => { this.status.textContent = 'Could not stop all tasks. Try again.' }) }
     this.unsubscribe = api.onPush(push => this.push(push))
     this.setActive(false)
   }
   get active(): boolean { return this.enabled }
-  async submit(goal: string): Promise<boolean> {
-    if (!this.enabled || this.starting || !goal.trim() || goal.length > 16000) return false
-    this.starting = true
-    const grantIds = [...this.grants.keys()]
-    const key = JSON.stringify([goal, this.mode, this.mode === 'local' ? grantIds : []])
-    if (this.attempt?.key !== key) this.attempt = { key, id: crypto.randomUUID() }
-    try {
-      const request = parseAgentRequest({ kind: 'start', requestId: this.attempt.id, goal, mode: this.mode, ...(this.mode === 'local' ? { grantIds } : {}) })
-      const result = record(await this.api.request(request))
-      if (!validId(result.runId)) throw new Error('Invalid run')
-      if (this.disposed) return false
-      this.attempt = undefined; this.pendingSelect = result.runId
-      if (this.runs.has(result.runId)) { this.select(result.runId); this.pendingSelect = '' }
-      this.status.textContent = 'Task started'
-      return true
-    } catch { this.status.textContent = 'Could not start the task. Try again.'; return false }
-    finally { this.starting = false }
+  /** Shows the task list, optionally selecting a task an answer started. */
+  open(runId?: string): void {
+    this.setActive(true)
+    if (!runId || !validId(runId)) return
+    if (this.runs.has(runId)) this.select(runId)
+    else this.pendingSelect = runId
   }
   setActive(active: boolean): void {
-    this.enabled = active; this.elements.panel.hidden = this.elements.folders.hidden = this.elements.stopAll.hidden = !active
+    this.enabled = active; this.elements.panel.hidden = this.elements.stopAll.hidden = !active
     if (active && !this.initialized) { this.initialized = true; void this.loadList() }
   }
   dispose(): void { this.disposed = true; this.generation++; this.unsubscribe(); this.timeline.dispose() }
@@ -140,33 +119,6 @@ export class AgentView {
       for (const run of outside) this.runs.delete(run.id)
     }
     if (this.pendingSelect && this.runs.has(this.pendingSelect)) { this.select(this.pendingSelect); this.pendingSelect = '' }
-  }
-  private setMode(mode: RunMode): void { this.mode = mode; this.renderFolders() }
-  private renderFolders(): void {
-    this.web.setAttribute('aria-pressed', String(this.mode === 'web')); this.local.setAttribute('aria-pressed', String(this.mode === 'local'))
-    this.addFolder.disabled = this.mode === 'web' || this.picking || this.grants.size >= 8
-    this.chips.replaceChildren()
-    for (const [id, label] of this.grants) {
-      const chip = element('div', 'agent-folder-chip'), remove = button('×', () => {
-        if (this.mode !== 'local') return
-        this.grants.delete(id); this.renderFolders()
-      })
-      remove.setAttribute('aria-label', `Remove folder ${safeAgentLabel(label)}`); remove.disabled = this.mode === 'web'
-      chip.append(element('span', '', safeAgentLabel(label)), remove); this.chips.append(chip)
-    }
-    this.chips.setAttribute('aria-disabled', String(this.mode === 'web'))
-  }
-  private async pickFolder(): Promise<void> {
-    if (this.mode !== 'local' || this.picking || this.grants.size >= 8) return
-    this.picking = true; this.renderFolders()
-    try {
-      const result = record(await this.api.request({ kind: 'pickFolder' }))
-      if (this.disposed || result.cancelled === true) return
-      const grant = record(result.grant)
-      if (!validId(grant.id) || typeof grant.label !== 'string' || grant.label.length > 1000) throw new Error('Invalid grant')
-      this.grants.set(grant.id, grant.label)
-    } catch { this.status.textContent = 'Could not add the folder. Try again.' }
-    finally { this.picking = false; this.renderFolders() }
   }
   private async loadList(): Promise<void> {
     if (this.listing) return
