@@ -16,6 +16,7 @@ import { configureModelEval, runModelEval } from './model-eval'
 import { configureModelShow, runModelShow } from './model-show'
 import { Ears } from './voice/ears'
 import { Mouth } from './voice/mouth'
+import { OPENAI_KEY_REJECTED } from './openai/realtime'
 import { BuiltInEars } from './voice/builtin-ears'
 import { BuiltInMouth } from './voice/builtin-mouth'
 import { TalkSession } from './voice/talk'
@@ -102,8 +103,13 @@ function startTalking(key: string | undefined, agent: NimboAgent, notch: Browser
     ears,
     mouth,
     voiceUnavailableReason: voice.engine === 'unavailable' ? voice.reason : undefined,
-    // Deferred: reconnecting closes the session that is reporting the failure.
-    onVoiceKeyRejected: () => setTimeout(() => { connections.rejectVoiceKey(); reconnect() }),
+    // Deferred: reconnecting closes the session that is reporting the failure, and clears the notch,
+    // so the reason is shown again afterwards.
+    onVoiceKeyRejected: () => setTimeout(() => {
+      connections.rejectVoiceKey(); reconnect()
+      shell.setStatus(OPENAI_KEY_REJECTED); sendNotchStatus(notch, { kind: 'active', label: OPENAI_KEY_REJECTED })
+      setTimeout(() => { if (shell.snapshot().status === OPENAI_KEY_REJECTED) { shell.setStatus(undefined); sendNotchStatus(notch, restingStatus()) } }, 6_000)
+    }),
     audio,
     capture: captureCursorDisplay,
     canvas: cursorCanvas,

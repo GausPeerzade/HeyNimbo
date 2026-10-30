@@ -224,7 +224,7 @@ export class AppShell {
           if (status === 'not-determined') { await ensureMicrophoneAccess(); this.publish(true); return }
         }
         // macOS lists an app under Screen Recording only after it has asked once.
-        if (!this.preview && request.permission === 'screen' && ensureScreenCaptureAccess()) { this.publish(true); return }
+        if (!this.preview && request.permission === 'screen') ensureScreenCaptureAccess()
         const panes = { microphone: 'Privacy_Microphone', screen: 'Privacy_ScreenCapture', input: 'Privacy_ListenEvent' }
         if (request.permission in panes && !this.preview) await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${panes[request.permission]}`)
         return
