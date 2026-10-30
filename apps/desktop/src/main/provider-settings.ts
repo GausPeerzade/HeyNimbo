@@ -1,4 +1,4 @@
-import { PROVIDERS, modelEfforts, defaultConnectionSettings, type ConnectionRequest, type ConnectionSettings, type Effort, type KeyProvider, type ModelChoice, type ProviderId } from '../shared/providers'
+import { PROVIDERS, modelEfforts, modelSpeeds, defaultConnectionSettings, type ConnectionRequest, type ConnectionSettings, type Effort, type KeyProvider, type ModelChoice, type ProviderId, type Speed } from '../shared/providers'
 
 export function validateBaseURL(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048) throw new Error('Invalid endpoint URL.')
@@ -14,11 +14,12 @@ function object(value: unknown): Record<string, unknown> {
 function shape(value: Record<string, unknown>, keys: string[]): void {
   if (Object.keys(value).some(key => !keys.includes(key))) throw new Error('Unknown connection field.')
 }
-function modelChoice(provider: ProviderId, model: unknown, effort: unknown): ModelChoice {
+function modelChoice(provider: ProviderId, model: unknown, effort: unknown, speed: unknown): ModelChoice {
   if (typeof model !== 'string' || model.length > 200 || (model !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(model))) throw new Error('Invalid model choice.')
   if (!model && provider !== 'compatible') throw new Error('Choose a model.')
   if (effort !== undefined && !modelEfforts(provider, model).includes(effort as Effort)) throw new Error('Invalid thinking level.')
-  return effort === undefined ? { model } : { model, effort: effort as Effort }
+  if (speed !== undefined && !modelSpeeds(provider, model).includes(speed as Speed)) throw new Error('Invalid speed.')
+  return { model, ...(effort !== undefined && { effort: effort as Effort }), ...(speed !== undefined && { speed: speed as Speed }) }
 }
 export function parseConnectionSettings(value: unknown): ConnectionSettings {
   const input = object(value); shape(input, ['provider', 'models', 'baseURL'])
@@ -29,8 +30,8 @@ export function parseConnectionSettings(value: unknown): ConnectionSettings {
   result.baseURL = validateBaseURL(input.baseURL)
   for (const provider of PROVIDERS) {
     const choice = object(models[provider])
-    shape(choice, ['model', 'effort'])
-    result.models[provider] = modelChoice(provider, choice.model, choice.effort)
+    shape(choice, ['model', 'effort', 'speed'])
+    result.models[provider] = modelChoice(provider, choice.model, choice.effort, choice.speed)
   }
   return result
 }

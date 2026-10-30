@@ -1,5 +1,5 @@
 import type { AppSettings, AppSnapshot } from '../shared/app'
-import { PROVIDERS, PROVIDER_NAMES, RECOMMENDED_MODELS, defaultConnectionSettings, modelEfforts, recommendedModel, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type Effort, type KeyHints, type KeyProvider, type ProviderId } from '../shared/providers'
+import { PROVIDERS, PROVIDER_NAMES, RECOMMENDED_MODELS, defaultConnectionSettings, modelEfforts, modelSpeeds, recommendedModel, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type Effort, type KeyHints, type KeyProvider, type ProviderId, type Speed } from '../shared/providers'
 import { button, element, request } from './app-dom'
 
 function providerName(provider: ProviderId): string { return provider === 'openai' ? 'OpenAI' : provider === 'compatible' ? 'Custom endpoint' : PROVIDER_NAMES[provider] }
@@ -30,7 +30,8 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   const chooseModel = (model: string): void => {
     const levels = modelEfforts(provider, model)
     const effort = choice.effort && levels.includes(choice.effort) ? choice.effort : undefined
-    void change({ models: { ...config.models, [provider]: { model, ...(effort ? { effort } : {}) } } })
+    const speed = choice.speed && modelSpeeds(provider, model).includes(choice.speed) ? choice.speed : undefined
+    void change({ models: { ...config.models, [provider]: { model, ...(effort ? { effort } : {}), ...(speed ? { speed } : {}) } } })
   }
   const saveEndpoint = (baseURL: string): void => { void change({ baseURL, models: { ...config.models, compatible: { model: '' } } }) }
   const currentModel = state?.answerModel ?? selectedModel(config).model
@@ -72,8 +73,18 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
     option.value = level ?? ''; option.selected = choice.effort === level; thinking.append(option)
   }
   thinking.disabled = !levels.length
-  thinking.onchange = () => { void change({ models: { ...config.models, [provider]: { model: choice.model, ...(thinking.value ? { effort: thinking.value as Effort } : {}) } } }) }
-  thinkingRow.append(element('span', '', 'Thinking'), thinking); model.append(thinkingRow); answer.append(model)
+  thinking.onchange = () => { void change({ models: { ...config.models, [provider]: { model: choice.model, ...(thinking.value ? { effort: thinking.value as Effort } : {}), ...(choice.speed ? { speed: choice.speed } : {}) } } }) }
+  thinkingRow.append(element('span', '', 'Thinking'), thinking); model.append(thinkingRow)
+  // OpenAI service tiers: faster answers at a higher price per token.
+  const speeds = modelSpeeds(provider, choice.model)
+  if (speeds.length) {
+    const speedRow = element('label', 'row'), speed = element('select'); speed.id = 'connection-speed'; speed.setAttribute('aria-label', 'Speed')
+    const labels: Record<Speed, string> = { standard: 'Standard', fast: 'Fast · about 2× price', ultrafast: 'Ultrafast · about 6× price' }
+    for (const level of speeds) { const option = element('option', '', labels[level]); option.value = level; option.selected = (choice.speed ?? 'standard') === level; speed.append(option) }
+    speed.onchange = () => { void change({ models: { ...config.models, [provider]: { model: choice.model, ...(choice.effort ? { effort: choice.effort } : {}), ...(speed.value !== 'standard' ? { speed: speed.value as Speed } : {}) } } }) }
+    speedRow.append(element('span', '', 'Speed'), speed); model.append(speedRow)
+  }
+  answer.append(model)
   const summary = element('p', 'explanation', recommendedModel(provider, currentModel)?.hint ?? 'Custom model. Screen support is checked against the provider’s model list.')
   summary.id = 'connection-model-summary'; fields.append(summary, element('p', 'explanation', levels.length ? 'More thinking can improve accuracy, but may delay the first spoken words and drawings.' : 'Thinking controls are not available for this model through this connection.'))
   const screenSummary = element('p', 'capability-summary', `${vision && snapshot.keyPresent ? 'Screen context and drawings available' : 'Screen context and drawings unavailable'} · One model for the whole answer`); fields.append(screenSummary)

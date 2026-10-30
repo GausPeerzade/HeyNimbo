@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { AgentSession, ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import type { TurnStep } from '../../shared/app'
+import type { Speed } from '../../shared/providers'
 import type { AnswerConnection } from '../answer-provider'
 import { KEY_REJECTED } from '../model-catalog'
 import type { Exchange, Screenshot } from '../voice/brain'
@@ -34,7 +35,7 @@ export interface TurnInput {
   onStep: (steps: TurnStep[]) => void
 }
 /** `signal` is the running turn's own cancellation, so a stopped or abandoned turn closes its approval sheet. */
-interface Live { session: AgentSession; allowed: Set<string>; approved: Set<string>; signal?: AbortSignal }
+interface Live { session: AgentSession; allowed: Set<string>; approved: Set<string>; signal?: AbortSignal; speed?: Speed }
 
 const PI_PROVIDERS: Record<AnswerConnection['provider'], string> = { openai: 'openai', chatgpt: 'openai', anthropic: 'anthropic', google: 'google', deepseek: 'deepseek', openrouter: 'openrouter', compatible: 'compatible' }
 // `tools` is an allowlist, so it names the custom web tools too.
@@ -134,6 +135,13 @@ export class NimboAgent {
       settingsManager: pi.SettingsManager.inMemory({ images: { autoResize: false }, retry: { enabled: true, maxRetries: 2 } }),
     })
     live.session = session
+    // OpenAI's Fast and Ultrafast tiers are a request field Pi's agent never sets. Every request,
+    // compaction included, goes through this one stream function, so the tier is added here.
+    const stream = session.agent.streamFunction
+    session.agent.streamFunction = (model, context, options) => !live.speed || model.api !== 'openai-responses' ? stream(model, context, options) : stream(model, context, {
+      ...options,
+      onPayload: async (payload, payloadModel) => ({ ...((await options?.onPayload?.(payload, payloadModel)) ?? payload) as object, service_tier: live.speed }),
+    })
     this.sessions.set(input.conversationId, live)
     while (this.sessions.size > MAX_SESSIONS) this.drop(this.sessions.keys().next().value!)
     return { live, fresh: true }
@@ -166,6 +174,7 @@ export class NimboAgent {
       const { session } = live
       session.setThinkingLevel(model.reasoning && input.connection.effort && ['low', 'medium', 'high'].includes(input.connection.effort) ? input.connection.effort : 'off')
       live.signal = cancel.signal
+      live.speed = input.connection.provider === 'openai' ? input.connection.speed : undefined
       live.approved.clear()
 
       const queue: string[] = [], steps: TurnStep[] = [], ids = new Map<string, number>()

@@ -26,7 +26,7 @@ export const EVAL_LIMITS = { requests: 2, renders: 4, requestMs: 90_000, preflig
 export const WORDS_PER_SECOND = 2.6
 const RENDER_PACE = 0.6
 
-export interface EvalModel { spec: string; slug: string; provider: ProviderId; model: string; effort?: 'low' | 'medium' }
+export interface EvalModel { spec: string; slug: string; provider: ProviderId; model: string; effort?: 'low' | 'medium'; speed?: 'fast' | 'ultrafast' }
 export interface EvalUsage { inputTokens?: number; outputTokens?: number; reasoningTokens?: number; cachedInputTokens?: number; totalTokens?: number }
 export interface ParseStats {
   /** Lines starting with "@", and those the parser dropped (verbatim, shortened). */
@@ -57,11 +57,12 @@ export interface EvalRun {
 }
 
 /** "provider:model[:low|medium]", comma-separated. A model id may contain
- *  colons (an Ollama tag), so only a final low or medium is read as effort. */
+ *  colons (an Ollama tag), so only a final fast or ultrafast is read as speed, then a final low or medium as effort. */
 export function parseEvalModels(text: string | undefined): { models: EvalModel[]; errors: string[] } {
   const models: EvalModel[] = [], errors: string[] = []
   for (const spec of (text ?? '').split(',').map((part) => part.trim()).filter(Boolean)) {
     const [provider = '', ...rest] = spec.split(':')
+    const speed = rest.length > 1 && ['fast', 'ultrafast'].includes(rest.at(-1)!) ? rest.pop() as 'fast' | 'ultrafast' : undefined
     const effort = rest.length > 1 && ['low', 'medium'].includes(rest.at(-1)!) ? rest.pop() as 'low' | 'medium' : undefined
     const model = rest.join(':')
     if (!(PROVIDERS as readonly string[]).includes(provider)) errors.push(`Unknown provider in "${spec}"; use one of ${PROVIDERS.join(', ')}.`)
@@ -69,7 +70,7 @@ export function parseEvalModels(text: string | undefined): { models: EvalModel[]
     else if (!models.some((known) => known.spec === spec)) {
       let slug = slugify(spec.replace(/[:/]/g, '-'), 80)
       while (models.some((known) => known.slug === slug)) slug += '-x'
-      models.push({ spec, slug, provider: provider as ProviderId, model, ...(effort && { effort }) })
+      models.push({ spec, slug, provider: provider as ProviderId, model, ...(effort && { effort }), ...(speed && { speed }) })
     }
   }
   if (!models.length && !errors.length) errors.push('Set HEYNIMBO_DEBUG_3D_EVAL_MODELS, for example anthropic:claude-sonnet-5-5,openai:gpt-6.1-terra:medium.')
@@ -347,7 +348,7 @@ export async function savedConnections(secrets: Set<string>, log: (line: string)
   await connections.load()
   const saved = Object.entries(connections.snapshot().providers).filter(([, present]) => present).map(([provider]) => provider)
   log(`profile ${app.getPath('userData')}; saved credentials for: ${saved.join(', ') || 'none'}`)
-  return (model) => trackCredential(connections.answerFor(model.provider, model.model, model.effort), secrets)
+  return (model) => trackCredential(connections.answerFor(model.provider, model.model, model.effort, model.speed), secrets)
 }
 
 /** The whole agent instead of the bare answer: the same prompt, tools and turn notes as a real turn.

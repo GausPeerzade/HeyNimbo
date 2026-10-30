@@ -1,5 +1,5 @@
 import { shell } from 'electron'
-import { PROVIDERS, RECOMMENDED_MODELS, defaultConnectionSettings, recommendedModel, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type Effort, type KeyProvider, type KeyHints, type ModelInfo, type ProviderId } from '../shared/providers'
+import { PROVIDERS, RECOMMENDED_MODELS, defaultConnectionSettings, recommendedModel, selectedModel, type ConnectionRequest, type ConnectionResult, type ConnectionSettings, type ConnectionSnapshot, type Effort, type KeyProvider, type KeyHints, type ModelInfo, type ProviderId, type Speed } from '../shared/providers'
 import { ChatGPTAuth } from './chatgpt-auth'
 import { loadSecret, removeSecret, saveSecret, secretSavedAt } from './secrets'
 import { validateBaseURL } from './provider-settings'
@@ -96,12 +96,12 @@ export class Connections {
   /** An explicit provider and model on the saved credentials, for development
    *  evaluation. Settings supply only the compatible endpoint and are never
    *  written. Without an effort, a recommended model uses its default thinking level. */
-  answerFor(provider: ProviderId, model: string, effort?: Effort): AnswerConnection {
+  answerFor(provider: ProviderId, model: string, effort?: Effort, speed?: Speed): AnswerConnection {
     const config = { ...structuredClone(this.config), provider }
     const recommended = recommendedModel(provider, model)
-    return this.connection(config, { model, effort: effort ?? recommended?.effort, vision: recommended?.vision ?? false })
+    return this.connection(config, { model, effort: effort ?? recommended?.effort, ...(speed && { speed }), vision: recommended?.vision ?? false })
   }
-  private connection(config: ConnectionSettings, selected: { model: string; effort?: Effort; vision: boolean }): AnswerConnection {
+  private connection(config: ConnectionSettings, selected: { model: string; effort?: Effort; speed?: Speed; vision: boolean }): AnswerConnection {
     const catalog = this.catalogs.get(this.catalogKey(config.provider, config))
     return {
       provider: config.provider, ...selected, vision: catalog?.find(m => m.id === selected.model)?.vision ?? selected.vision, baseURL: config.baseURL,

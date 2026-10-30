@@ -4,8 +4,11 @@ export type KeyProvider = Exclude<ProviderId, 'chatgpt'>
 export const EFFORTS = ['low', 'medium', 'high'] as const
 /** How much the model thinks before answering; sent as the SDK's reasoning effort. */
 export type Effort = typeof EFFORTS[number]
-/** An absent effort sends none, so the provider's own default applies. */
-export interface ModelChoice { model: string; effort?: Effort }
+export const SPEEDS = ['standard', 'fast', 'ultrafast'] as const
+/** OpenAI's service tier, sent as `service_tier`: Fast costs about 2× Standard, Ultrafast about 6×. */
+export type Speed = typeof SPEEDS[number]
+/** An absent effort sends none, so the provider's own default applies; an absent speed is Standard. */
+export interface ModelChoice { model: string; effort?: Effort; speed?: Speed }
 export interface ConnectionSettings { provider: ProviderId; models: Record<ProviderId, ModelChoice>; baseURL: string }
 export interface ModelInfo { id: string; name: string; vision: boolean; tested: boolean }
 export type VoiceSelection = { engine: 'openai' | 'builtin' } | { engine: 'unavailable'; reason: string; needsPermission?: boolean }
@@ -38,10 +41,11 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = { chatgpt: 'ChatGPT', 
 export const PROVIDER_EFFORTS: Record<ProviderId, readonly Effort[]> = { chatgpt: EFFORTS, openai: EFFORTS, anthropic: EFFORTS, google: [], deepseek: [], openrouter: [], compatible: [] }
 /** Recommended models; the first is the provider default. `effort` is its default
  *  thinking level and `hint` comes from our own evals where we have them. */
-export interface RecommendedModel { model: string; name: string; hint: string; vision: boolean; effort?: Effort; efforts: readonly Effort[] }
-const thinking = (model: string, name: string, hint: string, effort: Effort): RecommendedModel => ({ model, name, hint, vision: true, effort, efforts: EFFORTS })
+export interface RecommendedModel { model: string; name: string; hint: string; vision: boolean; effort?: Effort; efforts: readonly Effort[]; speeds?: readonly Speed[] }
+const thinking = (model: string, name: string, hint: string, effort: Effort, speeds?: readonly Speed[]): RecommendedModel => ({ model, name, hint, vision: true, effort, efforts: EFFORTS, ...(speeds && { speeds }) })
 const plain = (model: string, name: string, hint: string, vision = true): RecommendedModel => ({ model, name, hint, vision, efforts: [] })
-const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Low thinking: median first 3D part 2.7 s in our 15-request test', 'low'), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most capable; not yet measured in HeyNimbo', 'medium')]
+// Ultrafast is offered for GPT-6.1 Sol (and GPT-6 Astra) only; Fast for both listed models.
+const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Low thinking: median first 3D part 2.7 s in our 15-request test', 'low', ['standard', 'fast']), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most capable; Ultrafast makes it the fastest OpenAI option', 'medium', SPEEDS)]
 export const RECOMMENDED_MODELS: Record<ProviderId, readonly RecommendedModel[]> = {
   chatgpt: openAIModels,
   openai: openAIModels,
@@ -54,6 +58,8 @@ export const RECOMMENDED_MODELS: Record<ProviderId, readonly RecommendedModel[]>
 export function recommendedModel(provider: ProviderId, model: string): RecommendedModel | undefined { return RECOMMENDED_MODELS[provider].find(entry => entry.model === model) }
 /** Only expose thinking levels for model families whose SDK mapping is known. */
 export function modelEfforts(provider: ProviderId, model: string): readonly Effort[] { return recommendedModel(provider, model)?.efforts.filter(effort => PROVIDER_EFFORTS[provider].includes(effort)) ?? [] }
+/** Speeds are OpenAI API service tiers, so only an OpenAI key offers them. */
+export function modelSpeeds(provider: ProviderId, model: string): readonly Speed[] { return provider === 'openai' ? recommendedModel(provider, model)?.speeds ?? [] : [] }
 export function defaultModelChoice(provider: ProviderId): ModelChoice {
   const first = RECOMMENDED_MODELS[provider][0]
   return first ? { model: first.model, ...(first.effort ? { effort: first.effort } : {}) } : { model: '' }
@@ -61,7 +67,11 @@ export function defaultModelChoice(provider: ProviderId): ModelChoice {
 export function defaultConnectionSettings(): ConnectionSettings {
   return { provider: 'openai', baseURL: 'http://127.0.0.1:11434/v1', models: Object.fromEntries(PROVIDERS.map(p => [p, defaultModelChoice(p)])) as Record<ProviderId, ModelChoice> }
 }
-export function selectedModel(settings: ConnectionSettings): { model: string; effort?: Effort; vision: boolean } {
+export function selectedModel(settings: ConnectionSettings): { model: string; effort?: Effort; speed?: Speed; vision: boolean } {
   const choice = settings.models[settings.provider]
-  return { model: choice.model, ...(choice.effort && modelEfforts(settings.provider, choice.model).includes(choice.effort) ? { effort: choice.effort } : {}), vision: recommendedModel(settings.provider, choice.model)?.vision ?? false }
+  return {
+    model: choice.model, ...(choice.effort && modelEfforts(settings.provider, choice.model).includes(choice.effort) ? { effort: choice.effort } : {}),
+    ...(choice.speed && choice.speed !== 'standard' && modelSpeeds(settings.provider, choice.model).includes(choice.speed) ? { speed: choice.speed } : {}),
+    vision: recommendedModel(settings.provider, choice.model)?.vision ?? false,
+  }
 }

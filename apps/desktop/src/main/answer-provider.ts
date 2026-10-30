@@ -5,13 +5,15 @@ import { createGoogle } from '@ai-sdk/google'
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import type { Effort, ProviderId } from '../shared/providers'
+import type { Effort, ProviderId, Speed } from '../shared/providers'
 import { noRedirectFetch } from './provider-settings'
 import { KEY_REJECTED } from './model-catalog'
 import type { Exchange, Screenshot } from './voice/brain'
 
 export interface AnswerConnection {
   provider: ProviderId; model: string; effort?: Effort; vision: boolean; baseURL?: string
+  /** OpenAI service tier; absent is Standard. */
+  speed?: Speed
   credential(): Promise<string>
 }
 export interface AnswerOptions {
@@ -57,7 +59,7 @@ export async function* streamProviderAnswer(options: AnswerOptions, transport = 
       maxRetries: 0, streamRetries: 0, includeRawChunks: true,
       ...(['chatgpt', 'openai'].includes(provider) ? {} : { maxOutputTokens: 8192 }),
       providerOptions: {
-        openai: { store: false, systemMessageMode: 'developer', ...(effort ? { reasoningEffort: effort } : {}) },
+        openai: { store: false, systemMessageMode: 'developer', ...(effort ? { reasoningEffort: effort } : {}), ...(options.connection.provider === 'openai' && options.connection.speed ? { serviceTier: options.connection.speed } : {}) },
         anthropic: { ...(effort ? { effort } : {}) },
         deepseek: { thinking: { type: 'disabled' } },
       },
