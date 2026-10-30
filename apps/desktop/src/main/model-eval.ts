@@ -11,7 +11,8 @@ import { isolateDevProfile, launchInBackground } from './dev-profile'
 import { drag, hiddenOverlay, sendOverlay, sleep } from './model-gallery'
 import { toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { SettingsStore } from './settings'
-import { streamAnswer, type Screenshot } from './voice/brain'
+import { AGENT_INSTRUCTIONS, INSTRUCTIONS, streamAnswer, turnNote, type Screenshot } from './voice/brain'
+import { NimboAgent } from './agent/engine'
 
 /** Every model sees the same blank display, with the pointer in the middle. */
 export const EVAL_DISPLAY = { width: 1440, height: 900 }
@@ -349,6 +350,18 @@ export async function savedConnections(secrets: Set<string>, log: (line: string)
   return (model) => trackCredential(connections.answerFor(model.provider, model.model, model.effort), secrets)
 }
 
+/** The whole agent instead of the bare answer: the same prompt, tools and turn notes as a real turn.
+ *  Its free workspace is a scratch folder beside the eval output and every approval is declined, so
+ *  an eval never changes the owner's files or runs a command. */
+function agentStream(): typeof streamAnswer {
+  const agent = new NimboAgent({ dataDir: app.getPath('userData'), workspace: join(EVAL_OUTPUT, 'workspace'), approve: async () => 'deny' })
+  let turn = 0
+  return options => agent.answer({
+    conversationId: `eval-${++turn}`, connection: options.connection!, instructions: INSTRUCTIONS + AGENT_INSTRUCTIONS, question: options.question,
+    note: turnNote(options.screenshot, undefined, options.connection!.vision), screenshot: options.screenshot, history: [], signal: options.signal, onStep: () => {},
+  })
+}
+
 async function liveResults(run: EvalRun, writer: ReturnType<typeof evalWriter>, secrets: Set<string>, log: (line: string) => void): Promise<EvalResult[]> {
   const { models, errors } = parseEvalModels(devSetting('HEYNIMBO_DEBUG_3D_EVAL_MODELS'))
   run.errors.push(...errors)
@@ -359,7 +372,7 @@ async function liveResults(run: EvalRun, writer: ReturnType<typeof evalWriter>, 
   const startBefore = Date.now() + cap - Math.ceil(requests / EVAL_LIMITS.renders) * EVAL_LIMITS.renderMs - EVAL_LIMITS.setupMs - process.uptime() * 1000
   log(`${requests} requests: ${models.map((model) => model.spec).join(', ')} × ${run.subjects.length} subjects`)
   return answerPhase({
-    run, models, connectionFor, screenshot: blankScreenshot(), startBefore,
+    run, models, connectionFor, screenshot: blankScreenshot(), startBefore, stream: devFlag('HEYNIMBO_DEBUG_3D_EVAL_AGENT') ? agentStream() : undefined,
     onResult: (result) => {
       if (result.text) result.record.answerFile = writer.file(`${result.modelSlug}/${result.record.subjectSlug}-answer.txt`, result.text)
       writer.summary(run)

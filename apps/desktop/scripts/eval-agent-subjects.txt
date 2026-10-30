@@ -1,0 +1,13 @@
+# Mixed requests for the agent eval: talk, 2D, sketches, 3D and research. Lines starting with # are skipped.
+Make a card explaining how a bill becomes a law in the US.
+Explain the water cycle with a diagram.
+Draw a simple sketch of a house with a tree next to it.
+Can you draw a rocket?
+Show me a 3D model of a lighthouse and explain how it works.
+How does the human heart pump blood? Show me in 3D.
+Build a 3D model of a desk lamp.
+How does an espresso machine work? Build it in 3D.
+Show me how a wind turbine makes electricity, in 3D.
+What is the difference between RAM and storage?
+What's the latest stable version of Node.js?
+Design a simple logo idea for a coffee shop called Bean There.

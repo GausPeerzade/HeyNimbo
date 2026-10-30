@@ -15,6 +15,8 @@ type Pi = typeof import('@earendil-works/pi-coding-agent')
 export type ApprovalAnswer = 'once' | 'conversation' | 'deny'
 export interface AgentDeps {
   dataDir: string
+  /** The folder the agent may change freely. Default: ~/HeyNimbo. */
+  workspace?: string
   /** Asks the owner; resolves 'deny' when the turn is stopped first. */
   approve: (approval: Approval, signal: AbortSignal) => Promise<ApprovalAnswer>
 }
@@ -53,13 +55,13 @@ const stepLabel = (tool: string, args: unknown): string => (LABELS[tool]?.((args
 
 /** The one HeyNimbo agent: a Pi session per conversation that explains, draws and does real work with tools. */
 export class NimboAgent {
-  readonly workspace = join(homedir(), 'HeyNimbo')
+  readonly workspace: string
   private pi?: Promise<{ pi: Pi; runtime: ModelRuntime }>
   private readonly sessions = new Map<string, Live>()
   /** The run each conversation is busy with, so turns never overlap on one session. */
   private readonly runs = new Map<string, Promise<void>>()
 
-  constructor(private readonly deps: AgentDeps) {}
+  constructor(private readonly deps: AgentDeps) { this.workspace = deps.workspace ?? join(homedir(), 'HeyNimbo') }
 
   private load(): Promise<{ pi: Pi; runtime: ModelRuntime }> {
     const agentDir = join(this.deps.dataDir, 'agent')
