@@ -28,7 +28,9 @@ export type ModelCommand = PartMark
   | { kind: 'cut'; id: string; axis: Axis | 'view' }
   | { kind: 'tag'; id: string; part: string; text: string; side?: 'left' | 'right' }
 
-const NAME = '[a-z0-9-]{1,16}'
+// Part names describe anatomy ("pulmonary-vein-left"), so they may be longer than a card ID; a model
+// ID longer than 16 still matches no @model and drops its line.
+const NAME = '[a-z0-9-]{1,32}'
 const defaults: Record<PartShape, Record<string, number>> = {
   box: { w: 1, h: 1, d: 1, round: 0 }, cylinder: { r: 0.5, h: 1, top: 0.5 },
   tube: { r: 0.5, inner: 0.35, h: 1 }, cone: { r: 0.5, h: 1 }, sphere: { r: 0.5 },

@@ -13,6 +13,22 @@ function parse(answer: string, chunk = 7): { marks: Mark[]; sentences: string[];
   return { marks: beats.flatMap(beat => beat.marks), sentences: beats.flatMap(beat => beat.sentence ? [beat.sentence] : []), dropped }
 }
 
+describe('3D commands', () => {
+  it('keeps parts with long anatomical names and the tags that refer to them', () => {
+    // From a real GPT-6.1 Sol heart: names over 16 characters used to drop the part and its tag.
+    const { marks, dropped } = parse([
+      'The heart is two pumps side by side.',
+      '@model heart 420 120 600 560 "Heart"',
+      '@part heart pulmonary-vein-left pipe r=0.095 points=-0.96,0.73,-0.35;-0.22,0.74,-0.34;0.3,0.63,-0.1 mat=paint color=red',
+      '@tag heart pulmonary-vein-left "Pulmonary vein"',
+      '@part heart ' + 'x'.repeat(33) + ' sphere r=0.2',
+      'Blood returns from the lungs here.',
+    ].join('\n'))
+    expect(marks.map(mark => mark.kind)).toEqual(['model', 'part', 'tag'])
+    expect(dropped).toHaveLength(1)
+  })
+})
+
 describe('card commands', () => {
   it('keeps a card and all its rows when the model adds an option the protocol does not know', () => {
     // A real Claude Sonnet 5.5 answer: "lines" is not a paper style, and "navy" is not a step colour.
