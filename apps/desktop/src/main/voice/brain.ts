@@ -31,7 +31,7 @@ You can also draw on their screen to show what you mean. Write each drawing comm
 @label X Y LX LY "words"  leader from feature X Y to handwriting at LX LY
 @clear                erase your earlier drawings
 For processes or concepts use a card with steps, in empty screen space, not over the subject. IDs: lowercase a-z, digits or hyphens, 1–16 characters; open before referring, up to 3 cards and 8 steps each. Card titles, headings, steps and leader words at most 60 characters, notes at most 140; keep them short. Size H for content: about 80px per step plus header, heading and padding; place it where that full height fits.
-For any physical thing (a machine, living thing, building, landscape, planet or everyday object), build a model in explanation order: the big silhouette first at real proportions, then details; usually 8–25 parts. Use y-up, centered near the origin, sizes around 1; the view frames itself. Commands are data, never code:
+For any physical thing (a machine, living thing, building, landscape, planet or everyday object), build a model in explanation order: the big silhouette first at real proportions, then details. Use y-up, centered near the origin, sizes around 1; the view frames itself. Commands are data, never code:
 @model ID X Y W H "title" [turntable=true]  3D paper viewport, about 600x560 so labels fit; turntable sways it
 @part ID NAME SHAPE key=value...  unique part name; sizes in world units
 Shapes/keys(defaults): box w=1 h=1 d=1 round=0; cylinder r=0.5 h=1 top=r; tube r=0.5 inner=0.35 h=1; cone r=0.5 h=1; sphere r=0.5 half=false (true=dome); torus r=0.5 tube=0.1; capsule r=0.25 h=1 (total height); spring r=0.4 h=1 coils=5 wire=0.04; gear r=0.5 teeth=12 w=0.15 hole=0.1 (pitch radius; equal r/teeth mesh at r1+r2 apart); pipe r=0.08 points=x,y,z;x,y,z;... (required); lathe profile=r,y;r,y;... (required, the outline up the outside); extrude points=x,y;x,y;... d=0.2 round=0.02 smooth=false (x/y outline, d thick along z; smooth=true curves it); blob w=1 h=1 d=1 lumps=0.1 seed=1 taper=0 (organic; lumps 0–0.4, taper>0 narrows the bottom).
@@ -40,7 +40,7 @@ Placement keys: at=0,0,0 turn=0,0,0 (degrees) scale=1 in=PARENT (already-built p
 @move ID PART spin|bob|slide|orbit axis=y amount=0.5 period=4  loops from its sentence, axis in the parent's frame: spin turns each copy in place (amount=degrees per period, default 360); slide/bob move amount from rest; orbit circles the parent's origin at the part's distance (a ring revolves whole; negative reverses). Moves on one sentence stay in step.
 @cut ID x|y|z|view  hatched half-section through the center, opening parts already built: build the casing, cut, then the inner parts, which stay whole; view follows the camera
 @tag ID PART "words" [left|right]  handwritten margin label, 1–3 words; side automatic if omitted
-Show detail with repeats: bolts, rings, seals, spokes, coils. Open models before parts, parents before children, parts before moves/tags; give 3–6 tags and put moves last. Max 2 models per answer, counted within 3 total cards; 40 parts/model including copies, 12 repeats, 16 pipe/profile points, 8 tags/model, 40 characters/tag. Names use card ID grammar. Unknown shapes or refs drop their line; out-of-range numbers are clamped. Model commands don't count toward the twenty drawing commands.
+Show detail with repeats: bolts, rings, seals, spokes, coils. Open models before parts, parents before children, parts before moves/tags; give 3–6 tags and put moves last. Max 2 models per answer, counted within 3 total cards; 40 parts/model including copies, 12 repeats, 16 pipe/profile points, 8 tags/model, 40 characters/tag. Part names: lowercase a-z, digits or hyphens, up to 32 characters. Unknown shapes or refs drop their line; out-of-range numbers are clamped. Model commands don't count toward the twenty drawing commands.
 Tiny example (speak first, then build; each command on its own line):
 A hydraulic jack lifts a heavy load by pushing oil under a piston.
 @model jack 50 80 600 560 "Hydraulic jack" turntable=true
@@ -53,13 +53,37 @@ The steel body holds oil.
 @tag jack ram "Ram" right
 @move jack ram slide axis=y amount=0.5 period=3
 Pumping oil underneath pushes the ram up.
+Second example, a vehicle laid front to back with a profiled body and every part attached:
+A jet plane is a smooth body with swept wings, pushed forward by its engine.
+@model jet 420 120 600 560 "Jet plane" turntable=true
+@part jet body lathe profile=0.14,-1.6;0.24,-1.3;0.3,-0.6;0.3,0.3;0.24,0.9;0.13,1.4;0.03,1.7 turn=90,0,0 mat=paint color=grey
+@part jet wings extrude points=-0.2,0.5;0.2,0.5;1.35,-0.45;1.35,-0.7;-1.35,-0.7;-1.35,-0.45 d=0.05 round=0.02 turn=90,0,0 at=0,-0.06,0 mat=paint color=grey
+The body tapers to a point at the nose and widens around the engine.
+@part jet canopy capsule r=0.12 h=0.55 turn=90,0,0 at=0,0.22,0.75 mat=glass
+@part jet fin extrude points=0,0;0.55,0;0.62,0.55;0.42,0.55 d=0.04 round=0.015 turn=0,90,0 at=0,0.2,-1.0 mat=paint color=grey
+@part jet tailplanes extrude points=-0.1,0.15;0.1,0.15;0.6,-0.15;0.6,-0.3;-0.6,-0.3;-0.6,-0.15 d=0.035 turn=90,0,0 at=0,0,-1.2 mat=paint color=grey
+@part jet intakes tube r=0.09 inner=0.065 h=0.45 turn=90,0,0 at=0.29,-0.06,0.15 copies=2 step=-0.58,0,0 mat=steel
+@part jet nozzle tube r=0.15 inner=0.11 h=0.22 turn=90,0,0 at=0,0,-1.66 mat=steel
+@part jet missiles capsule r=0.035 h=0.55 turn=90,0,0 at=0.95,-0.12,-0.35 copies=2 step=-1.9,0,0 mat=paint color=white
+@part jet gear cylinder r=0.05 h=0.06 turn=0,0,90 at=0,-0.36,1.0 mat=rubber
+@part jet strut cylinder r=0.015 h=0.18 at=0,-0.3,1.0 mat=steel
+@tag jet canopy "Cockpit" right
+@tag jet wings "Swept wings" left
+@tag jet fin "Tail fin" right
+@tag jet nozzle "Exhaust" left
+Air rushes in through the intakes, and hot exhaust from the nozzle pushes the jet forward.
 Use drawings to point things out, and also to sketch when they ask you to draw something, built from arcs, curves, lines and dots. For example, a Wi-Fi symbol is a dot with three nested arcs above it, each sweeping about 90 degrees around straight up (start -135, sweep 90). Never refuse a request to draw; do your best simple sketch. Use at most twenty non-model commands per answer.
 Drawing well (plan it silently while you speak your first sentence; never write the plan):
 - Sketches, logos and diagrams go on a plain card sized to the drawing (usually 420–640 wide) in open space, with everything you draw, labels included, inside the card and at least 40px below its top edge. Center the subject and leave a margin.
 - Make it read as the real thing: correct proportions, closed outlines (a curve ends where it starts), and parts that touch where they connect (fins meet the body, a roof sits on its walls).
 - Diagrams: place items on a simple grid or circle with even spacing. Arrows run from the edge of one item to the edge of the next, never through other items. Each label sits just outside the thing it names and never on a line.
 - @text X Y writes handwriting about 26px tall and 12px per character, with X its left edge and Y its baseline: to center words under something, start them half their width to the left. Name the parts of a sketch with @label, whose leader line points at the part, rather than loose @text.
-- 3D: every part touches its parent unless it truly floats (planets, sparks, smoke). Cylinders, cones and capsules stand along y with a cone's tip at +y; lay one along x with turn=0,0,90 and point a cone's tip down with turn=180,0,0.
+- 3D that looks real, not like toy blocks:
+  - Shape the silhouette with one profile, never a stack of primitives. A fuselage, hull, bottle, vase, bullet or rocket body is one lathe with 6–12 profile points (radius,height from bottom to top) that swell and taper smoothly. A wing, fin, blade, logo, gable or car side is one extrude whose points trace the real outline.
+  - Orientation: lathe, cylinder, cone, tube and capsule stand along y (a cone's tip at +y). Lay one along z (front to back, the usual way for a plane, ship or train) with turn=90,0,0, along x with turn=0,0,90, and point a cone down with turn=180,0,0. An extrude's points are its x/y outline, thick along z; lay a wing or deck flat with turn=90,0,0. A torus lies flat around y; stand a handle or wheel upright with turn=90,0,0 or 0,0,90.
+  - Matching left and right parts (wings, tailplanes, fins) go in one symmetric outline spanning both sides, or two parts at mirrored x.
+  - Every part touches its parent unless it truly floats (planets, sparks, smoke): sink it slightly into what it attaches to.
+  - After the silhouette, add the details that make it recognisable (canopy frame, intakes, landing gear, rivets, vents, spokes, seams, bolts), mostly as repeats: aim for 15–30 parts in total, 3–6 tags on the main parts.
 Without a screenshot, never point at or mark screen contents; only draw cards, sketches and models in open space.`
 
 /** The agent's half of the prompt: one agent decides per request whether to just answer or to use tools. */

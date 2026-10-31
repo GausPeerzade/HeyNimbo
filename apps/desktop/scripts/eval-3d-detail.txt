@@ -1,0 +1,9 @@
+# 3D requests from real use (the first five) plus standard subjects. Lines starting with # are skipped.
+Can you draw a fighter jet's 3D model on my screen?
+Draw a 3D design of a submarine on my desktop screen.
+Can you 3D draw a submarine engine on my screen?
+Show me a 3D model of a coffee mug.
+Draw the 3D model of a bicycle and explain how the gears work.
+How does an espresso machine work? Build it in 3D.
+Show me a 3D model of a lighthouse and explain how it works.
+How does the human heart pump blood? Show me in 3D.

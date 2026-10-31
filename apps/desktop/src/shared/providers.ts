@@ -45,7 +45,7 @@ export interface RecommendedModel { model: string; name: string; hint: string; v
 const thinking = (model: string, name: string, hint: string, effort: Effort, speeds?: readonly Speed[]): RecommendedModel => ({ model, name, hint, vision: true, effort, efforts: EFFORTS, ...(speeds && { speeds }) })
 const plain = (model: string, name: string, hint: string, vision = true): RecommendedModel => ({ model, name, hint, vision, efforts: [] })
 // Ultrafast is offered for GPT-6.1 Sol (and GPT-6 Astra) only; Fast for both listed models.
-const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Low thinking: median first 3D part 2.7 s in our 15-request test', 'low', ['standard', 'fast']), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most capable; Ultrafast makes it the fastest OpenAI option', 'medium', SPEEDS)]
+const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Low thinking: median first 3D part 2.7 s in our 15-request test', 'low', ['standard', 'fast']), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most detailed 3D in our tests; with Ultrafast, first words in about 3–4 s', 'medium', SPEEDS)]
 export const RECOMMENDED_MODELS: Record<ProviderId, readonly RecommendedModel[]> = {
   chatgpt: openAIModels,
   openai: openAIModels,
