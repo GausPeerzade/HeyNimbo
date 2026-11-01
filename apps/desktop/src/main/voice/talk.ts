@@ -17,6 +17,8 @@ const MIC_STOP_TIMEOUT_MS = 1_500
 const SAVE_INTERVAL_MS = 250
 /** Designed parts are revealed in batches this often, each batch growing over twice as long. */
 const DESIGN_BATCH_MS = 300
+/** How long a polish pass waits for its card to be shown before giving up. */
+const SNAPSHOT_WAIT_MS = 60_000
 /** Declared beat budget while sentence PCM is still streaming. Drawing uses
  *  natural durations unless it would overrun this speech estimate. */
 const WORDS_PER_SECOND = 2.6
@@ -43,6 +45,8 @@ export interface TalkDeps {
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
     /** Builds 3D lines ahead of their sentence; they still draw with it. */
     prepare?(marks: Mark[], space: CaptureSpace): void
+    /** A JPEG of a 3D card's model as drawn now, for the designer's polish pass. */
+    snapshot?(id: string, space: CaptureSpace): Promise<Buffer | undefined>
     /** The answer is over; offer to clear the drawing. */
     answerDone(): void
   }
@@ -80,6 +84,8 @@ interface Turn {
 export class TalkSession {
   private turn: Turn | undefined
   private nextId = 0
+  /** The last finished turn, while its 3D models may still be polishing; the next question stops it. */
+  private polishing: Turn | undefined
   private errorTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: TalkDeps) {}
@@ -313,7 +319,13 @@ export class TalkSession {
   }
 
   /** Persistence must never prevent microphone, network or speech cleanup. */
+  /** Stops a finished answer's 3D polish, as when its drawing is cleared. */
+  stopPolish(): void {
+    this.polishing?.abort.abort(); this.polishing = undefined
+  }
+
   private interrupt(state: 'interrupted' | 'error' = 'interrupted', error: string | null = null): void {
+    this.stopPolish()
     const turn = this.turn
     if (!turn) return
     this.turn = undefined
@@ -335,6 +347,7 @@ export class TalkSession {
   private finish(turn: Turn): void {
     if (this.turn !== turn) return
     this.turn = undefined
+    this.polishing = turn
     this.saveOutcome(turn, 'complete')
     if (turn.releasedAt !== undefined && turn.marks.size > 0) {
       const timings = [...turn.marks].map(([label, at]) => `${label} ${Math.round(at - turn.releasedAt!)}ms`)
@@ -359,7 +372,9 @@ export class TalkSession {
   }
 
   private draw(turn: Turn, marks: Mark[], durationMs: number): void {
-    if (this.turn === turn && turn.space && marks.length) {
+    // A finished turn still draws its polish, until the next question stops it.
+    const live = this.turn === turn || (this.polishing === turn && !turn.abort.signal.aborted)
+    if (live && turn.space && marks.length) {
       if (marks.some(mark => mark.kind === 'part')) this.mark(turn, 'first 3D draw queued')
       this.deps.drawing.draw(marks, durationMs, turn.space)
       // Parts designed before their card appeared follow it on.
@@ -373,9 +388,20 @@ export class TalkSession {
     const connection = turn.connection
     if (!this.deps.design || !connection || !turn.space) return
     const space = turn.space
-    let timer: NodeJS.Timeout | undefined
-    const run = (async () => {
-      for await (const batch of this.deps.design!({ connection, id: card.id, title: card.brief ?? card.title, question, signal: turn.abort.signal })) {
+    let timer: NodeJS.Timeout | undefined, built!: () => void
+    // The answer waits for the first build only; the polish pass carries on after it.
+    turn.designs.push(new Promise<void>(resolve => { built = resolve }))
+    const flush = (): void => { clearTimeout(timer); timer = undefined; this.release(turn, card.id) }
+    // The card appears when speech reaches it, which may be after the first build is done; the overlay then waits for the parts to grow.
+    const snapshot = this.deps.drawing.snapshot && (async () => {
+      for (const deadline = Date.now() + SNAPSHOT_WAIT_MS; !turn.shown.has(card.id) || turn.held.get(card.id)?.length;) {
+        if (turn.abort.signal.aborted || Date.now() > deadline) return undefined
+        await new Promise(resolve => setTimeout(resolve, DESIGN_BATCH_MS))
+      }
+      return this.deps.drawing.snapshot!(card.id, space)
+    })
+    void (async () => {
+      for await (const batch of this.deps.design!({ connection, id: card.id, title: card.brief ?? card.title, question, signal: turn.abort.signal, ...(snapshot && { snapshot }), onBuilt: () => { flush(); built() } })) {
         if (turn.abort.signal.aborted) return
         if (batch.some(mark => mark.kind === 'part')) this.mark(turn, 'first designed part')
         this.deps.drawing.prepare?.(batch, space)
@@ -383,8 +409,11 @@ export class TalkSession {
         timer ??= setTimeout(() => { timer = undefined; this.release(turn, card.id) }, DESIGN_BATCH_MS)
       }
     })().catch((error: unknown) => console.warn(`[design] ${error instanceof Error ? error.message : String(error)}`))
-      .finally(() => { clearTimeout(timer); this.release(turn, card.id) })
-    turn.designs.push(run)
+      .finally(() => {
+        flush(); built()
+        // Polish drawn after the answer ended hides its Clear button and stops the fade: offer them again.
+        if (this.polishing === turn && !turn.abort.signal.aborted) this.deps.drawing.answerDone()
+      })
   }
 
   private release(turn: Turn, id: string): void {

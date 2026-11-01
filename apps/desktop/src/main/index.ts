@@ -118,6 +118,7 @@ function startTalking(key: string | undefined, agent: NimboAgent, notch: Browser
     drawing: {
       draw: (marks, durationMs, space) => overlays.drawBeat(marks, durationMs, space),
       prepare: (marks, space) => overlays.prepare(marks, space),
+      snapshot: (id, space) => overlays.snapshotModel(id, space),
       answerDone: () => overlays.answerDone(),
     },
   })
@@ -205,6 +206,8 @@ if (ownsInstance) app.whenReady().then(async () => {
     screen.removeListener('display-added', resync); screen.removeListener('display-removed', resync); screen.removeListener('display-metrics-changed', resync)
     monitor?.stop(); talk?.close(); agent.close(); audio.close(); overlays.close(); peek.close(); if (!notch.isDestroyed()) notch.destroy(); shell.close() })
   overlays.onStrokeStarted = (durationMs) => audio.send({ kind: 'scribble', durationMs })
+  // A cleared drawing has nothing left to polish.
+  overlays.onCleared = () => talk?.stopPolish()
   const started = startGestures(createGesturePresenter(notch, overlays, () => talk))
   if (started.ok) {
     monitor = started.monitor

@@ -62,6 +62,7 @@ export function toOverlaySpace(marks: readonly Mark[], capture: CaptureSpace, di
       case 'move':
       case 'cut':
       case 'tag':
+      case 'remove':
       case 'heading':
       case 'step':
       case 'note':

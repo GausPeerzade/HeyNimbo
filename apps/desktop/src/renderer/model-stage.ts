@@ -102,6 +102,8 @@ export class ModelStage {
   afterRender?: () => void
   visit?: () => void
   private readonly disposables = new Set<{ dispose: () => void }>()
+  /** Each dressed part's own materials and edges, freed when a polish pass removes the part. */
+  private readonly owned = new Map<ModelPart, Array<{ dispose: () => void }>>()
   private readonly motions = new Map<string, Motion>()
   private readonly undressed: ModelPart[] = []
   private environment?: THREE.WebGLRenderTarget
@@ -259,6 +261,7 @@ export class ModelStage {
     const edges = new THREE.EdgesGeometry(part.geometry, 40)
     const edgeInk = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.32, depthWrite: false })
     for (const resource of [material, shell, edges, edgeInk]) this.disposables.add(resource)
+    this.owned.set(part, [material, shell, edges, edgeInk])
     for (const reveal of part.reveals) {
       const mesh = new THREE.Mesh(part.geometry, material)
       mesh.castShadow = !material.transparent; mesh.receiveShadow = true; mesh.userData.part = spec.name; mesh.renderOrder = 1000
@@ -291,6 +294,34 @@ export class ModelStage {
     this.contact.render(this.renderer, this.scene)
     this.renderer.render(this.scene, this.camera)
     group.visible = false
+  }
+
+  /** The model as drawn right now, on white, as a JPEG data URL: what the designer's polish pass looks at. */
+  snapshot(): string | undefined {
+    if (this.disposed || !this.options || !this.framed) return undefined
+    this.dirty = true; this.tick(performance.now())
+    // Read in the same task as the render, before the browser presents and clears the buffer.
+    const source = this.renderer.domElement, canvas = document.createElement('canvas')
+    canvas.width = source.width; canvas.height = source.height
+    const context = canvas.getContext('2d')
+    if (!context) return undefined
+    context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(source, 0, 0)
+    return canvas.toDataURL('image/jpeg', 0.85)
+  }
+
+  /** Removes a part (and the parts inside it), as a polish pass replacing or dropping it. Returns the removed names. */
+  remove(name: string): string[] {
+    if (this.disposed) return []
+    const removed = this.graph.remove(name)
+    for (const part of removed) {
+      for (const material of this.sections.unregister(part)) this.glow.forget(material)
+      this.motions.delete(part.spec.name)
+      for (const resource of this.owned.get(part) ?? []) { resource.dispose(); this.disposables.delete(resource); if (resource instanceof THREE.Material) this.glow.forget(resource) }
+      this.owned.delete(part)
+      const waiting = this.undressed.indexOf(part); if (waiting >= 0) this.undressed.splice(waiting, 1)
+    }
+    if (removed.length) { this.renderer.shadowMap.needsUpdate = true; this.fit(); this.dirty = true; this.options?.wake() }
+    return removed.map((part) => part.spec.name)
   }
 
   reveal(part: ModelPart, progress: number): void {

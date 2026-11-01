@@ -29,6 +29,8 @@ export interface PartMark {
   outline?: Array<[number, number]>; smooth?: boolean
   /** A pipe's radius at each point, for tapering limbs, tails and stems. */
   radii?: number[]
+  /** A polish pass's new version of a part: the old part (and the parts in it) come off as this one starts to grow. */
+  replaces?: string
   /** Each copy's own place and turn, for repeats around any axis; overrides copies/step/around. */
   instances?: Array<{ at: Vec3; turn: Vec3 }>
   finish?: PartFinish
@@ -37,6 +39,8 @@ export type ModelCommand = PartMark
   | { kind: 'move'; id: string; part: string; motion: 'spin' | 'bob' | 'slide' | 'orbit'; axis: Axis; amount: number; period: number }
   | { kind: 'cut'; id: string; axis: Axis | 'view' }
   | { kind: 'tag'; id: string; part: string; text: string; side?: 'left' | 'right' }
+  /** Takes a part (and the parts inside it) off the model: only the designer's polish pass sends it. */
+  | { kind: 'remove'; id: string; part: string }
 
 // Part names describe anatomy ("pulmonary-vein-left"), so they may be longer than a card ID; a model
 // ID longer than 16 still matches no @model and drops its line.

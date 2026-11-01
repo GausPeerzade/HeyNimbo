@@ -174,6 +174,9 @@ export class OverlayManager {
   private readonly interactiveRegions = new Map<number, Map<string, { over: boolean; captured: boolean }>>()
 
   onStrokeStarted?: (durationMs: number) => void
+  onCleared?: () => void
+  private snapshotRequest = 0
+  private readonly snapshots = new Map<number, (jpeg: Buffer | undefined) => void>()
 
   constructor() {
     ipcMain.on(Channels.overlayEvent, (event, payload: OverlayEvent) => {
@@ -195,6 +198,14 @@ export class OverlayManager {
       } else if (payload.kind === 'clearClicked') {
         sender[1].setIgnoreMouseEvents(true, { forward: true })
         this.clear()
+      }
+      else if (payload.kind === 'modelSnapshot') {
+        const resolve = typeof payload.request === 'number' ? this.snapshots.get(payload.request) : undefined
+        if (!resolve) return
+        this.snapshots.delete(payload.request)
+        const prefix = 'data:image/jpeg;base64,'
+        // A renderer is not trusted with size or format: only a bounded JPEG data URL is decoded.
+        resolve(typeof payload.jpeg === 'string' && payload.jpeg.startsWith(prefix) && payload.jpeg.length < 8_000_000 ? Buffer.from(payload.jpeg.slice(prefix.length), 'base64') : undefined)
       }
       else if (payload.kind === 'frameTrace' && devFlag('HEYNIMBO_DEBUG_DRAW_TRACE')) {
         console.info(`[draw-trace] ${JSON.stringify({ ...frameTraceSummary(payload.deltas), deltas: payload.deltas })}`)
@@ -262,6 +273,19 @@ export class OverlayManager {
     })
   }
 
+  /** A JPEG of a 3D card's model as it is drawn now, or nothing if the card is gone or the overlay doesn't answer. */
+  snapshotModel(id: string, space: CaptureSpace): Promise<Buffer | undefined> {
+    const display = displayFor(space, screen.getAllDisplays())
+    if (!display) return Promise.resolve(undefined)
+    const request = ++this.snapshotRequest
+    return new Promise((resolve) => {
+      // The overlay waits up to 8 s for the parts to finish growing before it answers.
+      const timer = setTimeout(() => { this.snapshots.delete(request); resolve(undefined) }, 12_000)
+      this.snapshots.set(request, (jpeg) => { clearTimeout(timer); resolve(jpeg) })
+      this.send(display.id, { kind: 'snapshot', id, request })
+    })
+  }
+
   /** Sends 3D lines ahead of their beat to the display that will draw them. */
   prepare(marks: Mark[], space: CaptureSpace): void {
     const display = displayFor(space, screen.getAllDisplays())
@@ -323,6 +347,7 @@ export class OverlayManager {
   }
 
   clear(): void {
+    this.onCleared?.()
     clearTimeout(this.fadeTimer)
     this.epoch++
     this.shown = undefined

@@ -69,7 +69,15 @@ export class ModelDesign {
   concept = ''
   private readonly materials = new Map<string, Line>()
   private readonly groups = new Map<string, Vec3>()
-  private readonly names = new Set<string>()
+  /** Every name ever placed, including removed ones. */
+  private readonly used = new Set<string>()
+  /** The part each designer id currently stands for: a polish pass that reuses an id replaces the part. */
+  private readonly current = new Map<string, string>()
+  private readonly placed = new Map<string, { copies: number; cost: number; parent?: string }>()
+  /** Labelled parts and their words. */
+  private readonly tagged = new Map<string, string>()
+  private readonly texts = new Set<string>()
+  private revision = 0
   private readonly centres = new Map<string, Vec3>()
   private placements = 0
   private vertices = 0
@@ -77,6 +85,9 @@ export class ModelDesign {
   private unnamed = 0
 
   constructor(private readonly id: string) {}
+
+  /** Parts and groups on the model now. */
+  get size(): number { return this.placed.size }
 
   /** Commands for one streamed line; none when the line is malformed, over budget or declares only state. */
   push(text: string): ModelCommand[] {
@@ -87,14 +98,17 @@ export class ModelDesign {
     if (typeof line.mat === 'string' && line.shape === undefined) { this.materials.set(line.mat, line); return [] }
     if (typeof line.group === 'string' && line.shape === undefined) return this.group(line)
     if (typeof line.label === 'string') return this.label(line)
+    if (typeof line.remove === 'string') return this.remove(line.remove)
     return this.part(line)
   }
 
   private group(line: Line): ModelCommand[] {
-    const name = nameOf(line.group)
-    if (!name || this.groups.has(name) || this.names.has(name)) return []
+    const id = nameOf(line.group)
+    if (!id || this.current.has(id)) return []
+    let name = id
+    while (this.used.has(name)) name = `${id.slice(0, 26)}-v${++this.revision}`
     const pivot = vec(line.pivot) ?? [0, 0, 0]
-    this.groups.set(name, pivot); this.names.add(name)
+    this.groups.set(name, pivot); this.used.add(name); this.current.set(id, name); this.placed.set(name, { copies: 0, cost: 0 })
     // An empty part at the pivot: its children follow it, and a spin turns them all about it.
     const commands: ModelCommand[] = [{ ...this.base(name, 'group', {}), at: pivot }]
     const spin = vec(line.spin), rps = num(line.rps, 0, 0, 2)
@@ -109,11 +123,12 @@ export class ModelDesign {
   /** A label names the part nearest its position; at most the renderer's tag budget. */
   private label(line: Line): ModelCommand[] {
     const position = vec(line.position), text = (line.label as string).trim().slice(0, MODEL_LIMITS.labelCharacters)
-    if (!position || !text || this.labels >= MODEL_LIMITS.tags) return []
+    // The same words twice say nothing new, as when a polish pass repeats a label it already gave.
+    if (!position || !text || this.labels >= MODEL_LIMITS.tags || this.texts.has(text.toLowerCase())) return []
     let nearest: string | undefined, best = Infinity
-    for (const [name, centre] of this.centres) { const distance = length(sub(centre, position)); if (distance < best) { best = distance; nearest = name } }
+    for (const [name, centre] of this.centres) { if (this.tagged.has(name)) continue; const distance = length(sub(centre, position)); if (distance < best) { best = distance; nearest = name } }
     if (!nearest) return []
-    this.centres.delete(nearest); this.labels++
+    this.tagged.set(nearest, text.toLowerCase()); this.texts.add(text.toLowerCase()); this.labels++
     return [{ kind: 'tag', id: this.id, part: nearest, text }]
   }
 
@@ -125,8 +140,11 @@ export class ModelDesign {
     const line = typeof raw.m === 'string' && this.materials.has(raw.m) ? { ...this.materials.get(raw.m), ...raw } : raw
     const shape = line.shape
     let part: PartMark | undefined, at: Vec3 | undefined, rotation: Quat = [0, 0, 0, 1]
-    const name = nameOf(line.id) ?? `p${++this.unnamed}`
-    if (this.names.has(name) && !nameOf(line.id)) return []
+    const id = nameOf(line.id), previous = id ? this.current.get(id) : undefined
+    // A reused id is a new version of that part under a fresh name, so the old one can be taken off.
+    let name = id ?? `p${++this.unnamed}`
+    // A renderer may still hold a removed part under its old name until its removal runs, so a name is never used twice.
+    if (previous || this.used.has(name)) do name = `${(id ?? name).slice(0, 26)}-v${++this.revision}`; while (this.used.has(name))
     if (shape === 'cylinder' || shape === 'capsule' || shape === 'cone') {
       const from = vec(line.from), to = vec(line.to)
       if (!from || !to || length(sub(to, from)) < MODEL_LIMITS.minDimension) return []
@@ -167,18 +185,53 @@ export class ModelDesign {
     if (!part || !at) return []
     if (shape !== 'cylinder' && shape !== 'capsule' && shape !== 'cone' && shape !== 'tube') rotation = fromEuler(degrees(line.rotation) ?? [0, 0, 0])
     const instances = this.repeat(line.repeat, at, rotation)
-    const pivot = typeof line.group === 'string' ? this.groups.get(nameOf(line.group) ?? '') : undefined
-    const group = pivot ? nameOf(line.group) : undefined
+    const groupName = typeof line.group === 'string' ? this.current.get(nameOf(line.group) ?? '') : undefined
+    const pivot = groupName ? this.groups.get(groupName) : undefined
+    const group = pivot ? groupName : undefined
     // Parts in a group are placed relative to its pivot, so they turn with it.
     const local = instances.map(({ at, turn }) => ({ at: round(pivot ? sub(at, pivot) : at), turn }))
     Object.assign(part, { at: local[0]!.at, turn: local[0]!.turn, copies: local.length, ...(local.length > 1 && { instances: local }), ...(group && { parent: group }) })
     const finish = this.finish(line)
     if (finish) part.finish = finish
     const cost = partVertexCost(part)
-    if (this.placements + part.copies > MODEL_LIMITS.parts || this.vertices + cost > MODEL_LIMITS.verticesPerModel) return []
-    this.placements += part.copies; this.vertices += cost; this.names.add(name)
+    const replaced = previous ? this.subtree(previous) : []
+    // A part can't move into a group it is replacing.
+    if (group && replaced.includes(group)) return []
+    const freed = replaced.reduce((sum, key) => ({ copies: sum.copies + this.placed.get(key)!.copies, cost: sum.cost + this.placed.get(key)!.cost }), { copies: 0, cost: 0 })
+    if (this.placements - freed.copies + part.copies > MODEL_LIMITS.parts || this.vertices - freed.cost + cost > MODEL_LIMITS.verticesPerModel) return []
+    this.release(replaced)
+    this.placements += part.copies; this.vertices += cost; this.used.add(name)
+    this.placed.set(name, { copies: part.copies, cost, ...(group && { parent: group }) })
+    if (id) this.current.set(id, name)
     this.centres.set(name, part.points ? part.points[Math.floor(part.points.length / 2)]! : at)
+    if (previous) part.replaces = previous
     return [part]
+  }
+
+  private remove(value: string): ModelCommand[] {
+    const name = this.current.get(nameOf(value) ?? '')
+    if (!name) return []
+    this.release(this.subtree(name))
+    return [{ kind: 'remove', id: this.id, part: name }]
+  }
+
+  /** A part and every part placed inside it, as the renderer removes them together. */
+  private subtree(name: string): string[] {
+    const found = [name]
+    for (let i = 0; i < found.length; i++) for (const [key, entry] of this.placed) if (entry.parent === found[i] && !found.includes(key)) found.push(key)
+    return found
+  }
+
+  private release(names: string[]): void {
+    for (const name of names) {
+      const entry = this.placed.get(name)
+      if (!entry) continue
+      this.placements -= entry.copies; this.vertices -= entry.cost
+      this.placed.delete(name); this.centres.delete(name); this.groups.delete(name)
+      const text = this.tagged.get(name)
+      if (text !== undefined) { this.tagged.delete(name); this.texts.delete(text); this.labels-- }
+    }
+    for (const [id, name] of this.current) if (names.includes(name)) this.current.delete(id)
   }
 
   /** `count` copies around `axis` through `pivot` (all the way round, or across `angle` degrees), or offset by `step`. */

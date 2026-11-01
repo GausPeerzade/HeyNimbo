@@ -25,7 +25,7 @@ interface SectionCopy {
   cap: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
   cut: boolean
 }
-interface SectionPart { part: ModelPart; surfaces: readonly THREE.Material[]; copies: SectionCopy[]; tint: THREE.Color; hollow: boolean }
+interface SectionPart { part: ModelPart; surfaces: readonly THREE.Material[]; copies: SectionCopy[]; tint: THREE.Color; hollow: boolean; owned: Array<THREE.Material | THREE.BufferGeometry> }
 
 /** Stencil winding/cap pass adapted from three.js webgl_clipping_stencil (MIT).
  *  The section hatch, per-part/repeat lifecycle and cut ordering are our own. */
@@ -38,6 +38,8 @@ export class ModelSections {
   private axis?: Axis | 'view'
   private readonly center = new THREE.Vector3()
   private readonly copies: SectionCopy[] = []
+  /** Stencil and cap passes take turns in this order; it only grows, so a copy added after a removal never shares one. */
+  private order = 0
   private readonly parts: SectionPart[] = []
   private readonly materials = new Set<THREE.Material>()
   private readonly geometries = new Set<THREE.BufferGeometry>()
@@ -54,17 +56,33 @@ export class ModelSections {
   private review = false
   constructor(private readonly scene: THREE.Scene) {}
 
+  /** Forgets a removed part, its section caps and their GPU resources; returns the materials it freed. */
+  unregister(part: ModelPart): THREE.Material[] {
+    const index = this.parts.findIndex((entry) => entry.part === part)
+    if (index < 0) return []
+    const [entry] = this.parts.splice(index, 1)
+    for (const copy of entry!.copies) {
+      copy.cap.removeFromParent()
+      const at = this.copies.indexOf(copy); if (at >= 0) this.copies.splice(at, 1)
+    }
+    for (const resource of entry!.owned) {
+      resource.dispose()
+      if (resource instanceof THREE.BufferGeometry) this.geometries.delete(resource); else this.materials.delete(resource)
+    }
+    return entry!.owned.filter((resource): resource is THREE.Material => resource instanceof THREE.Material)
+  }
+
   /** `surfaces` are the part's own materials (solid, outline, edges). Transparent parts are clipped but never capped. */
   register(part: ModelPart, surfaces: readonly THREE.Material[], tint: THREE.Color, capped: boolean): void {
     // After a cut, a part stays whole unless it spans the section like a floor or a slab.
     const opened = this.axis !== undefined && this.spans(part)
     for (const surface of surfaces) surface.clippingPlanes = [this.axis && !opened ? this.whole : this.plane]
-    const entry: SectionPart = { part, surfaces, copies: [], tint: tint.clone(), hollow: false }
+    const entry: SectionPart = { part, surfaces, copies: [], tint: tint.clone(), hollow: false, owned: [] }
     this.parts.push(entry)
     this.review = this.axis !== undefined
     if (!capped) return
     for (const reveal of part.reveals) {
-      const order = this.copies.length * 3
+      const order = this.order++ * 3
       const stencil = [THREE.BackSide, THREE.FrontSide].map((side) => {
         const mesh = new THREE.Mesh(part.geometry, this.stencilMaterial(side))
         mesh.renderOrder = order; mesh.visible = false; mesh.layers.set(SECTION_LAYER); reveal.add(mesh)
@@ -73,6 +91,7 @@ export class ModelSections {
       const cap = new THREE.Mesh(this.geometry, this.capMaterial(tint))
       cap.renderOrder = order + 1; cap.visible = false; cap.layers.set(SECTION_LAYER)
       cap.onAfterRender = (renderer) => renderer.clearStencil()
+      entry.owned.push(...stencil.map((mesh) => mesh.material as THREE.Material), cap.material)
       const copy = { reveal, stencil, cap, cut: opened }
       for (const mesh of stencil) mesh.visible = opened
       this.scene.add(cap); this.copies.push(copy); entry.copies.push(copy)
@@ -184,12 +203,14 @@ export class ModelSections {
       .scale(Math.max(0.2, 1 - 2 * wall / size.x), Math.max(0.2, 1 - 2 * wall / size.y), Math.max(0.2, 1 - 2 * wall / size.z)).translate(centre.x, centre.y, centre.z)
     this.geometries.add(inner)
     const cavity = this.cavityMaterial(entry.tint)
+    entry.owned.push(inner, cavity)
     for (const copy of entry.copies) {
       const surface = new THREE.Mesh(inner, cavity)
       surface.renderOrder = 1000; surface.receiveShadow = true; surface.userData.part = entry.part.spec.name
       const passes = [THREE.BackSide, THREE.FrontSide].map((side) => {
         const mesh = new THREE.Mesh(inner, this.stencilMaterial(side, true))
         mesh.renderOrder = copy.stencil[0]!.renderOrder; mesh.visible = copy.cut; mesh.layers.set(SECTION_LAYER)
+        entry.owned.push(mesh.material)
         return mesh
       })
       copy.reveal.add(surface, ...passes); copy.stencil.push(...passes)

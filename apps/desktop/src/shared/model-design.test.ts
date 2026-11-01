@@ -77,6 +77,47 @@ describe('designer lines', () => {
     for (const bad of ['not json', '[1,2]', '{"shape":"cylinder","from":[0,0,0],"to":[0,0,0]}', '{"shape":"lathe","profile":[[0,0]]}', '{"shape":"hexagon","position":[0,0,0]}']) expect(design.push(bad)).toEqual([])
   })
 
+  it('replaces a part whose id is reused, and removes a group with everything inside it', () => {
+    const design = new ModelDesign('m')
+    design.push('{"group":"rotor","pivot":[0,2,0],"spin":[0,1,0],"rps":0.2}')
+    design.push('{"shape":"box","id":"blade","position":[1,2,0],"size":[1,0.1,0.2],"group":"rotor"}')
+    design.push('{"shape":"sphere","id":"hub","position":[0,2,0],"radius":0.3}')
+    expect(design.push('{"label":"Hub","position":[0,2.1,0]}')).toMatchObject([{ kind: 'tag', part: 'hub' }])
+    // A designer id that looks like a generated version must not be taken over by one.
+    design.push('{"shape":"box","id":"hub-v1","position":[3,0,0],"size":[1,1,1]}')
+    // The polish pass reuses "hub": a new version replaces it, and the old one comes off as it grows.
+    const replaced = design.push('{"shape":"sphere","id":"hub","position":[0,2,0],"radius":0.4}')
+    expect(replaced).toMatchObject([{ kind: 'part', replaces: 'hub', dimensions: { r: 0.4 } }])
+    const version = (replaced[0] as PartMark).name
+    expect(['hub', 'hub-v1']).not.toContain(version)
+    // Replacing again replaces the latest version, not the original.
+    expect(design.push('{"shape":"sphere","id":"hub","position":[0,2,0],"radius":0.4}')).toMatchObject([{ replaces: version }])
+    expect(design.push('{"shape":"sphere","id":"hub","position":[0,2,0],"radius":0.4}')).toHaveLength(1)
+    // Its label went with it, so the same words can name the new version.
+    const latest = (design.push('{"shape":"sphere","id":"hub","position":[0,2,0],"radius":0.4}')[0] as PartMark).name
+    expect(design.push('{"label":"Hub","position":[0,2.1,0]}')).toMatchObject([{ kind: 'tag', part: latest }])
+    // Parts declared later in the group still find it; removing the group frees its children's names too.
+    expect(parts(design.push('{"shape":"box","id":"tip","position":[2,2,0],"size":[0.1,0.1,0.1],"group":"rotor"}'))[0]).toMatchObject({ parent: 'rotor' })
+    expect(design.push('{"remove":"rotor"}')).toEqual([{ kind: 'remove', id: 'm', part: 'rotor' }])
+    expect(design.push('{"remove":"blade"}')).toEqual([])
+    // An id used again after removal gets a fresh name: the renderer may still hold the old part until its removal runs.
+    const blade = parts(design.push('{"shape":"box","id":"blade","position":[0,0,0],"size":[1,1,1]}'))[0]!
+    expect(blade.name).not.toBe('blade')
+    expect(blade.replaces).toBeUndefined()
+    expect(design.push('{"group":"rotor","pivot":[0,0,0]}')[0]).toMatchObject({ kind: 'part', shape: 'group' })
+    expect((design.push('{"group":"rotor","pivot":[0,0,0]}'))).toEqual([])
+  })
+
+  it('frees the budget of a replaced part for its replacement', () => {
+    const design = new ModelDesign('m')
+    const big = JSON.stringify({ shape: 'box', id: 'grid', position: [0, 0, 0], size: [0.1, 0.1, 0.1], repeat: { count: 64, step: [0.01, 0, 0] } })
+    for (let i = 0; i < Math.floor(MODEL_LIMITS.parts / 64) - 1; i++) design.push(JSON.stringify({ shape: 'box', position: [0, i, 0], size: [0.1, 0.1, 0.1], repeat: { count: 64, step: [0.01, 0, 0] } }))
+    expect(parts(design.push(big))).toHaveLength(1)
+    // Full now: only replacing the same 64 copies fits.
+    expect(parts(design.push(JSON.stringify({ shape: 'box', id: 'extra', position: [0, 0, 0], size: [1, 1, 1], repeat: { count: 64, step: [1, 0, 0] } })))).toHaveLength(0)
+    expect(design.push(big)).toMatchObject([{ kind: 'part', replaces: 'grid' }])
+  })
+
   it('stops adding parts at the model budget instead of overloading the renderer', () => {
     const design = new ModelDesign('m')
     let placed = 0

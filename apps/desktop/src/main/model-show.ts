@@ -226,7 +226,7 @@ export function columnFilter(card: Rect, title: string): (mark: Mark) => Mark | 
       modelId = mark.id
       return { ...mark, x: Math.round(card.x), y: Math.round(card.y), w: Math.round(card.width), h: Math.round(card.height), title }
     }
-    return (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') && mark.id === modelId ? mark : undefined
+    return (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag' || mark.kind === 'remove') && mark.id === modelId ? mark : undefined
   }
 }
 

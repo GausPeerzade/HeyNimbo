@@ -130,6 +130,7 @@ export function strokesFor(mark: Mark, paper = false): Stroke[] {
     case 'move':
     case 'cut':
     case 'tag':
+    case 'remove':
     case 'card':
     case 'heading':
     case 'step':

@@ -61,45 +61,98 @@ Speed matters: the user is watching it build. Use repeats and materials wherever
 /** Earlier builds this session, so "again" or "better" explores something new instead of repeating itself. */
 const previous: string[] = []
 
-/** Streams the model for one 3D card as batches of commands, as each line completes. */
+/** Polish pass, after D-Shift's: the designer sees its first build rendered and fixes it in place. */
+export const POLISH_INSTRUCTIONS = `
+
+Polish pass. You built the model below and can now see it rendered. The user is already looking at it, so improve it in place rather than starting over. Look hard at the image: proportions, silhouette, gaps between parts, floating or intersecting pieces, lumpy forms, missing defining features, flat or muddy materials. Then output only JSON Lines that fix and enrich it:
+- {"remove":"id"} deletes a part; a shape line with an existing "id" replaces that part. Removing or replacing a group also removes the parts in it.
+- New parts, materials and groups use the same format as before; the materials you declared are still defined.
+- Labels already shown stay. A label line adds one to the part nearest its position: add one only where an important part has none.
+Prioritize the fixes a viewer would notice first. Don't repeat the title line. At most about 80 lines.`
+
 /** A model that hasn't finished by now keeps what it built; the turn must not wait on a stalled request. */
 export const DESIGN_TIMEOUT_MS = 120_000
+const POLISH_TIMEOUT_MS = 90_000
+/** The first build's lines, as the polish pass reads them back; bounded so a huge build can't flood the request. */
+const MAX_POLISH_INPUT = 60_000
 
-export async function* designModel(input: { connection: AnswerConnection; id: string; title: string; question: string; signal: AbortSignal }): AsyncGenerator<ModelCommand[]> {
+/** Streams the model for one 3D card as batches of commands, as each line completes. With `snapshot`
+ *  and a model that sees images, a polish pass then looks at the build and streams fixes into it;
+ *  `onBuilt` fires between the two, so a caller need not wait for the polish. */
+export async function* designModel(input: {
+  connection: AnswerConnection; id: string; title: string; question: string; signal: AbortSignal
+  snapshot?: () => Promise<Buffer | undefined>; onBuilt?: () => void
+}): AsyncGenerator<ModelCommand[]> {
   const { connection } = input
-  const signal = AbortSignal.any([input.signal, AbortSignal.timeout(DESIGN_TIMEOUT_MS)])
-  const key = await connection.credential()
+  let built = false
+  const done = (): void => { if (!built) { built = true; input.onBuilt?.() } }
+  try {
+    const key = await connection.credential()
+    const design = new ModelDesign(input.id), lines: string[] = []
+    const prompt = [
+      `Build: ${input.title}`, `The user asked: ${input.question}`,
+      ...(previous.length ? ['Already built this session (make this one clearly different if the request asks to redo or improve):', ...previous.slice(-4).map(item => `- ${item}`)] : []),
+    ].join('\n')
+    yield* pass({ key, connection, design, lines, instructions: DESIGNER_INSTRUCTIONS, prompt, signal: input.signal, timeoutMs: DESIGN_TIMEOUT_MS })
+    if (design.title) previous.push(`${design.title}: ${design.concept}`)
+    done()
+    if (!input.snapshot || !connection.vision || input.signal.aborted || !design.size) return
+    const image = await input.snapshot()
+    if (!image || input.signal.aborted) return
+    let record = lines.join('\n')
+    if (record.length > MAX_POLISH_INPUT) record = record.slice(0, MAX_POLISH_INPUT)
+    const text = [`Request: ${input.title}`, `The user asked: ${input.question}`, `Your design concept: ${design.concept}`,
+      'The attached image is your first build, as the user sees it now (labels are drawn separately and are not in the image). Its JSON Lines:', record].join('\n')
+    const before = lines.length, started = Date.now()
+    try {
+      yield* pass({ key, connection, design, lines, instructions: DESIGNER_INSTRUCTIONS + POLISH_INSTRUCTIONS, image, prompt: text, signal: input.signal, timeoutMs: POLISH_TIMEOUT_MS, maxOutputTokens: 8_000 })
+    } catch (error) {
+      // A failed polish leaves the first build as it is; only the user's Stop is an error worth reporting.
+      if (input.signal.aborted) throw error
+      console.warn(`[design] polish skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    console.info(`[design] polished ${design.title || input.title}: ${lines.length - before} lines in ${((Date.now() - started) / 1000).toFixed(1)} s`)
+  } finally { done() }
+}
+
+/** One streamed request: each completed line becomes commands at once. A deadline ends it quietly with what it built. */
+async function* pass(options: {
+  key: string; connection: AnswerConnection; design: ModelDesign; lines: string[]; instructions: string; prompt: string
+  image?: Buffer; signal: AbortSignal; timeoutMs: number; maxOutputTokens?: number
+}): AsyncGenerator<ModelCommand[]> {
+  const { connection, design, lines } = options
+  const signal = AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs)])
   if (signal.aborted) return
-  const design = new ModelDesign(input.id)
-  const prompt = [
-    `Build: ${input.title}`, `The user asked: ${input.question}`,
-    ...(previous.length ? ['Already built this session (make this one clearly different if the request asks to redo or improve):', ...previous.slice(-4).map(item => `- ${item}`)] : []),
-  ].join('\n')
   const result = streamText({
-    model: sdkModel({ ...connection, vision: false }, key, noRedirectFetch), instructions: DESIGNER_INSTRUCTIONS, prompt, abortSignal: signal,
+    model: sdkModel(connection, options.key, noRedirectFetch), instructions: options.instructions, abortSignal: signal,
+    ...(options.image
+      ? { messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: options.prompt }, { type: 'file' as const, data: options.image, mediaType: 'image/jpeg' }] }] }
+      : { prompt: options.prompt }),
     // The design is long; low thinking starts the first part sooner, and a designed model rarely needs more.
-    maxOutputTokens: 32_000, maxRetries: 0, onError: () => {},
+    maxOutputTokens: options.maxOutputTokens ?? 32_000, maxRetries: 0, onError: () => {},
     providerOptions: {
       openai: { store: false, systemMessageMode: 'developer', reasoningEffort: 'low', ...(connection.provider === 'openai' && connection.speed ? { serviceTier: connection.speed } : {}) },
       anthropic: { effort: 'low' },
       deepseek: { thinking: { type: 'disabled' } },
     },
   })
+  const take = (line: string): ModelCommand[] => {
+    if (line.trim().startsWith('{')) lines.push(line.trim())
+    return design.push(line)
+  }
   let pending = ''
-  // A deadline ends the stream quietly: the parts already built stay.
   try {
-  for await (const delta of result.textStream) {
-    pending += delta
-    for (let newline = pending.indexOf('\n'); newline >= 0; newline = pending.indexOf('\n')) {
-      const commands = design.push(pending.slice(0, newline))
-      pending = pending.slice(newline + 1)
-      if (commands.length) yield commands
+    for await (const delta of result.textStream) {
+      pending += delta
+      for (let newline = pending.indexOf('\n'); newline >= 0; newline = pending.indexOf('\n')) {
+        const commands = take(pending.slice(0, newline))
+        pending = pending.slice(newline + 1)
+        if (commands.length) yield commands
+      }
     }
-  }
   } catch (error) {
-    if (!signal.aborted || input.signal.aborted) throw error
+    if (!signal.aborted || options.signal.aborted) throw error
   }
-  const last = signal.aborted ? [] : design.push(pending)
+  const last = signal.aborted ? [] : take(pending)
   if (last.length) yield last
-  if (design.title) previous.push(`${design.title}: ${design.concept}`)
 }

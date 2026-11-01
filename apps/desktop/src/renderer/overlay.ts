@@ -384,6 +384,20 @@ function modelStage(mark: Extract<Mark, { kind: 'model' }>): { stage: ModelStage
   return { stage, host }
 }
 
+/** The model once every part has been revealed and grown, or nothing if its card is gone or it is still building after a while. */
+async function modelSnapshot(id: string): Promise<string | undefined> {
+  const stage = (): ModelStage | undefined => { const card = cardScene.cards.get(id); return card && !card.closed ? modelStages.get(card) : undefined }
+  for (const deadline = performance.now() + 8_000; performance.now() < deadline; await new Promise((resolve) => setTimeout(resolve, 150))) {
+    const model = stage()
+    if (!model) return undefined
+    if ([...model.graph.parts.values()].every((part) => part.built)) {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      return stage()?.snapshot()
+    }
+  }
+  return undefined
+}
+
 /** Keeps a spare stage warm so no @model waits for a context: built when the
  *  overlay loads, long before any answer, and again once a drawing is cleared.
  *  Never mid-answer: building one is a long task that would stall the pen. */
@@ -399,9 +413,9 @@ function prepareModels(marks: Mark[]): void {
       const live = cardScene.cards.get(mark.id)
       if (live || preparedModels.has(mark.id) || modelStages.size + preparedModels.size >= MODEL_LIMITS.cards) continue
       preparedModels.set(mark.id, { ...modelStage(mark), w: mark.w, h: mark.h })
-    } else if (mark.kind === 'part') {
-      const card = cardScene.cards.get(mark.id)
-      ;(preparedModels.get(mark.id)?.stage ?? (card && modelStages.get(card)))?.prepare(mark)
+    } else if (mark.kind === 'part' || mark.kind === 'remove') {
+      const card = cardScene.cards.get(mark.id), stage = preparedModels.get(mark.id)?.stage ?? (card && modelStages.get(card))
+      if (mark.kind === 'part') stage?.prepare(mark); else stage?.graph.retire(mark.part)
     }
   }
   dressWhenIdle()
@@ -416,7 +430,17 @@ function dressWhenIdle(): void {
   }, { timeout: 1000 })
 }
 
-function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag' }>, group: number, beat: { start: number }): Action[] {
+/** Takes a part and the parts inside it off a model. A label on a removed part goes with it; the polish pass may label its replacement. */
+function removeModelParts(model: ModelStage, name: string): void {
+  const removed = new Set(model.remove(name))
+  const labels = modelLabels.get(model) ?? []
+  for (const label of labels.filter((label) => removed.has(label.mark.part))) {
+    label.group?.remove(); label.dot?.remove(); label.leader?.remove()
+    labels.splice(labels.indexOf(label), 1)
+  }
+}
+
+function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag' | 'remove' }>, group: number, beat: { start: number }): Action[] {
   const card = cardScene.cards.get(mark.id)
   const model = card && modelStages.get(card)
   if (!card || card.closed || !model) return []
@@ -428,6 +452,7 @@ function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag
     if (!part) return []
     // Grows from the moment its turn comes; the pen glides over to it while it grows.
     return [{ group, owner, from: at, to: at, seconds: 0.6, glides: true, begin: () => {
+      if (mark.replaces) removeModelParts(model, mark.replaces)
       const start = buddyAt ?? at
       if (trace.enabled && ![...model.graph.parts.values()].some((other) => other.built)) {
         console.info(`[model-timing] ${JSON.stringify({ id: card.id, part: mark.name, prepared, beatToFirstPartMs: Math.round(performance.now() - beat.start), modelLineToFirstPartMs: Math.round(performance.now() - model.mountedAt) })}`)
@@ -443,6 +468,12 @@ function modelActions(mark: Extract<Mark, { kind: 'part' | 'move' | 'cut' | 'tag
       }
     } }]
   }
+  // Its budget is free for the parts prepared alongside it, before it runs.
+  if (mark.kind === 'remove') model.graph.retire(mark.part)
+  if (mark.kind === 'remove') return [{ group, owner, from: at, to: at, seconds: 0, glides: true, begin: () => {
+    removeModelParts(model, mark.part)
+    return () => {}
+  } }]
   if (mark.kind === 'move') return [{ group, owner, from: at, to: at, seconds: 0, glides: true, begin: () => {
     model.move(mark, performance.now())
     return () => {}
@@ -528,7 +559,8 @@ function leaderEnd(label: ModelLabel, x: number, y: number): Point {
 
 function modelTagActions(mark: Extract<Mark, { kind: 'tag' }>, group: number, card: CardState, model: ModelStage, owner: SceneObject): Action[] {
   const labels = modelLabels.get(model) ?? []
-  if (labels.length >= MODEL_LIMITS.tags || labels.some((label) => label.mark.part === mark.part) || !model.graph.parts.has(mark.part)) return []
+  // Labels on parts already due to come off leave with them, so their slots are free.
+  if (labels.filter((label) => !model.graph.isRetiring(label.mark.part)).length >= MODEL_LIMITS.tags || labels.some((label) => label.mark.part === mark.part) || !model.graph.parts.has(mark.part)) return []
   const writing = wrapWriting(mark.text, model.labelWidth, 20, measureWriting(20), 2)
   const label: ModelLabel = { mark, owner, writing, width: Math.max(...writing.lines.map((line) => line.width)), started: false, shift: [0, 0], framing: -1, turned: model.turned }
   labels.push(label); modelLabels.set(model, labels)
@@ -728,7 +760,7 @@ function drawBeat(marks: Mark[], durationMs: number, from: OverlayRing | undefin
       animations.length = 0
       actions.length = 0
     } else if (mark.kind === 'card' || mark.kind === 'model') actions.push(...cardAction(mark, group))
-    else if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag') actions.push(...modelActions(mark, group, beat))
+    else if (mark.kind === 'part' || mark.kind === 'move' || mark.kind === 'cut' || mark.kind === 'tag' || mark.kind === 'remove') actions.push(...modelActions(mark, group, beat))
     else if (mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') actions.push(...flowActions(mark, group))
     else {
       const owner = retainObject(markCenter(mark)!, undefined, mark.kind === 'highlight' ? 'wash' : ['text', 'label', 'point'].includes(mark.kind) ? 'words' : 'ink')
@@ -952,6 +984,10 @@ function apply(command: OverlayCommand): void {
     }
     case 'prepare':
       return prepareModels(command.marks)
+    case 'snapshot': {
+      void modelSnapshot(command.id).then((jpeg) => window.heynimbo.sendOverlayEvent({ kind: 'modelSnapshot', request: command.request, ...(jpeg && { jpeg }) }))
+      return
+    }
     case 'beat':
       hideClear()
       epoch = command.epoch

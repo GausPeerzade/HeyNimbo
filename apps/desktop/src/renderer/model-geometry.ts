@@ -365,14 +365,25 @@ export class ModelGraph {
   private count = 0
   private vertices = 0
   private reserved = 0
+  /** Parts already due to come off, and their budget: parts prepared before the removal runs may use it. */
+  private readonly retiring = new Set<string>()
+  private owed = { count: 0, vertices: 0, reserved: 0 }
 
   add(spec: PartMark): ModelPart | undefined {
     const parent = spec.parent ? this.parts.get(spec.parent) : undefined
     const cost = partVertexCost(spec)
-    if (this.parts.has(spec.name) || (spec.parent && !parent) || this.count + spec.copies > MODEL_LIMITS.parts || this.reserved + cost > MODEL_LIMITS.verticesPerModel) return
+    // A replacement may use the budget of the parts it replaces, which come off when it starts to grow;
+    // they are only marked as going once it is accepted, as a rejected one leaves them in place.
+    const owed = { ...this.owed }
+    for (const key of spec.replaces ? this.subtree(spec.replaces) : []) if (!this.retiring.has(key)) {
+      const freed = this.cost(this.parts.get(key)!)
+      owed.count += freed.count; owed.vertices += freed.vertices; owed.reserved += freed.reserved
+    }
+    if (this.parts.has(spec.name) || (spec.parent && !parent) || this.count - owed.count + spec.copies > MODEL_LIMITS.parts || this.reserved - owed.reserved + cost > MODEL_LIMITS.verticesPerModel) return
     const geometry = partGeometry(spec)
     const vertices = geometry.getAttribute('position').count
-    if (vertices > MODEL_LIMITS.verticesPerPart || (this.vertices + vertices * spec.copies) > MODEL_LIMITS.verticesPerModel) { geometry.dispose(); return }
+    if (vertices > MODEL_LIMITS.verticesPerPart || (this.vertices - owed.vertices + vertices * spec.copies) > MODEL_LIMITS.verticesPerModel) { geometry.dispose(); return }
+    if (spec.replaces) this.retire(spec.replaces)
     geometry.computeBoundingBox(); geometry.computeBoundingSphere()
     const root = new THREE.Group()
     // A ring of copies hangs from the parent's origin, so spinning it turns the whole ring about that axis.
@@ -399,6 +410,43 @@ export class ModelGraph {
     const part: ModelPart = { spec, root, placements, reveals, geometry, built: false }
     this.parts.set(spec.name, part); this.count += spec.copies; this.vertices += vertices * spec.copies; this.reserved += cost
     return part
+  }
+
+  isRetiring(name: string): boolean { return this.retiring.has(name) }
+
+  /** Marks a part and the parts inside it as due to come off, so their budget is free from now on. */
+  retire(name: string): void {
+    for (const key of this.subtree(name)) {
+      if (this.retiring.has(key)) continue
+      this.retiring.add(key)
+      const cost = this.cost(this.parts.get(key)!)
+      this.owed.count += cost.count; this.owed.vertices += cost.vertices; this.owed.reserved += cost.reserved
+    }
+  }
+
+  /** Removes a part and every part placed inside it, returning budget for their replacements. */
+  remove(name: string): ModelPart[] {
+    const removed: ModelPart[] = []
+    for (const key of this.subtree(name)) {
+      const part = this.parts.get(key)!, cost = this.cost(part)
+      part.root.removeFromParent(); this.parts.delete(key)
+      this.count -= cost.count; this.vertices -= cost.vertices; this.reserved -= cost.reserved
+      if (this.retiring.delete(key)) { this.owed.count -= cost.count; this.owed.vertices -= cost.vertices; this.owed.reserved -= cost.reserved }
+      part.geometry.dispose(); removed.push(part)
+    }
+    return removed
+  }
+
+  private cost(part: ModelPart): { count: number; vertices: number; reserved: number } {
+    return { count: part.spec.copies, vertices: part.geometry.getAttribute('position').count * part.spec.copies, reserved: partVertexCost(part.spec) }
+  }
+
+  /** A part and every part placed inside it: children follow their parent's first copy, so they go with it. */
+  private subtree(name: string): string[] {
+    if (!this.parts.has(name)) return []
+    const found = [name]
+    for (let i = 0; i < found.length; i++) for (const part of this.parts.values()) if (part.spec.parent === found[i] && !found.includes(part.spec.name)) found.push(part.spec.name)
+    return found
   }
 
   reveal(part: ModelPart, progress: number): void {
@@ -460,7 +508,7 @@ export class ModelGraph {
 
   dispose(): void {
     for (const part of this.parts.values()) part.geometry.dispose()
-    this.parts.clear(); this.root.clear(); this.count = 0; this.vertices = 0; this.reserved = 0
+    this.parts.clear(); this.root.clear(); this.count = 0; this.vertices = 0; this.reserved = 0; this.retiring.clear(); this.owed = { count: 0, vertices: 0, reserved: 0 }
   }
 }
 

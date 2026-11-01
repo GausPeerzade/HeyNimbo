@@ -45,6 +45,8 @@ export type OverlayCommand =
   | { kind: 'offerClear' }
   /** Sent only by an unpackaged main process. */
   | { kind: 'debug'; frameTrace: boolean }
+  /** A picture of one 3D card's model, for the designer's polish pass; answered by `modelSnapshot`. */
+  | { kind: 'snapshot'; id: string; request: number }
 
 export type OverlayEvent =
   /** `epoch` echoes the beat's, so strokes from a cleared scene are ignored. */
@@ -55,6 +57,8 @@ export type OverlayEvent =
   | { kind: 'interactiveRegion'; id: string; over: boolean; captured: boolean }
   | { kind: 'clearClicked' }
   | { kind: 'frameTrace'; deltas: number[] }
+  /** A JPEG data URL of the model on white, or nothing when the card is gone. */
+  | { kind: 'modelSnapshot'; request: number; jpeg?: string }
 
 
 /** Main → hidden audio window. Audio is mono PCM16 at 24 kHz. */
