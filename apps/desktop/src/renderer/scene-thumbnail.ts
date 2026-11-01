@@ -7,8 +7,8 @@ const ROW = THUMBNAIL_TEXT_SIZE * 2
 
 type Shape = { kind: 'text'; x: number; y: number; text: string } | { kind: 'frame'; x: number; y: number; w: number; h: number }
 
-/** What a scene leaves on paper besides ink: labels, card and 3D frames, and card rows laid out
- *  top to bottom. A 3D model is shown as its titled frame; the thumbnail never renders geometry. */
+/** What a scene leaves on paper besides ink: labels, card frames with their rows laid out top to
+ *  bottom, and 3D model names; the thumbnail never renders geometry. */
 function shapesFor(scene: DrawingScene): Shape[] {
   let shapes: Shape[] = []
   const rows = new Map<string, { x: number; y: number; step: number }>()
@@ -16,8 +16,10 @@ function shapesFor(scene: DrawingScene): Shape[] {
     if (mark.kind === 'clear') { shapes = []; rows.clear(); continue }
     if (mark.kind === 'text' || mark.kind === 'point') shapes.push({ kind: 'text', x: mark.x, y: mark.y, text: mark.kind === 'text' ? mark.text : mark.label ?? '↗' })
     else if (mark.kind === 'label') shapes.push({ kind: 'text', x: mark.lx, y: mark.ly, text: mark.text })
-    else if (mark.kind === 'card' || mark.kind === 'model') {
-      shapes.push({ kind: 'frame', x: mark.x, y: mark.y, w: mark.w, h: mark.h }, { kind: 'text', x: mark.x + 16, y: mark.y + 32, text: mark.kind === 'model' ? `3D · ${mark.title}` : mark.title })
+    // A 3D model is named, not framed: an empty frame at preview size says nothing.
+    else if (mark.kind === 'model') shapes.push({ kind: 'text', x: mark.x, y: mark.y, text: `${mark.title} (3D)` })
+    else if (mark.kind === 'card') {
+      shapes.push({ kind: 'frame', x: mark.x, y: mark.y, w: mark.w, h: mark.h }, { kind: 'text', x: mark.x + 16, y: mark.y + 32, text: mark.title })
       rows.set(mark.id, { x: mark.x + 16, y: mark.y + 32 + ROW, step: 0 })
     } else if (mark.kind === 'heading' || mark.kind === 'note' || mark.kind === 'step') {
       const row = rows.get(mark.id)

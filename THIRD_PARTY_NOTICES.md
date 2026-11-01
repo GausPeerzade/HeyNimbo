@@ -62,7 +62,7 @@ SHA-256: `0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988`.
 
 ## Lucide UI paths
 
-Only panel-left, plus and arrow-up paths are copied into
+The panel-left, plus, arrow-up, sliders-horizontal, mic, rotate-ccw-clock, link and info paths are copied unmodified into
 `apps/desktop/src/renderer/app-dom.ts`. The HeyNimbo buddy-trail logo is original and is
 not a library icon. Lucide's ISC notice and Feather-derived MIT notice follow:
 ISC License

@@ -5,23 +5,23 @@ body { display: flex; --control-width: 260px; }
 .skip { position: absolute; top: -100px; padding: 12px; background: var(--raised); color: var(--text); z-index: 3; }
 .skip:focus { top: 48px; }
 aside { width: var(--settings-sidebar); flex: 0 0 var(--settings-sidebar); padding: 60px 12px 20px; background: var(--sidebar); border-right: 1px solid var(--separator); -webkit-app-region: drag; user-select: none; }
-.settings-title { margin: 0 10px 20px; font-size: 13px; color: var(--secondary); font-weight: 500; }
 nav { display: flex; flex-direction: column; gap: 4px; -webkit-app-region: no-drag; }
 nav button { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 8px 10px; background: transparent; border: 0; text-align: left; white-space: nowrap; }
 nav svg { flex-shrink: 0; color: var(--secondary); }
 nav button:hover { background: var(--selection); }
-nav button[aria-current="true"] { background: var(--accent); color: var(--on-accent); font-weight: 500; }
-nav button[aria-current="true"] svg { color: inherit; }
+/* The current page is a solid neutral step, not an accent wash; the accent marks only its icon. */
+nav button[aria-current="true"] { background: var(--selected); font-weight: 500; }
+nav button[aria-current="true"] svg { color: var(--accent); }
 main { flex: 1; min-width: 0; overflow: auto; padding: 58px 28px 32px; scrollbar-gutter: stable; }
 #fields { max-width: 660px; margin: 0 auto; }
 h1 { max-width: 660px; margin: 0 auto 8px; font-size: 24px; letter-spacing: -.03em; }
 h2.section-title { margin: 24px 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0; }
-.settings-intro { margin: 0 0 24px; color: var(--secondary); font-size: 13px; line-height: 1.6; }
 .settings-group { background: var(--raised); border: 1px solid var(--separator); border-radius: 12px; }
-.row { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 58px; padding: 12px 16px; user-select: none; }
+.settings-group + .settings-group, .explanation + .settings-group { margin-top: 20px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 44px; padding: 10px 16px; user-select: none; }
 .row + .row, .model-preferences { border-top: 1px solid var(--separator); }
 .row > span:first-child { min-width: 0; flex: 1; line-height: 1.45; }
-.row small { display: block; margin-top: 4px; max-width: 36ch; }
+.row small, .permission small { display: block; margin-top: 2px; max-width: 40ch; font-size: 12px; color: var(--secondary); }
 .row .value { color: var(--secondary); text-align: right; }
 button, select { min-height: 30px; }
 button { transition: background var(--pressed) var(--ease); }
@@ -39,7 +39,6 @@ select { width: var(--control-width); max-width: 64%; background: var(--canvas);
 .connection-manage > summary:hover { background: var(--selection); }
 .connection-manage[open] .connection-actions { margin-top: 8px; max-width: 200px; }
 .explanation { margin: 8px 2px 12px; color: var(--secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-.capability-summary { padding-left: 12px; border-left: 2px solid var(--accent); font-size: 12px; color: var(--secondary); margin: 16px 0 24px; }
 #feedback { color: var(--error); }
 #connection-feedback { position: sticky; bottom: 0; margin: 12px 0 0; background: var(--canvas); color: var(--text); }
 #connection-feedback:not(:empty) { padding: 12px; border: 1px solid var(--separator); border-radius: 8px; }
@@ -63,10 +62,13 @@ select { width: var(--control-width); max-width: 64%; background: var(--canvas);
 details.connection-section { margin: 24px 0; border-top: 1px solid var(--separator); padding-top: 16px; }
 details.connection-section > summary { margin-bottom: 12px; font-weight: 500; cursor: default; }
 details.connection-section > summary:focus-visible { border-radius: 4px; }
-.about-brand { display: flex; align-items: center; gap: 16px; margin: 24px 0 8px; }
-.about-brand h2 { font-size: 20px; margin: 0; }
-.about-logo { display: block; width: 52px; height: 52px; }
-.permission { display: flex; align-items: center; gap: 16px; padding: 14px 16px; }
+.about-brand { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 14px; margin: 4px 0 8px; }
+.about-brand picture { grid-row: span 2; }
+.about-brand h2 { font-size: 17px; margin: 0; align-self: end; }
+.about-brand .about-version { align-self: start; font-size: 12px; }
+.about-version { color: var(--secondary); font-variant-numeric: tabular-nums; }
+.about-logo { display: block; width: 44px; height: 44px; }
+.permission { display: flex; align-items: center; gap: 16px; min-height: 44px; padding: 10px 16px; }
 .permission + .permission { border-top: 1px solid var(--separator); }
 .permission span { flex: 1; min-width: 0; }
 .permission strong { display: block; font-weight: 500; }
