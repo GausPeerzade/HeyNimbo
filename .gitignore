@@ -8,3 +8,15 @@ target/
 .env
 .env.*
 coverage/
+
+# Local notes and screenshots
+research/
+.shots/
+
+# Keys and credentials never belong in the repo
+credentials.json
+auth.json
+*.pem
+*.p12
+*.key
+*.keychain-db

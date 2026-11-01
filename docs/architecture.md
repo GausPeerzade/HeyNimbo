@@ -17,26 +17,8 @@
 | Renderers (sandboxed) | Notch/Home UI and the overlay renderer: SVG strokes and three.js for 3D. They receive only allowlisted IPC. |
 | Agent | One agent for every request, on Pi's SDK in Electron main, with web, file and shell tools behind code-enforced approvals. See [agent.md](agent.md). |
 
-## Voice turn (cascade, default)
+## A turn
 
-Hold → streaming STT → vision LLM streams JSON lines (`say`, `marks`, `tool`) → TTS reports per-line durations → the renderer paces marks to the playback clock. A realtime-model path is optional.
+Hold Control + Option (or type in Home) → the display under the cursor is captured → the answer model streams sentences and drawing lines (`@card`, `@model`, …) → each sentence is spoken while its drawings are paced to the audio. A `@model` line starts a separate designer request that streams the 3D parts, then looks at the finished model and polishes it. Tools (web, files, shell) run in the same turn, behind the approvals in [agent.md](agent.md).
 
-## Scene protocol v1 (planned)
-
-Declarative and validated. No model-written code is executed.
-
-- **Beats:** `{ say, marks[] }`.
-- **Coordinates:** screenshot pixels tagged with `captureId`/`displayId`.
-- **Lifetime:** each mark has a class (`pointer` clears on screen change; `card` persists).
-- **Edits:** stable ids allow `erase`, `recolor`, `move` and `startOver`.
-- **Interruptions:** explicit `append`/`cancel`/`continue` turn boundaries.
-
-## Roadmap
-
-0. **Spikes:** gestures ✅ (macOS), overlays ✅, capture ✅ (macOS: about 140 ms, own windows excluded), full-duplex audio, AX/UIA insertion, Codex contract tests, Windows input and capture.
-1. **Talk + Look + Point:** ask about the screen, get a spoken answer plus a pointer.
-2. **Draw:** scene protocol, speech-paced drawing, walkthroughs with click detection.
-3. **Type:** dictation, cleanup, safe insertion.
-4. **Agents:** persistent agents, MCP connectors, routines, approvals.
-5. **Hands:** browser extension, consented screen driving.
-6. **Depth:** 3D, live-note objects, suggestions, Linux, mobile companions.
+Drawing lines are declarative and validated before anything is drawn; no model-written code runs.

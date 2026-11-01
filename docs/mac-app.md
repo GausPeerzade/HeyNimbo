@@ -1,6 +1,6 @@
 # HeyNimbo macOS app
 
-Run `pnpm dist:mac` for an arm64 ad-hoc-signed bundle in
+Run `pnpm dist:mac` for an arm64 bundle in
 `apps/desktop/dist/mac-arm64/HeyNimbo.app`. Do not copy a development build
 into /Applications or run it beside an existing resident instance: both would
 try to own Control–Option. The native workspace package is included by
