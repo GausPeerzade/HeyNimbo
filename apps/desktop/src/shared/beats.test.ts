@@ -29,6 +29,20 @@ describe('3D commands', () => {
   })
 })
 
+describe('3D cards', () => {
+  it('keeps a 3D card whose title describes the whole build, as a short title plus the brief', () => {
+    // GPT-6.1 Sol wrote this; dropping it meant no card and no model at all.
+    const long = 'Detailed modern fighter jet with swept wings, twin tail fins, cockpit canopy, air intakes and twin exhaust nozzles'
+    const { marks, dropped } = parse(`A jet.\n@model jet 420 160 600 560 "${long}" turntable=true\nIt flies.`)
+    expect(dropped).toEqual([])
+    expect(marks[0]).toMatchObject({ kind: 'model', brief: long, turntable: true })
+    const title = (marks[0] as { title: string }).title
+    expect(title.length).toBeLessThanOrEqual(60)
+    expect(long.startsWith(title)).toBe(true)
+    expect(title.endsWith(' ')).toBe(false)
+  })
+})
+
 describe('card commands', () => {
   it('keeps a card and all its rows when the model adds an option the protocol does not know', () => {
     // A real Claude Sonnet 5.5 answer: "lines" is not a paper style, and "navy" is not a step colour.

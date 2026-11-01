@@ -21,6 +21,7 @@ import { BuiltInEars } from './voice/builtin-ears'
 import { BuiltInMouth } from './voice/builtin-mouth'
 import { TalkSession } from './voice/talk'
 import { NimboAgent, type ApprovalAnswer } from './agent/engine'
+import { designModel } from './agent/designer'
 import type { Approval } from './agent/policy'
 import { createNotchWindow, OverlayManager, positionNotch, sendNotchStatus, setNotchVisibility } from './windows'
 import type { CaptureSpace } from './overlay-geometry'
@@ -98,7 +99,7 @@ function startTalking(key: string | undefined, agent: NimboAgent, notch: Browser
   const ears = voice.engine === 'openai' && key ? new Ears(key) : voice.engine === 'builtin' ? new BuiltInEars() : undefined
   const mouth = voice.engine === 'openai' && key ? new Mouth(key, shell.settings.get().voice) : voice.engine === 'builtin' ? new BuiltInMouth(audio) : undefined
   const session = new TalkSession({
-    agent, answer: () => connections.answer(),
+    agent, design: designModel, answer: () => connections.answer(),
     conversations: shell.conversations,
     ears,
     mouth,

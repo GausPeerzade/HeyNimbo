@@ -6,6 +6,7 @@ import type { DrawingScene } from '../../shared/app'
 import type { ConversationController } from '../conversations'
 import { AGENT_INSTRUCTIONS, INSTRUCTIONS, turnNote, type Exchange, type Screenshot } from './brain'
 import type { NimboAgent } from '../agent/engine'
+import type { designModel } from '../agent/designer'
 import type { AnswerConnection } from '../answer-provider'
 import type { Ears } from './ears'
 import { OPENAI_KEY_REJECTED } from '../openai/realtime'
@@ -14,12 +15,16 @@ import type { Mouth } from './mouth'
 
 const MIC_STOP_TIMEOUT_MS = 1_500
 const SAVE_INTERVAL_MS = 250
+/** Designed parts are revealed in batches this often, each batch growing over twice as long. */
+const DESIGN_BATCH_MS = 300
 /** Declared beat budget while sentence PCM is still streaming. Drawing uses
  *  natural durations unless it would overrun this speech estimate. */
 const WORDS_PER_SECOND = 2.6
 
 export interface TalkDeps {
   agent: Pick<NimboAgent, 'answer'>
+  /** Builds a 3D card's model in its own request while the answer speaks; absent means no 3D detail. */
+  design?: typeof designModel
   answer?: () => AnswerConnection
   conversations: ConversationController
   ears?: Pick<Ears, 'begin' | 'append' | 'finish' | 'cancel' | 'close'>
@@ -60,6 +65,11 @@ interface Turn {
   /** Marks waiting for their sentence's audio to start, by line number. */
   readonly lines: Map<number, { marks: Mark[]; durationMs: number }>
   space?: CaptureSpace
+  /** 3D designs streaming for this turn; the turn stays open until they finish. */
+  designs: Array<Promise<void>>
+  /** Designed parts per 3D card, held until the card itself is on screen. */
+  held: Map<string, Mark[]>
+  shown: Set<string>
   /** True only when a real screenshot went to the model. */
   screenUsed?: boolean
   conversationId?: string
@@ -90,7 +100,7 @@ export class TalkSession {
       marks: new Map(),
       spoken: false,
       scene: { version: 1, beats: [] }, answer: '', dirty: false,
-      lines: new Map(),
+      lines: new Map(), designs: [], held: new Map(), shown: new Set(),
     }
     this.deps.audio.send({ kind: 'micStart', id })
     this.deps.onStatus('Listening…')
@@ -102,7 +112,7 @@ export class TalkSession {
     const connection = this.deps.answer?.()
     const turn: Turn = {
       id: ++this.nextId, abort: new AbortController(), connection, capture: connection?.vision === false ? Promise.resolve(undefined) : this.deps.capture(), marks: new Map(),
-      spoken: false, lines: new Map(), scene: { version: 1, beats: [] }, answer: '', dirty: false, releasedAt: performance.now(),
+      spoken: false, lines: new Map(), scene: { version: 1, beats: [] }, answer: '', dirty: false, releasedAt: performance.now(), designs: [], held: new Map(), shown: new Set(),
     }
     this.turn = turn
     try {
@@ -214,6 +224,7 @@ export class TalkSession {
       if (turn.space && (mark.kind === 'model' || mark.kind === 'part') && !turn.abort.signal.aborted) {
         if (mark.kind === 'part') this.mark(turn, 'first 3D preparation')
         this.deps.drawing.prepare?.([mark], turn.space)
+        if (mark.kind === 'model') this.design(turn, mark, question)
       }
     })
     let speech: Promise<void> = Promise.resolve()
@@ -278,6 +289,8 @@ export class TalkSession {
     beats.flush().forEach(say)
     this.flush(turn)
     await speech
+    // A model still building keeps the answer open, so Stop still ends it and the drawing isn't offered to clear.
+    await Promise.allSettled(turn.designs)
     if (turn.abort.signal.aborted) return
     if (!this.deps.mouth) { this.finish(turn); this.deps.drawing.answerDone(); return }
     turn.spoken = true
@@ -349,7 +362,36 @@ export class TalkSession {
     if (this.turn === turn && turn.space && marks.length) {
       if (marks.some(mark => mark.kind === 'part')) this.mark(turn, 'first 3D draw queued')
       this.deps.drawing.draw(marks, durationMs, turn.space)
+      // Parts designed before their card appeared follow it on.
+      for (const mark of marks) if (mark.kind === 'model') { turn.shown.add(mark.id); this.release(turn, mark.id) }
     }
+  }
+
+  /** Streams a 3D card's model from the designer: each part is prepared on arrival and revealed in
+   *  short batches once the card is on screen, so the model assembles while the answer speaks. */
+  private design(turn: Turn, card: Extract<Mark, { kind: 'model' }>, question: string): void {
+    const connection = turn.connection
+    if (!this.deps.design || !connection || !turn.space) return
+    const space = turn.space
+    let timer: NodeJS.Timeout | undefined
+    const run = (async () => {
+      for await (const batch of this.deps.design!({ connection, id: card.id, title: card.brief ?? card.title, question, signal: turn.abort.signal })) {
+        if (turn.abort.signal.aborted) return
+        if (batch.some(mark => mark.kind === 'part')) this.mark(turn, 'first designed part')
+        this.deps.drawing.prepare?.(batch, space)
+        turn.held.set(card.id, [...turn.held.get(card.id) ?? [], ...batch])
+        timer ??= setTimeout(() => { timer = undefined; this.release(turn, card.id) }, DESIGN_BATCH_MS)
+      }
+    })().catch((error: unknown) => console.warn(`[design] ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => { clearTimeout(timer); this.release(turn, card.id) })
+    turn.designs.push(run)
+  }
+
+  private release(turn: Turn, id: string): void {
+    const held = turn.held.get(id)
+    if (!held?.length || !turn.shown.has(id)) return
+    turn.held.delete(id)
+    this.draw(turn, held, DESIGN_BATCH_MS * 2)
   }
 
   private mark(turn: Turn, label: string): void {

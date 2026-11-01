@@ -60,6 +60,35 @@ Licensed under the SIL Open Font License 1.1; the full license accompanies the f
 `apps/desktop/src/renderer/fonts/OFL.txt`.
 SHA-256: `0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988`.
 
+## D-Shift 3D designer prompt and line format
+
+The 3D designer instructions in `apps/desktop/src/main/agent/designer.ts` and the JSON Lines
+format read by `apps/desktop/src/shared/model-design.ts` are adapted from D-Shift's model tool
+(https://github.com/Kylejeong2/d-shift, `Sources/DShift/Tools/ModelTool.swift`). D-Shift's
+MIT notice follows:
+
+MIT License
+
+Copyright (c) 2026 Kyle Jeong
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 ## Lucide UI paths
 
 The panel-left, plus, arrow-up, sliders-horizontal, mic, rotate-ccw-clock, link and info paths are copied unmodified into

@@ -15,7 +15,7 @@ export type SemanticColor = 'blue' | 'red' | 'orange' | 'green' | 'purple' | 'gr
 export type StepDirection = 'up' | 'down' | 'left' | 'right'
 
 export type Mark = ModelCommand
-  | { kind: 'model'; id: string; x: number; y: number; w: number; h: number; title: string; turntable: boolean }
+  | { kind: 'model'; id: string; x: number; y: number; w: number; h: number; title: string; turntable: boolean; brief?: string }
   | { kind: 'point'; x: number; y: number; label?: string }
   | { kind: 'circle'; x: number; y: number; r: number }
   | { kind: 'box'; x: number; y: number; w: number; h: number }
@@ -120,11 +120,14 @@ function parseCardMark(line: string, image: ImageSize): Mark | undefined {
     const option = words.find(word => /^turntable(=true)?$/.test(word))
     const board = words.find(word => ['grid', 'dots', 'plain'].includes(word))
     const [x, y, w, h] = [ax, ay, aw, ah].map(Number) as [number, number, number, number]
-    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0 || !textOK(title!)) return undefined
+    // A 3D card's title may describe the whole build: the designer gets all of it, the card a short title.
+    const brief = kind === 'model' && textOK(title!, 240) && !textOK(title!) ? title!.trim() : undefined
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0 || !(textOK(title!) || brief)) return undefined
     const width = clamp(w, Math.min(240, image.width), image.width)
     const height = clamp(h, Math.min(180, image.height), image.height)
-    const box = { id: id!, x: clamp(x, 0, image.width - width), y: clamp(y, 0, image.height - height), w: width, h: height, title: title!.trim() }
-    return kind === 'model' ? { ...box, kind: 'model', turntable: option === 'turntable' || option === 'turntable=true' }
+    const short = brief ? `${brief.slice(0, 60).replace(/[\s,;:]+\S*$/, '')}` : title!.trim()
+    const box = { id: id!, x: clamp(x, 0, image.width - width), y: clamp(y, 0, image.height - height), w: width, h: height, title: short }
+    return kind === 'model' ? { ...box, kind: 'model', turntable: option === 'turntable' || option === 'turntable=true', ...(brief && { brief }) }
       : { ...box, kind: 'card', board: (board ?? 'grid') as 'grid' | 'dots' | 'plain' }
   }
   const flow = new RegExp(`^@(heading|note|step) (${CARD_ID_PATTERN}) "([^"\\n]*)"((?: \\S+)*)$`).exec(line)
