@@ -26,7 +26,7 @@ export interface AnswerOptions {
 export function answerInstructions(options: AnswerOptions): SystemModelMessage {
   const { vision } = options.connection, canvas = options.canvas
   const note = vision && options.screenshot ? ''
-    : vision && canvas ? `\nNo screenshot is available this time, but you can still draw on a ${Math.round(canvas.width)}x${Math.round(canvas.height)} canvas covering their screen: use cards, sketches and 3D models in open space at those coordinates. Do not describe or point at anything on the screen; you cannot see it.`
+    : vision && canvas ? `\nNo screenshot is available this time, but you can still draw on a ${Math.round(canvas.width)}x${Math.round(canvas.height)} canvas covering their screen: use cards, sketches and 3D models in open space at those coordinates. Do not describe or point at anything on the screen; you cannot see it. If they ask about their screen, say in one short sentence that HeyNimbo needs Screen Recording, in System Settings → Privacy & Security → Screen & System Audio Recording; never ask them to send a screenshot.`
     : '\nNo screenshot is available. Answer from text only. Do not refer to unseen screen contents or emit any @ drawing commands.'
   return { role: 'system', content: options.instructions + note, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }
 }

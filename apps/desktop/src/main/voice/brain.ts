@@ -56,7 +56,7 @@ Use tools without announcing them (no "I'll search", "Let me check" or "Working 
 /** Facts about this turn only, appended to the question: what the model can see and where it may draw. */
 export function turnNote(screenshot: Screenshot | undefined, canvas: { width: number; height: number } | undefined, vision: boolean): string {
   if (vision && screenshot) return screenshot.cursor ? `The mouse pointer is at x=${Math.round(screenshot.cursor.x)}, y=${Math.round(screenshot.cursor.y)} in this ${screenshot.width}x${screenshot.height} screenshot.` : `This screenshot is ${screenshot.width}x${screenshot.height}; the mouse pointer is on another display.`
-  if (vision && canvas) return `No screenshot this time, but you can still draw on a ${Math.round(canvas.width)}x${Math.round(canvas.height)} canvas covering their screen: use cards, sketches and 3D models in open space. Do not describe or point at anything on the screen; you cannot see it.`
+  if (vision && canvas) return `No screenshot this time, but you can still draw on a ${Math.round(canvas.width)}x${Math.round(canvas.height)} canvas covering their screen: use cards, sketches and 3D models in open space. Do not describe or point at anything on the screen; you cannot see it. If they ask about their screen, say in one short sentence that HeyNimbo needs Screen Recording, in System Settings → Privacy & Security → Screen & System Audio Recording; never ask them to send a screenshot.`
   return 'No screenshot is available. Answer from text only and emit no @ drawing commands.'
 }
 
