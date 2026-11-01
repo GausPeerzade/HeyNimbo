@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { GlowPass } from './model-glow'
 import { MODEL_LIMITS, type ModelColor, type ModelMaterial, type PartMark, type PartFinish, type ModelCommand } from '../shared/model-protocol'
 import type { Point } from './ink'
 import { ContactShadow } from './model-contact-shadow'
@@ -107,6 +108,7 @@ export class ModelStage {
   private readonly key = new THREE.DirectionalLight(0xfff2df, 2.6)
   private readonly ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ color: INK, opacity: 0.09, depthWrite: false }))
   private readonly contact = new ContactShadow()
+  private readonly glow = new GlowPass()
   /** Silhouette width in device pixels: about 1.2 CSS pixels at any scale. */
   private readonly ink = { resolution: new THREE.Vector2(1, 1), width: { value: 1.2 } }
   /** The camera the framing settles to, ignoring sway and glide; labels are laid out against it. */
@@ -189,6 +191,7 @@ export class ModelStage {
     this.reserve.left = this.reserve.right = options.width * 0.1
     this.renderer.setSize(options.width, options.height)
     this.ink.resolution.set(options.width * this.pixelRatio, options.height * this.pixelRatio); this.ink.width.value = 1.2 * this.pixelRatio
+    this.glow.setSize(options.width * this.pixelRatio, options.height * this.pixelRatio)
     for (const camera of [this.camera, this.settled]) { camera.aspect = options.width / options.height; camera.updateProjectionMatrix() }
     host.append(this.renderer.domElement)
     if (this.undressed.length) options.wake()
@@ -557,6 +560,7 @@ export class ModelStage {
       this.contact.render(this.renderer, this.scene)
     }
     this.renderer.render(this.scene, this.camera)
+    this.glow.render(this.renderer, this.scene, this.camera)
     this.afterRender?.(); this.visit?.()
     this.renders++; this.rendering = true; this.dirty = false
     const active = moving || swaying || fitting || returning || held || !!this.drag || this.undressed.length > 0
@@ -585,6 +589,7 @@ export class ModelStage {
     this.pixelRatio = ratio
     this.renderer.setPixelRatio(ratio); this.renderer.setSize(this.options.width, this.options.height)
     this.ink.resolution.set(this.options.width * ratio, this.options.height * ratio); this.ink.width.value = 1.2 * ratio
+    this.glow.setSize(this.options.width * ratio, this.options.height * ratio)
     this.dirty = true
   }
 
@@ -641,7 +646,7 @@ export class ModelStage {
     this.motions.clear(); this.sections.dispose(); this.graph.dispose()
     for (const resource of this.disposables) resource.dispose()
     this.disposables.clear(); this.scene.clear(); this.scene.environment = null
-    this.environment?.dispose(); this.key.shadow.dispose()
+    this.environment?.dispose(); this.key.shadow.dispose(); this.glow.dispose()
     this.renderer.dispose(); this.renderer.forceContextLoss(); this.host?.remove()
   }
 }
