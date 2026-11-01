@@ -15,6 +15,8 @@ import { hiddenOverlay, sendOverlay, sleep } from './model-gallery'
 import type { Rect } from './overlay-geometry'
 import { createOverlayWindow } from './windows'
 import type { Screenshot, streamAnswer } from './voice/brain'
+import type { designModel } from './agent/designer'
+import type { ModelCommand } from '../shared/model-protocol'
 
 /** Per subject at speed 1: about 32 s of building, a 6 s hold and a short gap
  *  while each overlay warms its next 3D stage. */
@@ -201,6 +203,13 @@ export function subjectLanes(run: EvalRun, source: string, subject: string, layo
     if (record?.status === 'ok' && record.answerFile) try { text = read(join(source, record.answerFile)) } catch { /* Shown as not drawn. */ }
     const shown = text ? showScript(text, layout.columns[index]!.card, name, image) : undefined
     const timeline = shown && record ? laneTimeline(text, shown.script, record, image) : { beats: [], endMs: 0 }
+    // A designer-built model is saved as commands, not answer text: it joins the column's own model card.
+    let designed: Mark[] = []
+    if (shown && record?.designFile) try { designed = (JSON.parse(read(join(source, record.designFile))) as Mark[]).filter(mark => 'id' in mark && mark.kind !== 'model' && mark.id === shown.modelId) } catch { /* Shown without the design. */ }
+    if (designed.length) {
+      const atMs = Math.max(record!.timings.firstPartMs ?? 0, timeline.beats[0]?.atMs ?? 0), durationMs = Math.max(800, (record!.timings.totalMs ?? atMs) - atMs)
+      timeline.beats.push({ atMs, durationMs, marks: designed }); timeline.endMs = Math.max(timeline.endMs, atMs + durationMs)
+    }
     const prepared = timeline.beats.flatMap((beat) => beat.marks).filter((mark) => mark.kind === 'model' || mark.kind === 'part')
     return { name, note: laneNote(record, timeline.beats.length > 0), ...timeline, prepared }
   })
@@ -228,6 +237,8 @@ export interface LiveShow {
   send: (layer: number, command: OverlayCommand) => void
   sleep: (ms: number) => Promise<void>; now: () => number
   stream?: typeof streamAnswer; timeoutMs?: number; startBefore?: number
+  /** The 3D designer; a recorded one in mock shows, so they stay offline. */
+  design?: typeof designModel
   onResult: (result: EvalResult) => void
   capture?: (file: string) => Promise<void>
   log?: (line: string) => void
@@ -250,11 +261,12 @@ export async function runLiveShow(show: LiveShow): Promise<void> {
       const name = names[slot]!, column = show.layout.columns[slot]!, shown = columnFilter(column.card, name)
       const shownMarks = new Map<Mark, Mark | undefined>()
       const show3d = (mark: Mark): Mark | undefined => { if (!shownMarks.has(mark)) shownMarks.set(mark, shown(mark)); return shownMarks.get(mark) }
-      let drawnUntil = show.now(), drew = false
+      let drawnUntil = show.now(), drew = false, opened = false
+      const waiting: Mark[] = []
       status(subject, `${name} · ${progress} · first part …`)
       const result = await askModel({
         run: show.run, model, subject, index, ready: show.ready, connectionFor: show.connectionFor, screenshot: show.screenshot,
-        stream: show.stream, now: show.now, timeoutMs: show.timeoutMs, startBefore: show.startBefore,
+        stream: show.stream, now: show.now, timeoutMs: show.timeoutMs, startBefore: show.startBefore, ...(show.design && { design: show.design }),
         onMark: (mark, elapsedMs) => {
           const kept = show3d(mark)
           if (kept && (kept.kind === 'model' || kept.kind === 'part')) show.send(slot, { kind: 'prepare', marks: [kept], epoch: 1 })
@@ -264,7 +276,11 @@ export async function runLiveShow(show: LiveShow): Promise<void> {
         onBeat: (beat) => {
           const marks = beat.marks.flatMap((mark) => { const kept = show3d(mark); return kept ? [kept] : [] })
           if (!marks.length) return
-          show.send(slot, { kind: 'beat', marks, durationMs: LIVE_BEAT_MS, from: column.note, epoch: 1 })
+          // Designed parts can arrive before their card's own beat, as in a real turn; they wait for it.
+          if (!opened && !marks.some(mark => mark.kind === 'model')) { waiting.push(...marks); return }
+          const ready = opened ? marks : [...marks, ...waiting.splice(0)]
+          opened = true
+          show.send(slot, { kind: 'beat', marks: ready, durationMs: LIVE_BEAT_MS, from: column.note, epoch: 1 })
           // The overlay queues beats, so its drawing ends no later than this.
           drawnUntil = Math.max(show.now(), drawnUntil) + LIVE_BEAT_MS
         },
@@ -281,6 +297,23 @@ export async function runLiveShow(show: LiveShow): Promise<void> {
     await show.capture?.(`${slug}-end.png`)
     for (let layer = 0; layer <= pills; layer++) show.send(layer, { kind: 'clear' })
     await show.sleep(SHOW_LIMITS.gapMs)
+  }
+}
+
+/** Plays a saved run's designed parts back in short batches with no request, for offline mock shows.
+ *  The request is found by its question, as `recordedStream` finds the answer. */
+export function recordedDesign(source: string, run: EvalRun, sleepFor = sleep): typeof designModel {
+  return async function* (options) {
+    const { provider, model, effort } = options.connection
+    const spec = run.models.find((candidate) => candidate.provider === provider && candidate.model === model && (!effort || candidate.effort === effort))?.spec
+    const record = run.records.find((candidate) => candidate.model === spec && candidate.subject === options.question)
+    if (!record?.designFile) return
+    const marks = (JSON.parse(readFileSync(join(source, record.designFile), 'utf8')) as Mark[]).filter(mark => 'id' in mark && mark.kind !== 'model' && mark.id === options.id) as ModelCommand[]
+    for (let i = 0; i < marks.length; i += 8) {
+      await sleepFor(150)
+      if (options.signal.aborted) return
+      yield marks.slice(i, i + 8)
+    }
   }
 }
 
@@ -475,10 +508,11 @@ async function showLive(): Promise<void> {
     await runLiveShow({
       run, models, subjects: chosen, layout, ready, connectionFor, screenshot: blankScreenshot(),
       send: (layer, command) => sendOverlay(surface.layers[layer]!.webContents, command),
-      sleep, now: () => performance.now(), ...(mockRun && { stream: recordedStream(mock!, mockRun) }),
+      sleep, now: () => performance.now(), ...(mockRun && { stream: recordedStream(mock!, mockRun), design: recordedDesign(mock!, mockRun) }),
       startBefore: Date.now() + liveCapMs(chosen.length, models.length) - SHOW_LIMITS.startupMs - process.uptime() * 1000,
       onResult: (result) => {
         if (result.text) result.record.answerFile = writer.file(`${result.modelSlug}/${result.record.subjectSlug}-answer.txt`, result.text)
+        if (result.designed) result.record.designFile = writer.file(`${result.modelSlug}/${result.record.subjectSlug}-design.json`, JSON.stringify(result.designed))
         writer.summary(run)
       },
       capture: surface.capture, log,

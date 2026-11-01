@@ -13,6 +13,7 @@ import { toOverlaySpace, type CaptureSpace } from './overlay-geometry'
 import { SettingsStore } from './settings'
 import { AGENT_INSTRUCTIONS, INSTRUCTIONS, streamAnswer, turnNote, type Screenshot } from './voice/brain'
 import { NimboAgent } from './agent/engine'
+import { designModel } from './agent/designer'
 
 /** Every model sees the same blank display, with the pointer in the middle. */
 export const EVAL_DISPLAY = { width: 1440, height: 900 }
@@ -21,7 +22,7 @@ const POINTER = { x: EVAL_DISPLAY.width / 2, y: EVAL_DISPLAY.height / 2 }
 export const EVAL_OUTPUT = '/tmp/heynimbo-3d-eval'
 /** Requests and hidden renders at once, and the bound on each. Every step is
  *  bounded, so the overall cap only ever stops a run that is stuck. */
-export const EVAL_LIMITS = { requests: 2, renders: 4, requestMs: 90_000, preflightMs: 30_000, renderMs: 60_000, setupMs: 120_000, maxRunMs: 90 * 60_000 }
+export const EVAL_LIMITS = { requests: 2, renders: 4, requestMs: 180_000, preflightMs: 30_000, renderMs: 60_000, setupMs: 120_000, maxRunMs: 90 * 60_000 }
 /** Beat budgets as talk.ts declares them, sped up for rendering. */
 export const WORDS_PER_SECOND = 2.6
 const RENDER_PACE = 0.6
@@ -43,9 +44,11 @@ export interface AnswerRecord {
   usage?: EvalUsage
   parse: ParseStats
   answerFile?: string
+  /** The 3D designer's parts, saved beside the answer so a replay draws them too. */
+  designFile?: string
   render?: RenderRecord
 }
-export interface EvalResult { record: AnswerRecord; text: string; beats: Beat[]; modelSlug: string }
+export interface EvalResult { record: AnswerRecord; text: string; beats: Beat[]; modelSlug: string; designed?: Mark[] }
 export interface EvalRun {
   label: string; mode: 'live' | 'replay'; source?: string; state: 'running' | 'complete' | 'stopped'
   startedAt: string; finishedAt?: string
@@ -130,24 +133,48 @@ export function answerBeats(text: string, onCommand?: (mark: Mark) => void): { b
 export async function evaluateAnswer(input: {
   connection: AnswerConnection; question: string; screenshot: Screenshot; timeoutMs: number
   stream?: typeof streamAnswer; now?: () => number
+  /** Builds each 3D card's model in its own request, as a real turn does. */
+  design?: typeof designModel
   /** Each accepted command as its line ends, and each beat as its sentence ends, for drawing live. */
   onMark?: (mark: Mark, elapsedMs: number) => void; onBeat?: (beat: Beat) => void
-}): Promise<{ text: string; beats: Beat[]; status: AnswerRecord['status']; error?: string; timings: AnswerRecord['timings']; usage?: EvalUsage; parse: ParseStats }> {
+}): Promise<{ text: string; beats: Beat[]; status: AnswerRecord['status']; error?: string; timings: AnswerRecord['timings']; usage?: EvalUsage; parse: ParseStats; designed?: Mark[] }> {
   const now = input.now ?? (() => performance.now()), start = now(), elapsed = (): number => Math.round(now() - start)
   const timings: AnswerRecord['timings'] = {}, dropped: string[] = [], beats: Beat[] = []
   let text = '', usage: EvalUsage | undefined, status: AnswerRecord['status'] = 'ok', error: string | undefined
+  const designs: Array<Promise<void>> = [], designed: Mark[] = []
+  const opened = new Set<string>(), waiting = new Map<string, Mark[]>()
   const parser = new BeatParser({ width: SPACE.pixelWidth, height: SPACE.pixelHeight }, (mark) => {
     if (mark.kind === 'model') timings.firstModelMs ??= elapsed()
     if (mark.kind === 'part') timings.firstPartMs ??= elapsed()
+    // Viewers learn about the card before any of its designed parts can arrive.
     input.onMark?.(mark, elapsed())
+    if (mark.kind === 'model' && input.design) designs.push((async () => {
+      for await (const batch of input.design!({ connection: input.connection, id: mark.id, title: mark.brief ?? mark.title, question: input.question, signal: controller.signal })) {
+        if (batch.some(m => m.kind === 'part')) timings.firstPartMs ??= elapsed()
+        designed.push(...batch)
+        // Live viewers see a design assemble as it arrives, like a real turn; its beats wait for the card's.
+        for (const designedMark of batch) input.onMark?.(designedMark, elapsed())
+        if (opened.has(mark.id)) emit([{ marks: batch }])
+        else waiting.set(mark.id, [...waiting.get(mark.id) ?? [], ...batch])
+      }
+    })().catch(() => {}))
   }, (line) => dropped.push(line.slice(0, 200)))
-  const emit = (emitted: Beat[]): void => { beats.push(...emitted); if (input.onBeat) for (const beat of emitted) input.onBeat(beat) }
+  const emit = (emitted: Beat[]): void => {
+    beats.push(...emitted); if (input.onBeat) for (const beat of emitted) input.onBeat(beat)
+    // Once a card's beat is out, the parts that arrived early follow it.
+    for (const beat of emitted) for (const card of beat.marks) if (card.kind === 'model' && !opened.has(card.id)) {
+      opened.add(card.id)
+      const early = waiting.get(card.id)
+      if (early) { waiting.delete(card.id); emit([{ marks: early }]) }
+    }
+  }
   const controller = new AbortController()
   const iterator = (input.stream ?? streamAnswer)({
     connection: input.connection, question: input.question, screenshot: input.screenshot, history: [], signal: controller.signal,
     onUsage: (value) => { usage = usageOf(value) },
   })[Symbol.asyncIterator]()
   let timer: ReturnType<typeof setTimeout> | undefined
+  const deadlineAt = start + input.timeoutMs
   const expired = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), input.timeoutMs) })
   try {
     for (;;) {
@@ -168,8 +195,14 @@ export async function evaluateAnswer(input: {
     status = 'error'; error = cause instanceof Error ? cause.message : 'The request failed.'
   } finally { clearTimeout(timer) }
   emit(parser.flush())
+  // Designs share the request's one deadline, so a slot never runs past its budget.
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  const finished = await Promise.race([Promise.allSettled(designs).then(() => true), new Promise<boolean>(resolve => { deadline = setTimeout(() => resolve(false), Math.max(0, deadlineAt - now())) })])
+  clearTimeout(deadline)
+  // Designs past the deadline stop now, inside this request's slot, and the record says the model is partial.
+  if (!finished) { controller.abort(); status = 'timeout'; error = `The 3D design did not finish within ${Math.round(input.timeoutMs / 1000)} s.` }
   timings.totalMs = elapsed()
-  return { text, beats, status, ...(error && { error }), timings, ...(usage && { usage }), parse: parseStats(beats, dropped) }
+  return { text, beats, status, ...(error && { error }), timings, ...(usage && { usage }), parse: parseStats(beats, dropped), ...(designed.length && { designed }) }
 }
 
 /** Checks each model's credentials and catalog once, recording it in the run. */
@@ -194,6 +227,8 @@ export async function askModel(input: {
   connectionFor: (model: EvalModel) => AnswerConnection; screenshot: Screenshot
   stream?: typeof streamAnswer; now?: () => number; timeoutMs?: number; startBefore?: number
   onMark?: (mark: Mark, elapsedMs: number) => void; onBeat?: (beat: Beat) => void
+  /** The 3D designer: the real one by default, a saved one for offline replays. */
+  design?: typeof designModel
 }): Promise<EvalResult> {
   const { model } = input, base = { model: model.spec, subject: input.subject, subjectSlug: subjectSlug(input.subject, input.index) }
   const preflight = input.ready.get(model.spec) ?? 'The model was not checked.'
@@ -201,8 +236,8 @@ export async function askModel(input: {
   if (preflight !== 'ok') result = { record: { ...base, status: 'error', error: `Credential check: ${preflight}`, timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: model.slug }
   else if (input.startBefore !== undefined && Date.now() > input.startBefore) result = { record: { ...base, status: 'skipped', error: 'Not started: the run reached its time cap.', timings: {}, parse: parseStats([], []) }, text: '', beats: [], modelSlug: model.slug }
   else {
-    const answer = await evaluateAnswer({ connection: input.connectionFor(model), question: input.subject, screenshot: input.screenshot, timeoutMs: input.timeoutMs ?? EVAL_LIMITS.requestMs, stream: input.stream, now: input.now, onMark: input.onMark, onBeat: input.onBeat })
-    result = { record: { ...base, status: answer.status, ...(answer.error && { error: answer.error }), timings: answer.timings, ...(answer.usage && { usage: answer.usage }), parse: answer.parse }, text: answer.text, beats: answer.beats, modelSlug: model.slug }
+    const answer = await evaluateAnswer({ connection: input.connectionFor(model), question: input.subject, screenshot: input.screenshot, timeoutMs: input.timeoutMs ?? EVAL_LIMITS.requestMs, stream: input.stream, now: input.now, onMark: input.onMark, onBeat: input.onBeat, design: input.design ?? designModel })
+    result = { record: { ...base, status: answer.status, ...(answer.error && { error: answer.error }), timings: answer.timings, ...(answer.usage && { usage: answer.usage }), parse: answer.parse }, text: answer.text, beats: answer.beats, modelSlug: model.slug, ...(answer.designed && { designed: answer.designed }) }
   }
   input.run.records.push(result.record)
   return result
@@ -376,6 +411,7 @@ async function liveResults(run: EvalRun, writer: ReturnType<typeof evalWriter>, 
     run, models, connectionFor, screenshot: blankScreenshot(), startBefore, stream: devFlag('HEYNIMBO_DEBUG_3D_EVAL_AGENT') ? agentStream() : undefined,
     onResult: (result) => {
       if (result.text) result.record.answerFile = writer.file(`${result.modelSlug}/${result.record.subjectSlug}-answer.txt`, result.text)
+      if (result.designed) result.record.designFile = writer.file(`${result.modelSlug}/${result.record.subjectSlug}-design.json`, JSON.stringify(result.designed))
       writer.summary(run)
       const { record } = result
       log(`${record.model} ${record.subjectSlug}: ${record.status}${record.error ? ` (${record.error})` : ''}, first token ${seconds(record.timings.firstTokenMs)} s, first part ${seconds(record.timings.firstPartMs)} s, ${record.parse.parts} parts`)
@@ -393,8 +429,12 @@ export function replayResults(source: string, run: EvalRun, writer: ReturnType<t
     const modelSlug = previous.models.find((model) => model.spec === saved.model)?.slug ?? slugify(saved.model)
     const text = saved.answerFile ? readFileSync(join(source, saved.answerFile), 'utf8') : ''
     const { beats, dropped } = answerBeats(text)
+    // A dev-only replay of this tool's own output; the renderer still enforces its part and vertex budgets.
+    const designed = saved.designFile ? (JSON.parse(readFileSync(join(source, saved.designFile), 'utf8')) as Mark[]) : []
+    if (designed.length) beats.push({ marks: designed })
     const record: AnswerRecord = { ...saved, parse: parseStats(beats, dropped), render: undefined }
     if (text) record.answerFile = writer.file(`${modelSlug}/${saved.subjectSlug}-answer.txt`, text)
+    if (designed.length) record.designFile = writer.file(`${modelSlug}/${saved.subjectSlug}-design.json`, JSON.stringify(designed))
     run.records.push(record)
     return { record, text, beats, modelSlug }
   })
