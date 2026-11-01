@@ -2,9 +2,10 @@ import type { SemanticColor } from './beats'
 
 /** All untrusted model resource limits, in world units unless noted. */
 export const MODEL_LIMITS = {
-  cards: 2, parts: 40, repeats: 12, points: 16, labelCharacters: 40, tags: 8,
+  // Placements per model and per line: a designed model is hundreds of parts, mostly repeats.
+  cards: 2, parts: 1200, repeats: 64, points: 200, labelCharacters: 40, tags: 8,
   dimension: 12, coordinate: 24, scale: 4, coils: 12, teeth: 32,
-  verticesPerPart: 8192, verticesPerModel: 100_000, commands: 180,
+  verticesPerPart: 16_384, verticesPerModel: 1_500_000, commands: 180,
   minDimension: 0.004, minPeriod: 0.5, maxPeriod: 60, dpr: 2,
 } as const
 export type Vec3 = [number, number, number]
@@ -12,6 +13,10 @@ export type ModelMaterial = 'steel' | 'brass' | 'copper' | 'rubber' | 'glass' | 
 /** The 2D semantic colours plus three that only 3D surfaces need. */
 export type ModelColor = SemanticColor | 'yellow' | 'brown' | 'white'
 export type PartShape = 'box' | 'cylinder' | 'tube' | 'cone' | 'sphere' | 'torus' | 'capsule' | 'spring' | 'gear' | 'pipe' | 'lathe' | 'extrude' | 'blob'
+  /** No geometry: a pivot that its children follow and that a spin turns. */
+  | 'group'
+/** A designed surface: exact colour (0xrrggbb) and physical finish instead of a named material. */
+export interface PartFinish { color: number; metalness: number; roughness: number; opacity?: number; emission?: number }
 export type Axis = 'x' | 'y' | 'z'
 export interface PartMark {
   kind: 'part'; id: string; name: string; shape: PartShape
@@ -22,6 +27,11 @@ export interface PartMark {
   points?: Vec3[]; profile?: Array<[number, number]>
   /** An extrude's closed 2D outline, smoothed through its points when `smooth`. */
   outline?: Array<[number, number]>; smooth?: boolean
+  /** A pipe's radius at each point, for tapering limbs, tails and stems. */
+  radii?: number[]
+  /** Each copy's own place and turn, for repeats around any axis; overrides copies/step/around. */
+  instances?: Array<{ at: Vec3; turn: Vec3 }>
+  finish?: PartFinish
 }
 export type ModelCommand = PartMark
   | { kind: 'move'; id: string; part: string; motion: 'spin' | 'bob' | 'slide' | 'orbit'; axis: Axis; amount: number; period: number }
@@ -36,7 +46,7 @@ const defaults: Record<PartShape, Record<string, number>> = {
   tube: { r: 0.5, inner: 0.35, h: 1 }, cone: { r: 0.5, h: 1 }, sphere: { r: 0.5 },
   torus: { r: 0.5, tube: 0.1 }, capsule: { r: 0.25, h: 1 },
   spring: { r: 0.4, h: 1, coils: 5, wire: 0.04 }, gear: { r: 0.5, teeth: 12, w: 0.15, hole: 0.1 },
-  pipe: { r: 0.08 }, lathe: {}, extrude: { d: 0.2, round: 0.02 }, blob: { w: 1, h: 1, d: 1, lumps: 0.1, seed: 1, taper: 0 },
+  pipe: { r: 0.08 }, lathe: {}, extrude: { d: 0.2, round: 0.02 }, blob: { w: 1, h: 1, d: 1, lumps: 0.1, seed: 1, taper: 0 }, group: {},
 }
 /** Bounds for keys that are not plain sizes; whole-number keys are rounded first. */
 const ranges: Record<string, [number, number]> = {
@@ -87,7 +97,7 @@ function keys(text: string): Record<string, string> {
 
 /** Conservative vertex reservations include outlines; actual geometry is checked again. */
 export function partVertexCost(part: PartMark): number {
-  const perCopy = part.shape === 'box' ? 1200
+  const perCopy = part.shape === 'group' ? 0 : part.shape === 'box' ? 1200
     : part.shape === 'spring' ? 500 + part.dimensions.coils! * 400
     : part.shape === 'pipe' ? 500 + (part.points?.length ?? 0) * 300
     : part.shape === 'gear' ? 900 + part.dimensions.teeth! * 220

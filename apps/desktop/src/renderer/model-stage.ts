@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { MODEL_LIMITS, type ModelColor, type ModelMaterial, type PartMark, type ModelCommand } from '../shared/model-protocol'
+import { MODEL_LIMITS, type ModelColor, type ModelMaterial, type PartMark, type PartFinish, type ModelCommand } from '../shared/model-protocol'
 import type { Point } from './ink'
 import { ContactShadow } from './model-contact-shadow'
 import { ModelSections, SECTION_LAYER } from './model-sections'
@@ -219,7 +219,17 @@ export class ModelStage {
   /** `order` is the part's place in the model: it picks an unpainted part's
    *  colour and nudges its depth, so a later part flush against an earlier
    *  one (a door on a wall, a dial on a face) wins instead of flickering. */
-  private surface(mat: ModelMaterial, color: ModelColor | undefined, order: number): THREE.MeshStandardMaterial {
+  private surface(mat: ModelMaterial, color: ModelColor | undefined, order: number, designed?: PartFinish): THREE.MeshStandardMaterial {
+    if (designed) {
+      // A designed finish is exact: its colour, metal and roughness, glowing where it emits.
+      const transparent = designed.opacity !== undefined
+      return new THREE.MeshStandardMaterial({
+        color: designed.color, roughness: designed.roughness, metalness: designed.metalness, vertexColors: true, clipShadows: true,
+        transparent, opacity: designed.opacity ?? 1, depthWrite: !transparent, side: transparent ? THREE.DoubleSide : THREE.FrontSide,
+        polygonOffset: !transparent, polygonOffsetUnits: -4 * Math.min(order, 30),
+        ...(designed.emission !== undefined && { emissive: designed.emission, emissiveIntensity: 0.9 }),
+      })
+    }
     const finish = finishes[mat], transparent = finish.opacity !== undefined
     // A colour tints metal rather than replacing it, so a grey or blue steel still reads as metal.
     const tint = new THREE.Color(mat === 'paint' && !color ? paintCycle[order % paintCycle.length]! : finish.color)
@@ -239,7 +249,8 @@ export class ModelStage {
     if (index < 0) return
     this.undressed.splice(index, 1)
     const { spec } = part
-    const material = this.surface(spec.mat, spec.color, [...this.graph.parts.keys()].indexOf(spec.name))
+    if (spec.shape === 'group') return
+    const material = this.surface(spec.mat, spec.color, [...this.graph.parts.keys()].indexOf(spec.name), spec.finish)
     part.geometry.setAttribute('outlineNormal', smoothNormals(part.geometry))
     const shell = inkShell(this.ink)
     const edges = new THREE.EdgesGeometry(part.geometry, 40)

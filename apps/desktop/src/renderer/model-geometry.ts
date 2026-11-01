@@ -25,8 +25,24 @@ function shade(geometry: THREE.BufferGeometry, value = 1): THREE.BufferGeometry 
   return geometry
 }
 
-function cappedCurve(curve: THREE.Curve<THREE.Vector3>, r: number, segments: number, radial: number): THREE.BufferGeometry {
+function cappedCurve(curve: THREE.Curve<THREE.Vector3>, r: number, segments: number, radial: number, radiusAt?: (t: number) => number): THREE.BufferGeometry {
   const tube = new THREE.TubeGeometry(curve, segments, r, radial, false)
+  // A taper scales each ring about its point on the curve; the caps below reuse the scaled end rings.
+  if (radiusAt) {
+    const position = tube.getAttribute('position'), centre = new THREE.Vector3(), vertex = new THREE.Vector3()
+    for (let i = 0; i <= segments; i++) {
+      curve.getPointAt(i / segments, centre)
+      // Rings are spaced by arc length; radii belong to control points, which the curve parameter tracks.
+      const factor = radiusAt(curve.getUtoTmapping(i / segments, 0)) / r
+      for (let j = 0; j <= radial; j++) {
+        const k = i * (radial + 1) + j
+        vertex.fromBufferAttribute(position, k).sub(centre).multiplyScalar(factor).add(centre)
+        position.setXYZ(k, vertex.x, vertex.y, vertex.z)
+      }
+    }
+    // The tube's own normals still face straight out; a taper tilts its surface.
+    tube.computeVertexNormals()
+  }
   const caps = [0, 1].map((end) => {
     const normal = curve.getTangent(end).multiplyScalar(end === 0 ? -1 : 1)
     const point = curve.getPoint(end), positions = [point.x, point.y, point.z], normals = normal.toArray(), uv = [0.5, 0.5], indices: number[] = []
@@ -285,7 +301,14 @@ export function partGeometry(part: PartMark): THREE.BufferGeometry {
     case 'torus': return shade(new THREE.TorusGeometry(d.r, d.tube, 16, 64).rotateX(Math.PI / 2))
     case 'capsule': return shade(new THREE.CapsuleGeometry(d.r, Math.max(0, d.h! - 2 * d.r!), 8, 32))
     case 'spring': return cappedCurve(new CoilCurve(d.r!, d.h!, d.coils!, d.wire!), d.wire!, d.coils! * 24, 12)
-    case 'pipe': return cappedCurve(new THREE.CatmullRomCurve3(part.points!.map((p) => new THREE.Vector3(...p))), d.r!, (part.points!.length - 1) * 18, 12)
+    case 'pipe': {
+      const radii = part.radii, last = (part.points!.length - 1)
+      // Long strands get fewer segments per point, so a 200-point curve stays light.
+      const segments = Math.min(last * 18, 600)
+      const radiusAt = radii && ((t: number): number => { const u = t * last, i = Math.min(Math.floor(u), last - 1); return Math.max(radii[i]! + (radii[i + 1]! - radii[i]!) * (u - i), MODEL_LIMITS.minDimension) })
+      return cappedCurve(new THREE.CatmullRomCurve3(part.points!.map((p) => new THREE.Vector3(...p))), d.r!, segments, 12, radiusAt)
+    }
+    case 'group': { const empty = new THREE.BufferGeometry(); empty.setAttribute('position', new THREE.Float32BufferAttribute([], 3)); return empty }
     case 'lathe': return revolve(latheOutline(part.profile!), 48)
     case 'gear': return prism(gearOutline(d.r!, d.teeth!), Math.min(d.hole!, Math.max(d.r! - 1.25 * 2 * d.r! / d.teeth!, d.r! * 0.5) * 0.85), d.w!)
     case 'extrude': return extrusion(part.outline!, d.d!, d.round!, part.smooth ?? false)
@@ -353,7 +376,7 @@ export class ModelGraph {
     geometry.computeBoundingBox(); geometry.computeBoundingSphere()
     const root = new THREE.Group()
     // A ring of copies hangs from the parent's origin, so spinning it turns the whole ring about that axis.
-    if (!spec.around) root.position.fromArray(spec.at)
+    if (!spec.around && !spec.instances) root.position.fromArray(spec.at)
     ;(parent?.placements[0] ?? this.root).add(root)
     const placements: THREE.Group[] = [], reveals: THREE.Group[] = []
     const yAxis = new THREE.Vector3(0, 1, 0)
@@ -361,7 +384,11 @@ export class ModelGraph {
       const placement = new THREE.Group(), reveal = new THREE.Group()
       placement.rotation.set(...spec.turn.map(THREE.MathUtils.degToRad) as Vec3)
       placement.scale.setScalar(spec.scale)
-      if (spec.around) {
+      const instance = spec.instances?.[i]
+      if (instance) {
+        placement.position.fromArray(instance.at)
+        placement.rotation.set(...instance.turn.map(THREE.MathUtils.degToRad) as Vec3)
+      } else if (spec.around) {
         const angle = i * Math.PI * 2 / spec.copies
         placement.position.fromArray(spec.at).applyAxisAngle(yAxis, angle)
         placement.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(yAxis, angle))
@@ -384,7 +411,7 @@ export class ModelGraph {
   box(ancestor?: THREE.Object3D): THREE.Box3 {
     this.root.updateWorldMatrix(true, true)
     const box = new THREE.Box3(), piece = new THREE.Box3()
-    for (const part of this.parts.values()) if (part.built) for (const placement of part.placements) {
+    for (const part of this.parts.values()) if (part.built && !part.geometry.boundingBox!.isEmpty()) for (const placement of part.placements) {
       if (!ancestor || isWithin(placement, ancestor)) box.union(piece.copy(part.geometry.boundingBox!).applyMatrix4(placement.matrixWorld))
     }
     return box
@@ -395,7 +422,7 @@ export class ModelGraph {
   corners(ancestor?: THREE.Object3D): THREE.Vector3[] {
     this.root.updateWorldMatrix(true, true)
     const points: THREE.Vector3[] = []
-    for (const part of this.parts.values()) if (part.built) for (const placement of part.placements) {
+    for (const part of this.parts.values()) if (part.built && !part.geometry.boundingBox!.isEmpty()) for (const placement of part.placements) {
       if (ancestor && !isWithin(placement, ancestor)) continue
       const { min, max } = part.geometry.boundingBox!
       for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) points.push(new THREE.Vector3(x, y, z).applyMatrix4(placement.matrixWorld))
