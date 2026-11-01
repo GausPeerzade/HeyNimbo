@@ -38,7 +38,7 @@ export async function runHomePreview(): Promise<void> {
     await window.webContents.executeJavaScript("Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode().catch(() => {}))])")
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     if (name.startsWith('home-unconnected') && !await window.webContents.executeJavaScript("Boolean(document.querySelector('.connection-needed'))")) throw new Error(`Wrong preview state: ${name}`)
-    if (name.startsWith('home-') && !await window.webContents.executeJavaScript("document.getElementById('screen-context').textContent === 'Includes a screen capture when you ask'")) throw new Error(`Misleading capture copy: ${name}`)
+    if (name.startsWith('home-') && !await window.webContents.executeJavaScript("document.getElementById('question').placeholder === 'Ask about your screen…'")) throw new Error(`Misleading capture copy: ${name}`)
     if (name.startsWith('home-empty')) {
       const gap = await window.webContents.executeJavaScript("document.getElementById('composer').getBoundingClientRect().top - document.querySelector('.empty').getBoundingClientRect().bottom") as number
       if (gap < 0 || gap > 32) throw new Error(`Empty instruction detached from composer: ${gap}`)

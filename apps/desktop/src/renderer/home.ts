@@ -61,11 +61,8 @@ function renderTranscript(s: AppSnapshot): void {
     const picture = element('picture'), source = element('source'), image = element('img')
     source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
     image.src = logo; image.alt = ''; image.width = 80; image.height = 80; picture.append(source, image)
-    empty.append(picture, element('h2', '', s.connection?.answerVision === false ? 'Ask a question.' : 'Ask about your screen.'), element('p', '', s.keyPresent ? 'Describe what you want to find or understand.' : 'Connect a provider to ask about your screen and get a drawn explanation.'))
-    if (!s.keyPresent) {
-      empty.append(button('Connect a provider', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
-      empty.append(element('p', 'privacy-summary', 'When you ask, your question and a screen capture go to your selected answer provider or local endpoint, if the model supports images. Local history saves text and generated drawings, not screen images or audio.'))
-    }
+    empty.append(picture, element('h2', '', !s.keyPresent ? 'Connect a provider to start' : s.connection?.answerVision === false ? 'Ask anything' : 'Ask about your screen'))
+    if (!s.keyPresent) empty.append(button('Connect', () => { void request({ kind: 'settings', category: 'Connection' }) }, 'primary'))
     transcript.append(empty)
   }
   if (s.turns.length) {
@@ -87,10 +84,12 @@ function render(s: AppSnapshot): void {
   renderSidebar(); renderTranscript(s)
   document.getElementById('stop')!.hidden = !s.busy
   document.getElementById('send')!.hidden = s.busy || !s.keyPresent
-  const screenContext = document.getElementById('screen-context')
-  if (screenContext) screenContext.textContent = s.connection?.answerVision === false ? 'Text only · does not see or draw on your screen' : 'Includes a screen capture when you ask'
+  // A text-only model is the one case worth saying: it cannot see or draw.
+  const textOnly = s.connection?.answerVision === false
+  question.placeholder = textOnly ? 'Ask anything…' : 'Ask about your screen…'
+  document.getElementById('speak-hint')!.textContent = textOnly ? 'This model can’t see your screen' : 'Hold Control + Option to speak'
   document.getElementById('feedback')!.textContent = s.status
-  document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? 'Kept until deleted' : `Saved locally for ${s.settings.retention} days`
+  document.getElementById('saving')!.textContent = !s.saved ? 'Not saved' : s.settings.retention === 'forever' ? '' : `Kept ${s.settings.retention} days`
 }
 const conversationSearch = new ConversationSearch(
   () => search.value,
@@ -103,7 +102,7 @@ const conversationSearch = new ConversationSearch(
       const c = snapshot.conversations.find(c => c.id === hit.conversationId) ?? { id: hit.conversationId, title: hit.title, created: hit.updated, updated: hit.updated, pinned: false, archived: false, preview: hit.snippet }
       conversations.append(row(c, hit))
     }
-    if (!hits.length) conversations.append(element('p', 'no-results', 'No conversations match your search.'), button('Clear search', () => { clearSearch(); search.focus() }))
+    if (!hits.length) conversations.append(element('p', 'no-results', 'No matches'), button('Clear search', () => { clearSearch(); search.focus() }))
   },
 )
 function clearSearch(): void { search.value = ''; conversationSearch.changed() }

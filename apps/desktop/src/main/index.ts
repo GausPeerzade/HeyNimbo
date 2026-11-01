@@ -51,7 +51,7 @@ function createGesturePresenter(
     console.info(`[gesture] ${message.action} ${message.phase}`)
     if (message.action === 'talk') {
       const session = talk()
-      if (!session || session.voiceAvailable === false) return show({ kind: 'active', label: session?.voiceUnavailableReason ?? 'Voice unavailable. Open Settings → Connection.' })
+      if (!session || session.voiceAvailable === false) return show({ kind: 'active', label: session?.voiceUnavailableReason ?? 'Voice unavailable. Open Settings → Voice.' })
       if (message.phase === 'started') {
         // A new question replaces whatever the last answer was still drawing.
         overlays.clear()

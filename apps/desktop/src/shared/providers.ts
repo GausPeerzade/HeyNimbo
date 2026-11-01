@@ -45,14 +45,14 @@ export interface RecommendedModel { model: string; name: string; hint: string; v
 const thinking = (model: string, name: string, hint: string, effort: Effort, speeds?: readonly Speed[]): RecommendedModel => ({ model, name, hint, vision: true, effort, efforts: EFFORTS, ...(speeds && { speeds }) })
 const plain = (model: string, name: string, hint: string, vision = true): RecommendedModel => ({ model, name, hint, vision, efforts: [] })
 // Ultrafast is offered for GPT-6.1 Sol (and GPT-6 Astra) only; Fast for both listed models.
-const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Low thinking: median first 3D part 2.7 s in our 15-request test', 'low', ['standard', 'fast']), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most detailed 3D in our tests; with Ultrafast, first words in about 3–4 s', 'medium', SPEEDS)]
+const openAIModels = [thinking('gpt-6.1-terra', 'GPT-6.1 Terra', 'Fast and balanced', 'low', ['standard', 'fast']), thinking('gpt-6.1-sol', 'GPT-6.1 Sol', 'Most detailed drawings. Pair with Ultrafast for speed.', 'medium', SPEEDS)]
 export const RECOMMENDED_MODELS: Record<ProviderId, readonly RecommendedModel[]> = {
   chatgpt: openAIModels,
   openai: openAIModels,
-  anthropic: [thinking('claude-sonnet-5-5', 'Claude Sonnet 5.5', 'Low thinking: median first 3D part 1.9 s in our 15-request test', 'low'), thinking('claude-haiku-5-5', 'Claude Haiku 5.5', 'Slower to start in our tests (about 8 s)', 'low'), thinking('claude-opus-5-5', 'Claude Opus 5.5', 'Most capable; not yet measured in HeyNimbo', 'medium')],
-  google: [plain('gemini-3.8-flash', 'Gemini 3.8 Flash', 'Balanced speed and detail'), plain('gemini-3.5-flash-lite', 'Gemini 3.5 Flash Lite', 'Faster, less detail'), plain('gemini-4-argon', 'Gemini 4 Argon', 'Most capable, slower')],
-  deepseek: [plain('deepseek-flash', 'DeepSeek Flash', 'Balanced speed and detail'), plain('deepseek-v4-pro', 'DeepSeek V4 Pro', 'Text only: cannot see your screen or draw', false)],
-  openrouter: [plain('openai/gpt-6.1-terra', 'GPT-6.1 Terra', 'Balanced speed and detail'), plain('google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash Lite', 'Faster, less detail'), plain('anthropic/claude-opus-5.5', 'Claude Opus 5.5', 'Most capable, slower')],
+  anthropic: [thinking('claude-sonnet-5-5', 'Claude Sonnet 5.5', 'Fastest to start talking', 'low'), thinking('claude-haiku-5-5', 'Claude Haiku 5.5', 'Smallest and cheapest', 'low'), thinking('claude-opus-5-5', 'Claude Opus 5.5', 'Most capable Claude', 'medium')],
+  google: [plain('gemini-3.8-flash', 'Gemini 3.8 Flash', 'Fast and balanced'), plain('gemini-3.5-flash-lite', 'Gemini 3.5 Flash Lite', 'Fastest, less detail'), plain('gemini-4-argon', 'Gemini 4 Argon', 'Most capable, slower')],
+  deepseek: [plain('deepseek-flash', 'DeepSeek Flash', 'Fast and balanced'), plain('deepseek-v4-pro', 'DeepSeek V4 Pro', 'Can’t see your screen or draw', false)],
+  openrouter: [plain('openai/gpt-6.1-terra', 'GPT-6.1 Terra', 'Fast and balanced'), plain('google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash Lite', 'Fastest, less detail'), plain('anthropic/claude-opus-5.5', 'Claude Opus 5.5', 'Most capable, slower')],
   compatible: [],
 }
 export function recommendedModel(provider: ProviderId, model: string): RecommendedModel | undefined { return RECOMMENDED_MODELS[provider].find(entry => entry.model === model) }

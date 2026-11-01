@@ -34,16 +34,16 @@ export class TurnTranscript {
       }
       const active = activeId === turn.id
       setText(view.question, turn.question)
-      setText(view.meta, `${turn.mode === 'voice' ? 'Voice' : 'Text'} · ${time(turn.created)} · ${turn.screenContextUsed ? 'Screen context used, not saved' : active ? 'Preparing screen context' : 'No screen context used'}`)
-      setText(view.answer, turn.answer || (active ? 'Thinking…' : 'No answer received.'))
-      setText(view.state, active ? 'In progress · partial answer' : turn.state === 'interrupted' ? 'Interrupted · this answer may be incomplete' : turn.state === 'error' ? `Error · ${turn.error ?? 'The answer failed. Check your connection and try again.'}` : '')
+      setText(view.meta, `${turn.mode === 'voice' ? 'Spoken' : 'Typed'} at ${time(turn.created)}${turn.screenContextUsed ? ', with your screen' : ''}`)
+      setText(view.answer, turn.answer || (active ? 'Thinking…' : 'No answer'))
+      setText(view.state, active ? '' : turn.state === 'interrupted' ? 'Stopped' : turn.state === 'error' ? turn.error ?? 'The answer failed. Check your connection and try again.' : '')
       view.state.className = `turn-state ${turn.state}`
-      view.state.hidden = !active && turn.state === 'complete'
+      view.state.hidden = active || turn.state === 'complete'
       // Scene beats are append-only. Answer deltas don't rebuild existing thumbnails.
       if (view.drawingBeats !== turn.scene.beats.length) {
         view.drawing?.remove(); view.drawing = undefined
         const svg = sceneThumbnail(turn.scene)
-        if (svg) { view.drawing = element('figure', 'drawing'); view.drawing.append(svg, element('figcaption', '', 'Generated drawing · screen image not saved')); view.section.append(view.drawing) }
+        if (svg) { view.drawing = element('figure', 'drawing'); view.drawing.append(svg); view.section.append(view.drawing) }
         view.drawingBeats = turn.scene.beats.length
       }
       // What the agent did (searches, reads, edits, commands) sits between the question and the answer.

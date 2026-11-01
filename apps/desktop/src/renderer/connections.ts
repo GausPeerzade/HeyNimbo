@@ -36,31 +36,30 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   const saveEndpoint = (baseURL: string): void => { void change({ baseURL, models: { ...config.models, compatible: { model: '' } } }) }
   const currentModel = state?.answerModel ?? selectedModel(config).model
   const vision = state?.answerVision ?? selectedModel(config).vision
-  const intro = element('p', 'settings-intro', 'One model explains, draws, builds 3D and does tasks. Choose how much it thinks before answering.'); fields.append(intro)
   const answer = element('section', 'connection-section settings-group'); answer.id = 'connection-answer'
-  const sectionTitle = element('h2', 'section-title', 'Answer preferences'); fields.append(sectionTitle)
+  const sectionTitle = element('h2', 'section-title', 'Answers'); fields.append(sectionTitle)
   const providerRow = element('label', 'row'), providerSelect = element('select')
   providerSelect.id = 'connection-provider'; providerSelect.setAttribute('aria-label', 'Answer provider')
-  for (const p of PROVIDERS) { const option = element('option', '', `${providerName(p)}${state?.providers[p] ? ' · Connected' : ' · Set up'}`); option.value = p; option.selected = p === provider; providerSelect.append(option) }
+  for (const p of PROVIDERS) { const option = element('option', '', state?.providers[p] ? providerName(p) : `${providerName(p)} (not set up)`); option.value = p; option.selected = p === provider; providerSelect.append(option) }
   providerSelect.onchange = () => { void run({ kind: 'useForAnswers', provider: providerSelect.value as ProviderId }) }
   providerRow.append(element('span', '', 'Provider'), providerSelect); answer.append(providerRow); fields.append(answer)
   const model = element('div', 'model-preferences'); model.id = 'connection-model-section'
   const picker = element('select'); picker.id = 'connection-model-picker'; picker.setAttribute('aria-label', 'Model')
   const placeholder = element('option', '', 'Choose a model…'); placeholder.value = ''; picker.append(placeholder)
   const recommended = element('optgroup'); recommended.label = 'Recommended'
-  for (const [index, entry] of RECOMMENDED_MODELS[provider].entries()) {
-    const option = element('option', '', `${entry.name}${index === 0 ? ' (recommended)' : ''}`)
+  for (const entry of RECOMMENDED_MODELS[provider]) {
+    const option = element('option', '', entry.name)
     option.value = entry.model; option.selected = choice.model === entry.model; recommended.append(option)
   }
   if (recommended.children.length) picker.append(recommended)
   const available = element('optgroup'); available.label = 'Available models'
   for (const entry of state?.models ?? []) {
     if (recommendedModel(provider, entry.id)) continue
-    const option = element('option', '', `${entry.name}${entry.vision ? '' : ' · Text only'}`)
+    const option = element('option', '', entry.vision ? entry.name : `${entry.name} (text only)`)
     option.value = entry.id; option.selected = choice.model === entry.id; available.append(option)
   }
   if (choice.model && !recommendedModel(provider, choice.model) && !state?.models.some(entry => entry.id === choice.model)) {
-    const option = element('option', '', `${choice.model} · Custom`); option.value = choice.model; option.selected = true; available.append(option)
+    const option = element('option', '', `${choice.model} (custom)`); option.value = choice.model; option.selected = true; available.append(option)
   }
   if (available.children.length) picker.append(available)
   if (!selectedModel(config).model) placeholder.selected = true
@@ -79,18 +78,19 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
   const speeds = modelSpeeds(provider, choice.model)
   if (speeds.length) {
     const speedRow = element('label', 'row'), speed = element('select'); speed.id = 'connection-speed'; speed.setAttribute('aria-label', 'Speed')
-    const labels: Record<Speed, string> = { standard: 'Standard', fast: 'Fast · about 2× price', ultrafast: 'Ultrafast · about 6× price' }
+    const labels: Record<Speed, string> = { standard: 'Standard', fast: 'Fast (2× price)', ultrafast: 'Ultrafast (6× price)' }
     for (const level of speeds) { const option = element('option', '', labels[level]); option.value = level; option.selected = (choice.speed ?? 'standard') === level; speed.append(option) }
     speed.onchange = () => { void change({ models: { ...config.models, [provider]: { model: choice.model, ...(choice.effort ? { effort: choice.effort } : {}), ...(speed.value !== 'standard' ? { speed: speed.value as Speed } : {}) } } }) }
     speedRow.append(element('span', '', 'Speed'), speed); model.append(speedRow)
   }
   answer.append(model)
-  const summary = element('p', 'explanation', recommendedModel(provider, currentModel)?.hint ?? 'Custom model. Screen support is checked against the provider’s model list.')
-  summary.id = 'connection-model-summary'; fields.append(summary, element('p', 'explanation', levels.length ? 'More thinking can improve accuracy, but may delay the first spoken words and drawings.' : 'Thinking controls are not available for this model through this connection.'))
-  const screenSummary = element('p', 'capability-summary', `${vision && snapshot.keyPresent ? 'Screen context and drawings available' : 'Screen context and drawings unavailable'} · One model for the whole answer`); fields.append(screenSummary)
+  // Say only what changes a decision: what this model is good at, and when it cannot see the screen.
+  const hint = recommendedModel(provider, currentModel)?.hint
+  if (hint) { const summary = element('p', 'explanation', hint); summary.id = 'connection-model-summary'; fields.append(summary) }
+  if (snapshot.keyPresent && !vision) fields.append(element('p', 'explanation', 'This model can’t see your screen or draw.'))
 
   const saved = element('section', 'connection-section'); saved.id = 'saved-connections'
-  saved.append(element('h2', 'section-title', 'Saved connections'), element('p', 'explanation', 'Keys and sign-ins stay on this Mac. Connecting a provider doesn’t change which one answers.'))
+  saved.append(element('h2', 'section-title', 'Accounts and keys'))
   const list = element('ul', 'saved-connection-list'), editor = element('div', 'connection-key-editor')
   const showKeyEditor = (p: KeyProvider, automatic = false): void => {
     editor.replaceChildren()
@@ -107,14 +107,14 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
     const row = element('li', 'saved-connection'); row.id = `saved-${p}`
     if (p === provider) row.classList.add('current-connection')
     const heading = element('div', 'saved-connection-heading'); heading.append(element('strong', '', providerName(p)))
-    if (p === provider) heading.append(element('span', 'current-connection-label', 'Current answers'))
+    if (p === provider) heading.append(element('span', 'current-connection-label', 'In use'))
     const status = element('p', 'saved-connection-status'), actions = element('div', 'connection-actions')
     if (p !== provider && state?.providers[p]) {
       const use = button('Use', () => { void run({ kind: 'useForAnswers', provider: p }) }); use.id = `use-provider-${p}`; use.setAttribute('aria-label', `Use ${providerName(p)} for answers`); actions.append(use)
     }
     if (p === 'chatgpt') {
       const account = state?.accounts.find(account => account.id === state.activeAccount)
-      status.textContent = account?.connected ? `Signed in as ${[account.name, account.email].filter(Boolean).join(' · ')}${account.sharing ? '' : ' · Plan usage disabled'}` : 'Not signed in'
+      status.textContent = account?.connected ? `${account.email || account.name}${account.sharing ? '' : ' (plan usage off)'}` : 'Not signed in'
       if (account?.connected) {
         if (!account.sharing) actions.append(accountAction('Enable plan usage', { kind: 'signIn', accountId: account.id }))
         actions.append(accountAction('Sign out', { kind: 'signOut' }), accountAction('Manage usage', { kind: 'usage' }))
@@ -122,9 +122,9 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
     } else {
       const present = p === 'compatible' ? state?.compatibleKeyPresent : state?.providers[p]
       const hint = present ? keyHints[p] : undefined
-      const keyStatus = present ? `Key saved${hint?.suffix ? ` · ends in ••••${hint.suffix}` : ''}${hint?.savedAt !== undefined ? ` · Saved ${new Date(hint.savedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}` : ''}` : 'Not set'
-      status.textContent = p === 'compatible' ? `${new URL(config.baseURL).host} · ${present ? keyStatus : 'Key optional for local servers'}` : keyStatus
-      const replace = button(present ? 'Replace key' : 'Add key', () => showKeyEditor(p)); replace.id = `replace-key-${p}`; replace.setAttribute('aria-label', `${present ? 'Replace' : 'Add'} ${providerName(p)} key`); actions.append(replace)
+      const keyStatus = present ? (hint?.suffix ? `Key ending ${hint.suffix}` : 'Key saved') : 'No key'
+      status.textContent = p === 'compatible' ? `${new URL(config.baseURL).host}${present ? `, ${keyStatus.toLowerCase()}` : ''}` : keyStatus
+      const replace = button(present ? 'Replace' : 'Add key', () => showKeyEditor(p)); replace.id = `replace-key-${p}`; replace.setAttribute('aria-label', `${present ? 'Replace' : 'Add'} ${providerName(p)} key`); actions.append(replace)
       if (present) { const remove = button('Remove', () => { void run({ kind: 'removeKey', provider: p }) }, 'danger'); remove.id = `remove-key-${p}`; remove.setAttribute('aria-label', `Remove ${providerName(p)} key`); actions.append(remove) }
     }
     const identity = element('div', 'saved-connection-identity'); identity.append(heading, status)
@@ -148,26 +148,20 @@ export function renderConnections(fields: HTMLElement, snapshot: AppSnapshot, up
     const label = element('label', 'connection-field', 'Endpoint'), input = element('input')
     input.id = 'connection-endpoint'; input.value = config.baseURL; input.type = 'url'; input.setAttribute('aria-label', 'OpenAI-compatible base URL')
     label.append(input, button('Save endpoint', () => saveEndpoint(input.value))); advanced.append(endpoints, label)
-    advanced.append(element('p', 'explanation', 'Changing endpoints clears the model selection. Find models, then choose one. Enter a new key only if the new endpoint needs it. Use HTTPS, or HTTP on localhost or 127.0.0.1 for local servers.'))
+    advanced.append(element('p', 'explanation', 'HTTPS, or HTTP on localhost.'))
   }
-  advanced.append(element('p', 'explanation', 'Storage: keys and sign-in tokens are kept only on this Mac, in a credentials file only your user account can read, separate from settings and history. Background tasks cannot read it. Models remain Experimental until evaluated in HeyNimbo.'))
   fields.append(advanced)
 
   if (state?.accounts.length) {
     const accounts = element('select'); accounts.setAttribute('aria-label', 'ChatGPT account'); accounts.id = 'connection-account'
-    for (const [index, account] of state.accounts.entries()) { const option = element('option', '', `Account ${index + 1} · ${[account.name, account.email].filter(Boolean).join(' · ') || 'ChatGPT account'}`); option.value = account.id; option.selected = account.id === state.activeAccount; accounts.append(option) }
+    for (const account of state.accounts) { const option = element('option', '', account.email || account.name || 'ChatGPT account'); option.value = account.id; option.selected = account.id === state.activeAccount; accounts.append(option) }
     accounts.onchange = () => { const account = state.accounts.find(account => account.id === accounts.value); if (account) void run(account.connected ? { kind: 'selectAccount', accountId: account.id } : { kind: 'signIn', accountId: account.id }) }
     const label = element('label', 'connection-field', 'ChatGPT account'); label.append(accounts); advanced.append(label, button('Sign in to another account', () => { void run({ kind: 'signIn', newAccount: true }) }))
   }
-  const voice = element('section', 'connection-section'); voice.id = 'connection-voice'
-  voice.append(element('h2', 'section-title', 'Voice'))
-  const voiceLine = state?.voice === 'OpenAI' || state?.voice === 'Built into your Mac' ? `Voice: ${state.voice}${snapshot.settings.muted ? ' · Muted' : ''}` : `Voice: not available. ${state?.voiceReason ?? 'Add an OpenAI key, or use built-in Mac speech.'}`
-  voice.append(element('p', 'explanation', voiceLine))
-  if (state?.needsSpeechPermission) voice.append(button('Allow speech recognition', () => { void run({ kind: 'allowSpeechRecognition' }) }))
-  fields.append(voice, feedback)
+  fields.append(feedback)
   // Selecting an unconnected provider opens its setup without making a network request.
   if (provider === 'chatgpt' && !state?.providers.chatgpt) {
-    const setup = element('div', 'row'); setup.append(element('span', '', 'Connect your ChatGPT account'), button('Sign in', () => { void run({ kind: 'signIn' }) })); answer.append(setup)
+    const setup = element('div', 'row'); setup.append(element('span', '', 'ChatGPT account'), button('Sign in', () => { void run({ kind: 'signIn' }) })); answer.append(setup)
   }
   if (provider !== 'chatgpt' && provider !== 'compatible' && !state?.providers[provider]) showKeyEditor(provider, true)
 }

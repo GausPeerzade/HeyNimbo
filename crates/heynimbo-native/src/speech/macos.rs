@@ -75,7 +75,7 @@ pub(super) fn availability(locale: Option<&str>) -> SpeechAvailability {
             let reason = match status {
             Authorization::Denied => Some("Speech recognition was denied. Allow it in System Settings → Privacy & Security → Speech Recognition.".into()),
             Authorization::Restricted => Some("Speech recognition is restricted on this Mac.".into()),
-            Authorization::NotDetermined => Some("Allow speech recognition in Settings → Connection.".into()),
+            Authorization::NotDetermined => Some("Allow speech recognition in Settings → Voice.".into()),
             _ if !unsafe { recognizer.isAvailable() } => Some("On-device speech recognition is temporarily unavailable.".into()),
             _ => None,
         };

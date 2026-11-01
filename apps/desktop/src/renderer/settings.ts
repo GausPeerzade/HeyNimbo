@@ -45,19 +45,26 @@ function select<T extends 'voice' | 'retention'>(key: T, label: string, options:
   row.append(element('span', '', label), input); groupTarget.append(row)
 }
 function explanation(text: string): void { fields.append(element('p', 'explanation', text)) }
-function group(title: string): void {
-  fields.append(element('h2', 'section-title', title))
-  groupTarget = element('section', 'settings-group'); groupTarget.setAttribute('aria-label', title); fields.append(groupTarget)
+/** A titled group; an empty title groups rows without a heading. */
+function group(title = ''): void {
+  if (title) fields.append(element('h2', 'section-title', title))
+  groupTarget = element('section', 'settings-group'); groupTarget.setAttribute('aria-label', title || category); fields.append(groupTarget)
 }
-function intro(text: string): void { fields.append(element('p', 'settings-intro', text)) }
-function microphoneRow(): void {
-  const status = snapshot?.permissions.microphone ?? 'unknown'
-  const names: Record<string, string> = { granted: 'Allowed', 'not-determined': 'Not requested yet', denied: 'Denied in System Settings', restricted: 'Restricted by macOS', unavailable: 'Unavailable in this build' }
+function value(label: string, text: string): void {
+  const row = element('div', 'row'); row.append(element('span', '', label), element('span', 'value', text)); groupTarget.append(row)
+}
+const STATUS: Record<string, string> = { granted: 'Allowed', 'not granted': 'Not allowed', 'not-determined': 'Not asked yet', denied: 'Not allowed', restricted: 'Blocked by macOS', unavailable: 'Unavailable in this build' }
+/** One permission: its state, and the one action that fixes it. Nothing to do when it is allowed. */
+function permissionRow(key: 'microphone' | 'screen' | 'input', label: string): void {
+  const status = snapshot?.permissions[key] ?? 'unknown'
   const row = element('div', 'permission'), text = element('span')
-  text.append(element('strong', '', 'Microphone'), element('small', '', names[status] ?? status))
-  const action = button(status === 'not-determined' ? 'Allow microphone…' : 'Open System Settings', () => { void request({ kind: 'permission', permission: 'microphone' }) }); action.id = 'microphone-permission'
-  if (status === 'unavailable') { action.disabled = true; text.append(element('small', '', 'Development build: run pnpm dev:speech-permissions, then restart the app.')) }
-  row.append(text, action); groupTarget.append(row)
+  text.append(element('strong', '', label), element('small', '', STATUS[status] ?? status))
+  row.append(text)
+  if (status !== 'granted' && status !== 'unavailable') {
+    const action = button(key === 'microphone' && status === 'not-determined' ? 'Allow…' : 'Open System Settings', () => { void request({ kind: 'permission', permission: key }) })
+    action.id = `${key}-permission`; row.append(action)
+  }
+  groupTarget.append(row)
 }
 function render(): void {
   if (!snapshot) return
@@ -70,36 +77,39 @@ function render(): void {
   fields.replaceChildren(); groupTarget = fields
   switch (category) {
     case 'General':
-      intro('A quiet companion, ready when you need it.')
-      group('Desktop presence')
-      toggle('openAtLogin', 'Open at login', 'Start quietly in the background when you sign in.')
-      toggle('showMenuBar', 'Show menu-bar icon')
-      toggle('showNotch', 'Show notch pill', 'Hover for recent conversations. Click to open Home.')
-      explanation('Closing Home keeps HeyNimbo running. Open it again from the menu bar or notch pill; choose Quit HeyNimbo to stop it.')
+      group()
+      toggle('openAtLogin', 'Open at login')
+      toggle('showMenuBar', 'Show in menu bar')
+      toggle('showNotch', 'Show notch pill', 'Hover for recent conversations.')
       break
-    case 'Voice':
-      intro('Hold Control + Option to speak. Release to ask.')
-      group('Speaking & sound')
-      if (snapshot.connection?.voice === 'OpenAI') select('voice', 'Speaking voice', [['Marin', 'marin'], ['Cedar', 'cedar'], ['Alloy', 'alloy'], ['Coral', 'coral']])
-      const engine = element('div', 'row'); engine.append(element('span', '', 'Voice engine'), element('span', 'value', snapshot.connection?.voice === 'unavailable' ? 'Not available' : snapshot.connection?.voice ?? 'Not available')); groupTarget.append(engine)
-      explanation('Uses OpenAI when its key is saved, otherwise built-in Mac speech. There’s nothing else to configure.')
+    case 'Voice': {
+      group()
+      value('Talk', 'Hold Control + Option')
+      const voice = snapshot.connection?.voice
+      value('Engine', voice === 'OpenAI' ? 'OpenAI' : voice === 'Built into your Mac' ? 'Mac speech' : 'Not available')
+      if (voice === 'OpenAI') select('voice', 'Voice', [['Marin', 'marin'], ['Cedar', 'cedar'], ['Alloy', 'alloy'], ['Coral', 'coral']])
+      toggle('muted', 'Mute')
       if (snapshot.connection?.voiceReason) explanation(snapshot.connection.voiceReason)
-      toggle('muted', 'Mute speech & drawing sounds', 'The written answer and drawings remain available.')
-      explanation('Hold Control + Option to speak; release to ask. Press again to interrupt the current answer. Changing the voice stops the current response.')
-      group('Microphone access'); microphoneRow()
-      explanation('Allow microphone access here the first time. If you previously denied it, enable HeyNimbo (Electron in development) in System Settings → Privacy & Security → Microphone.')
+      if (snapshot.connection?.needsSpeechPermission) {
+        const allow = button('Allow speech recognition', () => {
+          allow.disabled = true
+          void (request({ kind: 'connection', request: { kind: 'allowSpeechRecognition' } }) as Promise<ConnectionResult | undefined>)
+            .then(result => { document.getElementById('feedback')!.textContent = result?.ok === false ? result.message : '' })
+            .finally(() => { allow.disabled = false })
+        })
+        fields.append(allow)
+      }
+      group(); permissionRow('microphone', 'Microphone')
       break
+    }
     case 'History & privacy':
-      intro('Your conversations stay here. You decide what to keep.')
-      group('Local history')
-      toggle('saveHistory', 'Save history on this Mac', 'When off, new conversations stay in memory only. Existing saved history is not deleted.')
-      select('retention', 'Keep history', [['Off', 0], ['7 days', 7], ['30 days', 30], ['90 days', 90], ['Until deleted', 'forever']])
-      explanation('Saved here: questions, answers, generated drawing text and marks, times, and whether screen context was used. No screenshots, microphone audio or API key. Pinned items use the same retention. Off stops saving new conversations.')
-      fields.append(element('h2', 'section-title', 'What leaves this Mac'))
-      explanation('Your question and a capture of the display under your pointer go to the selected answer provider (or your local endpoint). Built-in speech is processed on this Mac; nothing is sent for voice. When an OpenAI key is saved, voice uses OpenAI and sends audio for transcription and answer text for speech. Provider handling depends on your account and policies. Local history is not local processing. Hovering never captures.')
-      group('Delete history')
-      const deletion = element('div', 'row'); deletion.append(element('span', '', 'Remove saved conversations'), button('Delete all…', () => { void request({ kind: 'deleteAll' }) }, 'danger')); groupTarget.append(deletion)
-      explanation('Deletion removes local conversations, drawing records and search entries. This database is not encrypted. Deletion does not erase backups or data already sent to providers.')
+      group()
+      toggle('saveHistory', 'Save history')
+      select('retention', 'Keep for', [['Off', 0], ['7 days', 7], ['30 days', 30], ['90 days', 90], ['Until deleted', 'forever']])
+      explanation('Questions, answers and drawings stay on this Mac. Screenshots and audio are never saved.')
+      explanation('Each question and a screenshot go to your answer provider. With an OpenAI key, your voice goes to OpenAI.')
+      group()
+      const deletion = element('div', 'row'); deletion.append(element('span', '', 'All conversations'), button('Delete…', () => { void request({ kind: 'deleteAll' }) }, 'danger')); groupTarget.append(deletion)
       break
     case 'Connection':
       renderConnections(fields, snapshot, update, keyHints, () => { void refreshKeyHints() })
@@ -107,18 +117,13 @@ function render(): void {
     case 'About': {
       const picture = element('picture'), source = element('source'), image = element('img')
       source.media = '(prefers-color-scheme: dark)'; source.srcset = darkLogo
-      image.src = logo; image.alt = 'HeyNimbo pen buddy and ink trail'; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
-      const brand = element('div', 'about-brand'); brand.append(picture, element('h2', '', `HeyNimbo ${snapshot.version}`)); fields.append(brand)
-      explanation('Explains your screen with speech and drawings.')
-      group('macOS permissions')
-      microphoneRow()
-      for (const [key, label] of [['screen', 'Screen Recording'], ['input', 'Input Monitoring']] as const) {
-        const row = element('div', 'permission'), text = element('span')
-        text.append(element('strong', '', label), element('small', '', snapshot.permissions[key]))
-        row.append(text, button('Open System Settings', () => { void request({ kind: 'permission', permission: key }) }))
-        groupTarget.append(row)
-      }
-      explanation('After changing a permission, return here to refresh its status. macOS may require an app restart for a new grant.')
+      image.src = logo; image.alt = ''; image.width = 72; image.height = 72; image.className = 'about-logo'; picture.append(source, image)
+      const brand = element('div', 'about-brand'); brand.append(picture, element('h2', '', 'HeyNimbo'), element('span', 'about-version', snapshot.version)); fields.append(brand)
+      group('Permissions')
+      permissionRow('microphone', 'Microphone')
+      permissionRow('screen', 'Screen Recording')
+      permissionRow('input', 'Input Monitoring')
+      if (Object.values(snapshot.permissions).some(status => status !== 'granted')) explanation('Restart HeyNimbo after changing a permission.')
     }
   }
   const feedback = document.getElementById('connection-feedback'); if (feedback && connectionMessage) feedback.textContent = connectionMessage

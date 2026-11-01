@@ -29,13 +29,12 @@ function dismiss(): void {
 function render(status: NotchStatus): void {
   pill.className = `pill ${status.kind}`
   label.textContent = status.kind === 'idle' ? 'HeyNimbo' : status.kind === 'active' ? status.label : status.permission === 'inputMonitoring' ? 'Input Monitoring needed' : 'Screen Recording needed'
-  currentStatus = status.kind === 'idle' ? 'Ready when you are' : label.textContent
+  currentStatus = status.kind === 'idle' ? 'Ready' : label.textContent
   document.getElementById('peek-status')!.textContent = currentStatus
 }
 function renderPeek(snapshot: AppSnapshot): void {
   document.getElementById('peek-status')!.textContent = snapshot.status || currentStatus
   document.getElementById('stop')!.hidden = !snapshot.busy
-  document.getElementById('privacy')!.textContent = snapshot.saved ? 'Local text & drawing history' : 'Not saved'
   const recent = document.getElementById('recent')!; recent.replaceChildren()
   document.getElementById('recent-empty')!.hidden = snapshot.conversations.length > 0
   recent.hidden = snapshot.conversations.length === 0
