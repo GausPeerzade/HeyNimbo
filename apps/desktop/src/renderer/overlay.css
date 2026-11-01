@@ -69,6 +69,16 @@ html, body { margin: 0; width: 100%; height: 100%; background: transparent; over
 .card-drag { fill: transparent; cursor: grab; pointer-events: all; touch-action: none; }
 .card-drag:active { cursor: grabbing; }
 .card-close { opacity: 0; cursor: pointer; pointer-events: all; }
+/* A floating 3D card: no paper, only the model and its shadow. The card's bounds still take the pointer
+   (turn, drag, close), and on hover a faint outline and the title show where it is. */
+.floating .card-surface { fill: transparent; stroke: transparent; filter: none; transition: stroke 150ms ease-out; }
+.floating .card-header { fill: transparent; transition: fill 150ms ease-out; }
+.floating .card-title { opacity: 0; transition: opacity 150ms ease-out; }
+.floating:hover .card-surface { stroke: color-mix(in srgb, var(--ink) 18%, transparent); }
+.floating:hover .card-header { fill: color-mix(in srgb, var(--paper-header) 88%, transparent); }
+.floating:hover .card-title { opacity: 1; }
+/* Without paper behind them, leaders keep a paper halo like the words they point from. */
+.floating .model-leader { filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
 .paper-card:hover .card-close { opacity: 1; }
 .card-close rect { fill: color-mix(in srgb, var(--paper) 75%, var(--red)); }
 .card-close text { fill: var(--ink); font: 18px -apple-system, "Segoe UI", sans-serif; pointer-events: none; }

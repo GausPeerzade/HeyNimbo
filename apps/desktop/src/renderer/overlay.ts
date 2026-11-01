@@ -327,7 +327,8 @@ function cardAction(mark: Extract<Mark, { kind: 'card' | 'model' }>, group: numb
   if (mark.kind === 'model' && modelStages.size >= MODEL_LIMITS.cards) return []
   const card = cardScene.open(mark)
   if (!card) return []
-  const root = layer('paper-card', cardsLayer)
+  // A 3D model floats over the screen with no paper behind it; its title and close button appear on hover.
+  const root = layer(mark.kind === 'model' ? 'paper-card floating' : 'paper-card', cardsLayer)
   root.setAttribute('opacity', '0')
   root.setAttribute('data-interactive', 'false')
   const surface = element('rect', { class: 'card-surface', x: card.x, y: card.y, width: card.w, height: card.h, rx: 10 })
