@@ -201,7 +201,8 @@ export class NimboAgent {
       })
       input.signal.addEventListener('abort', stop, { once: true })
       const earlier = created.fresh && input.history.length ? `Earlier in this conversation:\n${input.history.map(e => `User: ${e.question}\nYou: ${e.answer}`).join('\n\n')}\n\n` : ''
-      const images = input.connection.vision && input.screenshot ? [{ type: 'image' as const, data: input.screenshot.jpeg.toString('base64'), mimeType: 'image/jpeg' }] : undefined
+      const shot = input.connection.vision ? input.screenshot : undefined
+      const images = shot && [shot.jpeg, ...shot.focus?.jpeg ? [shot.focus.jpeg] : []].map(jpeg => ({ type: 'image' as const, data: jpeg.toString('base64'), mimeType: 'image/jpeg' }))
       run = session.prompt(`${earlier}${input.question}\n\n(${input.note})`, { images, expandPromptTemplates: false })
         .catch((error: unknown) => { failure ??= error instanceof Error ? error.message : String(error) })
         .finally(() => { done = true; notify() })

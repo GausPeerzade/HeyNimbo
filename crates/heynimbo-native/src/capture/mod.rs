@@ -49,6 +49,7 @@ impl Frame {
 pub(crate) struct Request {
     pub max_long_edge: u32,
     pub all_displays: bool,
+    pub region: Option<Frame>,
 }
 
 /// One display's pixels, tightly packed BGRA, plus where it sits on screen.

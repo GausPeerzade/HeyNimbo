@@ -6,7 +6,7 @@ import { configureHomePreview, runHomePreview } from './home-preview'
 import { devFlag, devSetting } from './dev'
 import type { GestureMessage, NotchStatus } from '../shared/ipc'
 import { AudioWindow, microphoneAccessStatus } from './audio-window'
-import { captureCursorDisplay, restingStatus, scheduleExclusionSelfTest } from './capture'
+import { captureCloseUp, captureCursorDisplay, captureDisplayAt, restingStatus, scheduleExclusionSelfTest } from './capture'
 import { startGestures } from './gestures'
 import { Connections } from './connections'
 import { openSetupWindow } from './setup-window'
@@ -113,6 +113,7 @@ function startTalking(key: string | undefined, agent: NimboAgent, notch: Browser
     }),
     audio,
     capture: captureCursorDisplay,
+    pointing: { trail: () => overlays.takeTrail(), closeUp: captureCloseUp, captureAt: captureDisplayAt },
     canvas: cursorCanvas,
     onStatus: (label) => { shell.setStatus(label); sendNotchStatus(notch, label ? { kind: 'active', label } : restingStatus()) },
     drawing: {

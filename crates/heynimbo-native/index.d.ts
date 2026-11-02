@@ -32,6 +32,11 @@ export interface CaptureOptions {
   jpegQuality?: number
   /** Capture every display, cursor display first (default: cursor display only). */
   allDisplays?: boolean
+  /**
+   * Capture only this rectangle (global points), on the display that holds its centre, at that
+   * display's full pixel density; the result's frame is the rectangle. Ignores `allDisplays`.
+   */
+  region?: ScreenRect
 }
 
 /** Captures screens off the main thread, excluding this app's own windows. */

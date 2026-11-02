@@ -4,6 +4,7 @@
 
 use core_graphics::event::CGEvent;
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+use screencapturekit::cg::CGRect;
 use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
 use screencapturekit::shareable_content::{SCDisplay, SCRunningApplication, SCShareableContent};
 use screencapturekit::stream::configuration::SCStreamConfiguration;
@@ -37,6 +38,18 @@ pub(crate) fn capture(request: &Request) -> Result<Vec<RawCapture>, String> {
             (display, frame)
         })
         .collect();
+    if let Some(region) = request.region {
+        let centre = (
+            region.x + region.width / 2.0,
+            region.y + region.height / 2.0,
+        );
+        let (display, frame) = displays
+            .iter()
+            .find(|(_, frame)| frame.contains(centre))
+            .ok_or_else(|| "the region is not on any display".to_string())?;
+        return capture_region(display, *frame, region, &own, request.max_long_edge)
+            .map(|raw| vec![raw]);
+    }
     displays.sort_by_key(|(_, frame)| !cursor.is_some_and(|point| frame.contains(point)));
     if !request.all_displays {
         displays.truncate(1);
@@ -80,6 +93,64 @@ fn capture_display(
         height: size(image.height())?,
         bgra,
         cursor: cursor.filter(|&point| frame.contains(point)),
+    })
+}
+
+/// Part of one display at its full pixel density (2x on Retina), for reading small text.
+fn capture_region(
+    display: &SCDisplay,
+    frame: Frame,
+    region: Frame,
+    own: &[&SCRunningApplication],
+    max_long_edge: u32,
+) -> Result<RawCapture, String> {
+    // Only the part of the region on this display.
+    let left = region.x.max(frame.x);
+    let top = region.y.max(frame.y);
+    let right = (region.x + region.width).min(frame.x + frame.width);
+    let bottom = (region.y + region.height).min(frame.y + frame.height);
+    if right - left < 1.0 || bottom - top < 1.0 {
+        return Err("the region is empty".into());
+    }
+    let clipped = Frame {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    };
+    let filter = SCContentFilter::create()
+        .with_display(display)
+        .with_excluding_applications(own, &[])
+        .build()
+        .map_err(|err| format!("could not build the capture filter: {err}"))?;
+    let scale = f64::from(filter.point_pixel_scale()).max(1.0);
+    let (width, height) = fit_within(clipped.width * scale, clipped.height * scale, max_long_edge);
+    // The source rectangle is in the display's own points.
+    let source = CGRect::new(
+        clipped.x - frame.x,
+        clipped.y - frame.y,
+        clipped.width,
+        clipped.height,
+    );
+    let config = SCStreamConfiguration::new()
+        .with_source_rect(source)
+        .with_width(width)
+        .with_height(height)
+        .with_shows_cursor(false);
+    let image = SCScreenshotManager::capture_image(&filter, &config)
+        .map_err(|err| format!("capture failed: {err}"))?;
+    let bgra = image
+        .bgra_data()
+        .map_err(|err| format!("could not read captured pixels: {err}"))?;
+    let size =
+        |value: usize| u32::try_from(value).map_err(|_| "captured image is too large".to_string());
+    Ok(RawCapture {
+        display_id: display.display_id(),
+        frame: clipped,
+        width: size(image.width())?,
+        height: size(image.height())?,
+        bgra,
+        cursor: None,
     })
 }
 

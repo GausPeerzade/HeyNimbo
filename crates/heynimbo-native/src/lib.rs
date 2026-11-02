@@ -9,10 +9,10 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use heynimbo_gestures::{Binding, Gesture, GestureDetector, Modifiers, Timing};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use heynimbo_gestures::{Binding, Gesture, GestureDetector, Modifiers, Timing};
 
 #[napi(string_enum)]
 pub enum ModifierKey {
@@ -149,6 +149,9 @@ pub struct CaptureOptions {
     pub jpeg_quality: Option<u32>,
     /// Capture every display, cursor display first (default: cursor display only).
     pub all_displays: Option<bool>,
+    /// Capture only this rectangle (global points), on the display that holds its centre, at that
+    /// display's full pixel density; the result's frame is the rectangle. Ignores `allDisplays`.
+    pub region: Option<ScreenRect>,
 }
 
 /// A rectangle in global screen points, top-left origin.
@@ -259,12 +262,19 @@ pub fn capture_screens(options: Option<CaptureOptions>) -> AsyncTask<CaptureTask
         max_long_edge: None,
         jpeg_quality: None,
         all_displays: None,
+        region: None,
     });
     let quality = options.jpeg_quality.unwrap_or(80).clamp(1, 100);
     AsyncTask::new(CaptureTask {
         request: capture::Request {
             max_long_edge: options.max_long_edge.unwrap_or(1280).max(1),
             all_displays: options.all_displays.unwrap_or(false),
+            region: options.region.map(|rect| capture::Frame {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+            }),
         },
         quality: u8::try_from(quality).unwrap_or(80),
     })

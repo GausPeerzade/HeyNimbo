@@ -11,12 +11,14 @@ import type { AnswerConnection } from '../answer-provider'
 import type { Ears } from './ears'
 import { OPENAI_KEY_REJECTED } from '../openai/realtime'
 import { KEY_REJECTED } from '../model-catalog'
+import { contains, readPointing, toPixels, type Point, type Rect } from '../../shared/focus'
 import type { Mouth } from './mouth'
 
 const MIC_STOP_TIMEOUT_MS = 1_500
 const SAVE_INTERVAL_MS = 250
 /** Designed parts are revealed in batches this often, each batch growing over twice as long. */
 const DESIGN_BATCH_MS = 300
+const FOCUS_WAIT_MS = 1_500
 /** How long a polish pass waits for its card to be shown before giving up. */
 const SNAPSHOT_WAIT_MS = 60_000
 /** Declared beat budget while sentence PCM is still streaming. Drawing uses
@@ -40,6 +42,8 @@ export interface TalkDeps {
   onStatus: (label: string | undefined) => void
   /** The display to draw on when no screenshot exists (Screen Recording off or capture failed). */
   canvas?: () => CaptureSpace | undefined
+  /** The cursor's path during the last hold (global points), and a full-resolution close-up of a region. */
+  pointing?: { trail: () => Point[]; closeUp: (region: Rect) => Promise<Buffer | undefined>; captureAt: (point: Point) => Promise<ScreenCaptures | undefined> }
   drawing: {
     /** Draws marks given in the capture's screenshot pixels. */
     draw(marks: Mark[], durationMs: number, space: CaptureSpace): void
@@ -56,10 +60,13 @@ interface Turn {
   readonly id: number
   readonly abort: AbortController
   readonly connection?: AnswerConnection
-  readonly capture: Promise<ScreenCaptures | undefined>
+  /** Replaced on release when the owner pointed at another display. */
+  capture: Promise<ScreenCaptures | undefined>
   readonly marks: Map<string, number>
   releasedAt?: number
   micStopped?: () => void
+  /** What the owner circled or underlined while asking, or where they moved the pointer, in screenshot pixels. */
+  focus?: Promise<Pick<Screenshot, 'focus' | 'cursor'>>
   spoken: boolean
   recordId?: string
   scene: DrawingScene
@@ -144,12 +151,36 @@ export class TalkSession {
     const turn = this.turn
     if (!turn || turn.releasedAt !== undefined) return
     turn.releasedAt = performance.now()
+    const trail = this.deps.pointing?.trail() ?? [], end = trail[trail.length - 1]
+    // Pointing on another display than the one captured at the start: that display is the one asked about.
+    if (end) turn.capture = turn.capture.then(async captures => {
+      const frame = captures?.displays[0]?.frame
+      return frame && !contains(frame, end) && !turn.abort.signal.aborted ? (await this.deps.pointing!.captureAt(end)) ?? captures : captures
+    })
+    turn.focus = this.pointedAt(turn, trail)
     const micStopped = new Promise<void>((resolve) => {
       turn.micStopped = resolve
       setTimeout(resolve, MIC_STOP_TIMEOUT_MS)
     })
     this.deps.audio.send({ kind: 'micStop' })
     this.answer(turn, micStopped).catch((error: unknown) => this.fail(turn, error))
+  }
+
+  /** What the pointer did during the hold: an area it marked, with a close-up taken while speech is
+   *  still being transcribed, or else where it ended up, which is where the owner is pointing now. */
+  private async pointedAt(turn: Turn, trail: Point[]): Promise<Pick<Screenshot, 'focus' | 'cursor'>> {
+    const display = (await turn.capture)?.displays[0]
+    if (!display || turn.abort.signal.aborted) return {}
+    const { region, pointer } = readPointing(trail, display.frame)
+    if (region || pointer) console.info(`[pointing] ${region ? `area ${Math.round(region.x)},${Math.round(region.y)} ${Math.round(region.width)}x${Math.round(region.height)}` : `pointer ${Math.round(pointer!.x)},${Math.round(pointer!.y)}`}`)
+    const pixels = (area: Rect): Rect => toPixels(area, display.frame, display.pixelWidth, display.pixelHeight)
+    const cursor = pointer && pixels({ ...pointer, width: 0, height: 0 })
+    const moved = cursor ? { cursor: { x: cursor.x, y: cursor.y } } : {}
+    if (!region) return moved
+    // The area is known now; only its optional close-up is waited for, and not for long.
+    const jpeg = await Promise.race([this.deps.pointing!.closeUp(region), new Promise<undefined>(resolve => setTimeout(resolve, FOCUS_WAIT_MS))])
+    if (jpeg) this.mark(turn, 'close-up')
+    return { ...moved, focus: { ...pixels(region), ...(jpeg && { jpeg }) } }
   }
 
   holdCancelled(): void {
@@ -219,6 +250,10 @@ export class TalkSession {
     const display = (await turn.capture)?.displays[0]
     if (turn.abort.signal.aborted) return
     const screenshot = toScreenshot(display)
+    // Ready by now as a rule: the close-up is taken while the words are transcribed, and its wait is bounded.
+    const pointed = screenshot && await turn.focus
+    if (turn.abort.signal.aborted) return
+    if (screenshot && pointed) Object.assign(screenshot, pointed)
     // Without a screenshot a vision model can still draw cards, sketches and 3D on the
     // cursor's display; it just cannot see or point at what is there.
     if (display) turn.space = { frame: display.frame, pixelWidth: display.pixelWidth, pixelHeight: display.pixelHeight }

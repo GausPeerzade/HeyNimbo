@@ -69,6 +69,11 @@ html, body { margin: 0; width: 100%; height: 100%; background: transparent; over
 .card-drag { fill: transparent; cursor: grab; pointer-events: all; touch-action: none; }
 .card-drag:active { cursor: grabbing; }
 .card-close { opacity: 0; cursor: pointer; pointer-events: all; }
+.pointing-trail {
+  fill: none; stroke: var(--buddy); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.6;
+  filter: drop-shadow(0 0 2px var(--paper)); transition: opacity 400ms ease-out;
+}
+.pointing-trail.fading { opacity: 0; }
 /* A floating 3D card: no paper, only the model and its shadow. The card's bounds still take the pointer
    (turn, drag, close), and on hover a faint outline and the title show where it is. */
 .floating .card-surface { fill: transparent; stroke: transparent; filter: none; transition: stroke 150ms ease-out; }

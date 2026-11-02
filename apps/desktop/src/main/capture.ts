@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { screen } from 'electron'
+import { contains, type Rect } from '../shared/focus'
 import type { NotchStatus } from '../shared/ipc'
 import { devFlag, devSetting } from './dev'
 import {
@@ -43,6 +44,34 @@ export async function captureCursorDisplay(): Promise<ScreenCaptures | undefined
     return captures
   } catch (error) {
     console.warn(`[capture] failed: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  }
+}
+
+/** The display holding `point` (global points), whatever the cursor does meanwhile: every display is
+ *  captured and the rest dropped, as this happens only when the owner pointed at another display. */
+export async function captureDisplayAt(point: { x: number; y: number }): Promise<ScreenCaptures | undefined> {
+  if (!hasScreenCaptureAccess()) return undefined
+  try {
+    const captures = await captureScreens({ maxLongEdge: 1280, allDisplays: true })
+    const display = captures.displays.find(({ frame }) => contains(frame, point))
+    return display && { ...captures, displays: [display] }
+  } catch (error) {
+    console.warn(`[capture] failed: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  }
+}
+
+/** The part of the screen the owner pointed at, captured again on its own at the display's full
+ *  pixel density (2x on Retina), so small text in it stays readable. */
+export async function captureCloseUp(region: Rect): Promise<Buffer | undefined> {
+  if (!hasScreenCaptureAccess()) return undefined
+  try {
+    // Past this, a close-up costs more tokens than it adds detail.
+    const [image] = (await captureScreens({ region, maxLongEdge: 1600, jpegQuality: 85 })).displays
+    return image && image.pixelWidth >= 8 && image.pixelHeight >= 8 ? image.jpeg : undefined
+  } catch (error) {
+    console.warn(`[capture] close-up failed: ${error instanceof Error ? error.message : String(error)}`)
     return undefined
   }
 }

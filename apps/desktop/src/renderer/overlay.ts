@@ -58,6 +58,8 @@ const ringLayer = layer('rings', scene)
 const washLayer = layer('wash', scene)
 const inkLayer = layer('ink', scene)
 const wordsLayer = layer('words', scene)
+// Outside the scene, so the clear that comes with letting go doesn't wipe what was just pointed at.
+const trailLayer = layer('trail-layer')
 const buddyLayer = layer('buddy-layer')
 const FADE_MS = 240
 const regions = new Map<string, { over: boolean; captured: boolean }>()
@@ -118,6 +120,35 @@ function layer(name: string, parent: SVGElement = stage): SVGGElement {
   group.setAttribute('class', name)
   parent.append(group)
   return group
+}
+
+/** The path the pointer traces while the owner holds to talk: what they circle or underline is
+ *  what the question is about. It stays until the answer starts drawing, then fades. */
+const TRAIL_LINGER_MS = 8_000
+let trail: { path: SVGPathElement; d: string; points: number; fade?: ReturnType<typeof setTimeout> } | undefined
+
+function startTrail(): void {
+  if (trail) { clearTimeout(trail.fade); trail.path.remove() }
+  const path = element('path', { class: 'pointing-trail' })
+  trailLayer.append(path)
+  trail = { path, d: '', points: 0 }
+}
+
+function extendTrail(at: Point): void {
+  if (!trail || trail.points >= 4_000) return
+  trail.d += `${trail.points++ ? 'L' : 'M'}${at[0].toFixed(1)} ${at[1].toFixed(1)}`
+  trail.path.setAttribute('d', trail.d)
+}
+
+function fadeTrail(delayMs: number): void {
+  const current = trail
+  if (!current) return
+  clearTimeout(current.fade)
+  current.fade = setTimeout(() => {
+    current.path.classList.add('fading')
+    setTimeout(() => current.path.remove(), 400)
+    if (trail === current) trail = undefined
+  }, delayMs)
 }
 
 function element<K extends keyof SVGElementTagNameMap>(name: K, attributes: Record<string, string | number>): SVGElementTagNameMap[K] {
@@ -955,6 +986,7 @@ function apply(command: OverlayCommand): void {
       return offerClear()
     case 'listening':
       listening = command.on
+      if (listening) startTrail(); else fadeTrail(TRAIL_LINGER_MS)
       return wake()
     case 'clear':
       hideClear()
@@ -972,6 +1004,7 @@ function apply(command: OverlayCommand): void {
       return
     case 'cursor':
       cursorAt = [command.at.x, command.at.y]
+      if (listening) extendTrail(cursorAt)
       if (mode === 'parked') {
         // Appear right at the pointer instead of flying in from a stale spot.
         mode = 'following'
@@ -989,6 +1022,7 @@ function apply(command: OverlayCommand): void {
       return
     }
     case 'beat':
+      fadeTrail(0)
       hideClear()
       epoch = command.epoch
       return drawBeat(command.marks, command.durationMs, command.from)

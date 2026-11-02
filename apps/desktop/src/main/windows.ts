@@ -171,6 +171,9 @@ export class OverlayManager {
   private epoch = 0
   private followTimer: NodeJS.Timeout | undefined
   private lastCursor: Electron.Point | undefined
+  /** Where the cursor went while the owner held to talk, in global points: what they pointed at. */
+  private trail: Electron.Point[] = []
+  private recording = false
   private readonly interactiveRegions = new Map<number, Map<string, { over: boolean; captured: boolean }>>()
 
   onStrokeStarted?: (durationMs: number) => void
@@ -307,6 +310,7 @@ export class OverlayManager {
     const cursor = screen.getCursorScreenPoint()
     if (this.lastCursor?.x === cursor.x && this.lastCursor.y === cursor.y) return
     this.lastCursor = cursor
+    if (this.recording && this.trail.length < 4_000) this.trail.push(cursor)
     const display = screen.getDisplayNearestPoint(cursor)
     if (!this.buddyBusy) this.moveBuddyTo(display.id)
     if (display.id === this.buddyDisplayId) {
@@ -324,7 +328,16 @@ export class OverlayManager {
 
   /** Every overlay learns, so whichever display has the buddy shows the ear. */
   listen(on: boolean): void {
+    if (on) { this.trail = [screen.getCursorScreenPoint()]; this.lastCursor = undefined }
+    this.recording = on
     for (const id of this.windows.keys()) this.send(id, { kind: 'listening', on })
+  }
+
+  /** The path the cursor traced during the last hold, once; recording stops when it is taken. */
+  takeTrail(): Electron.Point[] {
+    const trail = this.trail
+    this.trail = []
+    return trail
   }
 
   /** The answer is over: offer a Clear button, and fade the drawing if it is

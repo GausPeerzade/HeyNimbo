@@ -9,6 +9,7 @@ An open-source alternative to [Clicky](https://www.heyclicky.com). Bring your ow
 ## What it does
 
 - **Explains your screen.** Ask about the page, app or error in front of you. It answers by voice and points at the parts it's talking about: circles, arrows, highlights and handwritten notes, timed to its speech.
+- **Knows what you're pointing at.** While holding Control + Option, circle or underline something with the pointer and ask "what's this?". It answers about that spot, using a sharper close-up of it, and the pen trail shows what you marked. Just moving the pointer onto something works too.
 - **Draws to explain.** Diagrams, step-by-step cards and sketches appear on screen in a handwritten style, drawn while it talks.
 - **Builds 3D models.** Ask how an engine, a heart or a reactor works and you get a labelled, animated 3D model floating on your screen. Drag to turn it; it can cut the model open to show what's inside. Once built, the model looks at its own render and polishes it.
 - **Does real work.** It can search the web, read pages, read and edit files and run commands, in the same conversation. Anything risky waits for your OK first (see [Safety](#safety)).
@@ -40,7 +41,7 @@ The app is built at `apps/desktop/dist/mac-arm64/HeyNimbo.app`. Move it to `/App
 ## First run
 
 1. HeyNimbo lives in the menu bar; there's no Dock icon. The first window asks you to pick a provider and paste a key, or sign in with ChatGPT.
-2. Hold **Control + Option**, speak, and let go. Press again to interrupt. You can also type questions in Home.
+2. Hold **Control + Option**, speak, and let go. Press again to interrupt. While holding, circle or underline anything to ask about it. You can also type questions in Home.
 3. macOS asks for each permission the first time it is needed:
 
 | Permission | Why |
